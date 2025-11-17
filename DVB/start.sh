@@ -1,6 +1,7 @@
 case $1 in
 
   live)
+	mkfifo mpeg-live.ts &> /dev/null
 	screen -X -S GNU-Radio quit 2> /dev/null	#kill previous instances
 	screen -S "GNU-Radio" -d -m bash -c  "python3 dvbt_tx_pipe.py" &
 
@@ -9,6 +10,7 @@ case $1 in
     	;;
 
   file)
+	mkfifo mpeg-live.ts &> /dev/null
 	screen -X -S GNU-Radio quit 2> /dev/null	#kill previous instances
 	screen -S "GNU-Radio" -d -m bash -c  "python3 dvbt_tx_pipe.py" &
 

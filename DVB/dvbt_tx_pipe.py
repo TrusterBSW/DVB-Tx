@@ -80,7 +80,7 @@ class dvbt_tx_pipe(gr.top_block):
             8192 + 256,
             0,
             '')
-        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_char*1, '/home/rbilly/TV/DEMO/DVB/mpeg-live.ts', False, 0, 0)
+        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_char*1, 'mpeg-live.ts', False, 0, 0)
         self.blocks_file_source_0.set_begin_tag(pmt.PMT_NIL)
 
 
