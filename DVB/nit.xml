@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tsduck>
+ <NIT version="8" current="true" network_id="0xFF16" actual="true">
+  <metadata PID="16"/>
+  <network_name_descriptor network_name="BsT"/>
+  <transport_stream transport_stream_id="0x0016" original_network_id="0xFF16" preferred_section="0">
+   <terrestrial_delivery_system_descriptor centre_frequency="42,949,672,950" bandwidth="8MHz" priority="HP" no_time_slicing="true" no_MPE_FEC="true" constellation="64-QAM" hierarchy_information="0" code_rate_HP_stream="7/8" code_rate_LP_stream="7/8" guard_interval="1/32" transmission_mode="8k" other_frequency="false"/>
+   <service_list_descriptor>
+    <service service_id="0x1001" service_type="0x19"/>
+    <service service_id="0x1002" service_type="0x19"/>
+    <service service_id="0x1003" service_type="0x19"/>
+    <service service_id="0x1004" service_type="0x19"/>
+   </service_list_descriptor>
+   <private_data_specifier_descriptor private_data_specifier="0x00000028"/>
+   <!--<private_data_specifier_descriptor private_data_specifier="eacem"/>-->
+   <!--<private_data_specifier_descriptor private_data_specifier="EACEM"/>-->
+   <logical_channel_number_descriptor>
+    <service service_id="0x1001" logical_channel_number="61" visible_service="true"/>
+    <service service_id="0x1002" logical_channel_number="62" visible_service="true"/>
+    <service service_id="0x1003" logical_channel_number="63" visible_service="true"/>
+    <service service_id="0x1004" logical_channel_number="64" visible_service="true"/>
+   </logical_channel_number_descriptor>
+  </transport_stream>
+ </NIT>
+</tsduck>

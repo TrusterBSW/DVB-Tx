@@ -1,0 +1,106 @@
+
+==============================================================================================
+|  TRANSPORT STREAM ANALYSIS REPORT                                                          |
+|============================================================================================|
+|  Transport Stream Id: ................ 0x0017 (23)  |  Services: ...................... 4  |
+|  Bytes: ............................... 16,775,240  |  PID's: Total: ................. 17  |
+|  TS packets: .............................. 89,230  |         Clear: ................. 17  |
+|     With invalid sync: ......................... 0  |         Scrambled: .............. 0  |
+|     With transport error: ...................... 0  |         With PCR's: ............. 4  |
+|     Suspect and ignored: ....................... 0  |         Unreferenced: ........... 0  |
+|--------------------------------------------------------------------------------------------|
+|  Transport stream bitrate, based on ...................... 188 bytes/pkt    204 bytes/pkt  |
+|  User-specified: ........................................ 31,668,449 b/s   34,363,636 b/s  |
+|  Estimated based on PCR's: .............................. 31,668,447 b/s   34,363,634 b/s  |
+|  Selected reference bitrate: ............................ 31,668,447 b/s   34,363,634 b/s  |
+|--------------------------------------------------------------------------------------------|
+|  Broadcast time: .................................................... 4 sec (0 min 4 sec)  |
+|  First TDT UTC time stamp: .......................................... 2025/11/17 21:38:01  |
+|  Last TDT UTC time stamp: ........................................... 2025/11/17 21:38:04  |
+|  First TOT local time stamp: ........................................ 2025/11/17 22:38:01  |
+|  Last TOT local time stamp: ......................................... 2025/11/17 22:38:04  |
+|  TOT country code: .................................................................. FRA  |
+|--------------------------------------------------------------------------------------------|
+|  Srv Id           Service Name                                    Access          Bitrate  |
+|  0x1001   (4097)  Youtube SKY News ................................... C    3,466,032 b/s  |
+|  0x1002   (4098)  Twitch Earthquake .................................. C    6,106,193 b/s  |
+|  0x1003   (4099)  Figaro ............................................. C    3,808,164 b/s  |
+|  0x1004   (4100)  Arte ............................................... C    3,049,370 b/s  |
+|                                                                                            |
+|  Note 1: C=Clear, S=Scrambled                                                              |
+|  Note 2: Unless specified otherwise, bitrates are based on 188 bytes/pkt                   |
+==============================================================================================
+
+
+==============================================================================================
+|  SERVICES ANALYSIS REPORT                                                                  |
+|============================================================================================|
+|  Global PID's                                                                              |
+|  TS packets: 42,937, PID's: 5 (clear: 5, scrambled: 0)                                     |
+|--------------------------------------------------------------------------------------------|
+|  PID             Usage                                            Access          Bitrate  |
+|  Total           Global PID's ........................................ C   15,238,688 b/s  |
+|  Subtotal        Global PSI/SI PID's (0x00-0x1F) ..................... C       26,973 b/s  |
+|  0x0000     (0)  PAT ................................................. C       16,326 b/s  |
+|  0x0010    (16)  NIT (Network: 0xFF16 (65302) BsT) ................... C        3,194 b/s  |
+|  0x0011    (17)  SDT/BAT ............................................. C        6,033 b/s  |
+|  0x0014    (20)  TDT/TOT ............................................. C        1,420 b/s  |
+|  0x1FFF  (8191)  Stuffing ............................................ C   15,211,715 b/s  |
+|============================================================================================|
+|  Service: 0x1001 (4097), TS: 0x0017 (23), Original Netw: 0xFF17 (65303)                    |
+|  Service name: Youtube SKY News, provider: BillysTV                                        |
+|  Service type: 0x19 (Advanced codec HD digital television service)                         |
+|  TS packets: 9,766, PID's: 3 (clear: 3, scrambled: 0)                                      |
+|  PMT PID: 0x1000 (4096), PCR PID: 0x0100 (256)                                             |
+|--------------------------------------------------------------------------------------------|
+|  PID             Usage                                            Access          Bitrate  |
+|  Total           Advanced codec HD digital television service ........ C    3,466,032 b/s  |
+|  0x0100   (256)  AVC video (1920x1080, high profile, level 4.2, 4:2:0  C    3,264,444 b/s  |
+|  0x0101   (257)  MPEG-2 AAC Audio .................................... C      185,262 b/s  |
+|  0x1000  (4096)  PMT ................................................. C       16,326 b/s  |
+|                  (C=Clear, S=Scrambled, +=Shared)                                          |
+|============================================================================================|
+|  Service: 0x1002 (4098), TS: 0x0017 (23), Original Netw: 0xFF17 (65303)                    |
+|  Service name: Twitch Earthquake, provider: BillysTV                                       |
+|  Service type: 0x19 (Advanced codec HD digital television service)                         |
+|  TS packets: 17,205, PID's: 3 (clear: 3, scrambled: 0)                                     |
+|  PMT PID: 0x1001 (4097), PCR PID: 0x0102 (258)                                             |
+|--------------------------------------------------------------------------------------------|
+|  PID             Usage                                            Access          Bitrate  |
+|  Total           Advanced codec HD digital television service ........ C    6,106,193 b/s  |
+|  0x0102   (258)  AVC video (1920x1080, high profile, level 4.2, 4:2:0  C    6,079,930 b/s  |
+|  0x0103   (259)  MPEG-2 AAC Audio .................................... C        9,937 b/s  |
+|  0x1001  (4097)  PMT ................................................. C       16,326 b/s  |
+|                  (C=Clear, S=Scrambled, +=Shared)                                          |
+|============================================================================================|
+|  Service: 0x1003 (4099), TS: 0x0017 (23), Original Netw: 0xFF17 (65303)                    |
+|  Service name: Figaro, provider: BillysTV                                                  |
+|  Service type: 0x19 (Advanced codec HD digital television service)                         |
+|  TS packets: 10,730, PID's: 3 (clear: 3, scrambled: 0)                                     |
+|  PMT PID: 0x1002 (4098), PCR PID: 0x0104 (260)                                             |
+|--------------------------------------------------------------------------------------------|
+|  PID             Usage                                            Access          Bitrate  |
+|  Total           Advanced codec HD digital television service ........ C    3,808,164 b/s  |
+|  0x0104   (260)  AVC video (1280x720, high profile, level 4.2, 4:2:0)  C    3,683,946 b/s  |
+|  0x0105   (261)  MPEG-2 AAC Audio (fre) .............................. C      107,892 b/s  |
+|  0x1002  (4098)  PMT ................................................. C       16,326 b/s  |
+|                  (C=Clear, S=Scrambled, +=Shared)                                          |
+|============================================================================================|
+|  Service: 0x1004 (4100), TS: 0x0017 (23), Original Netw: 0xFF17 (65303)                    |
+|  Service name: Arte, provider: BillysTV                                                    |
+|  Service type: 0x19 (Advanced codec HD digital television service)                         |
+|  TS packets: 8,592, PID's: 3 (clear: 3, scrambled: 0)                                      |
+|  PMT PID: 0x1003 (4099), PCR PID: 0x0106 (262)                                             |
+|--------------------------------------------------------------------------------------------|
+|  PID             Usage                                            Access          Bitrate  |
+|  Total           Advanced codec HD digital television service ........ C    3,049,370 b/s  |
+|  0x0106   (262)  AVC video (1280x720, high profile, level 3.1, 4:2:0)  C    2,821,164 b/s  |
+|  0x0107   (263)  MPEG-2 AAC Audio (fre) .............................. C      211,880 b/s  |
+|  0x1003  (4099)  PMT ................................................. C       16,326 b/s  |
+|                  (C=Clear, S=Scrambled, +=Shared)                                          |
+==============================================================================================
+
+TITLE: ERROR ANALYSIS REPORT
+INFO: Transport Stream Identifier: 0x0017 (23)
+TS:23:0x0017: No BAT
+SUMMARY: Error count: 1

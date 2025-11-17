@@ -1,0 +1,45 @@
+ffmpeg \
+-readrate 1 -stream_loop -1 \
+-i ../Video/1-Cosmos.mkv \
+-readrate 1 -stream_loop -1 \
+-i ../Video/2-Sintel.mkv \
+-readrate 1 -stream_loop -1 \
+-i ../Video/3-ToS.mkv \
+-readrate 1 -stream_loop -1 \
+-i ../Video/4-Big-Bug-Bunny.mkv \
+-map 0:v -map 0:a \
+-c:v:0 copy -c:a:0 copy \
+-map 1:v -map 1:a \
+-c:v:1 copy -c:a:1 copy \
+-map 2:v -map 2:a \
+-c:v:2 copy -c:a:2 copy \
+-map 3:v -map 3:a \
+-c:v:3 copy -c:a:3 copy \
+-program title="hd1":program_num=0x1001:st=0:st=1 \
+-program title="hd2":program_num=0x1002:st=2:st=3 \
+-program title="hd3":program_num=0x1003:st=4:st=5 \
+-program title="hd4":program_num=0x1004:st=6:st=7 \
+-pcr_period 60 \
+-pat_period 0.10 \
+-sdt_period 0.25 \
+-pes_payload_size 0 \
+-flush_packets 0 \
+-mpegts_flags nit -mpegts_flags system_b \
+-mpegts_service_type advanced_codec_digital_hdtv \
+-max_muxing_queue_size 16 \
+-muxrate 31668449.2 \
+-f mpegts -y - |
+tsp -v \
+-I file \
+-P tsrename -o 0xFF16 -t 0x0016 \
+-P inject --pid 16 -b 3000 nit.xml \
+-P inject --pid 20 -b 1500 --stuffing time.xml \
+-P timeref --system \
+-P svrename -n "BsT Emotion" -p "BillysTV" hd1 \
+-P svrename -n "BsT Fantaisie" -p "BillysTV" hd2 \
+-P svrename -n "BsT Sci-fi" -p "BillysTV" hd3 \
+-P svrename -n "BsT Jeunesse" -p "BillysTV" hd4 \
+-P eitinject -f '../EIT/*.xml' --actual-schedule \
+-P regulate -b 31668449.2 \
+-P analyze -o mpeg-live-analyzed.txt -i 1 --error-analysis --service-analysis --ts-analysis  --wide-display \
+-O file mpeg-live.ts
