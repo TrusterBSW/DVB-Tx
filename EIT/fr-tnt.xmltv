@@ -1,0 +1,2022 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE tv SYSTEM "xmltv.dtd">
+<!-- Generated with XML TV Fr v3.6.0 -->
+<tv source-info-url="https://github.com/racacax/XML-TV-Fr" source-info-name="XML TV Fr" generator-info-name="XML TV Fr" generator-info-url="https://github.com/racacax/XML-TV-Fr">
+  <channel id="TF1.fr">
+    <display-name>TF1</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/308/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="France2.fr">
+    <display-name>France 2</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/342/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="France3.fr">
+    <display-name>France 3</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/58/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="CanalPlus.fr">
+    <display-name>Canal+</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-34.png"/>
+  </channel>
+  <channel id="France5.fr">
+    <display-name>France 5</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/80/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="M6.fr">
+    <display-name>M6</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/312/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="Arte.fr">
+    <display-name>Arte</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/330/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="W9.fr">
+    <display-name>W9</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/268/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="TMC.fr">
+    <display-name>TMC</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/383/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="NT1.fr">
+    <display-name>TFX</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-446.png"/>
+  </channel>
+  <channel id="LaChaineParlementaire.fr">
+    <display-name>LCP</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-234.png"/>
+  </channel>
+  <channel id="France4.fr">
+    <display-name>France 4</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/288/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="BFMTV.fr">
+    <display-name>BFM TV</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/368/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="CNews.fr">
+    <display-name>CNews</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-226.png"/>
+  </channel>
+  <channel id="CStar.fr">
+    <display-name>CStar</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-458.png"/>
+  </channel>
+  <channel id="Gulli.fr">
+    <display-name>Gulli</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/270/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="T18.fr">
+    <display-name>T18</display-name>
+    <icon src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/99/Logo_de_la_chaine_T18.svg/langfr-250px-Logo_de_la_chaine_T18.svg.png"/>
+  </channel>
+  <channel id="NOVO19.fr">
+    <display-name>NOVO19</display-name>
+    <icon src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Logo_NOVO19_-_2025.svg/330px-Logo_NOVO19_-_2025.svg.png"/>
+  </channel>
+  <channel id="TF1SeriesFilms.fr">
+    <display-name>TF1 Séries-Films</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/372/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="LEquipe21.fr">
+    <display-name>La chaine l’Équipe</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/373/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="6ter.fr">
+    <display-name>6ter</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/367/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="Numero23.fr">
+    <display-name>RMC STORY</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/376/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="RMCDecouverte.fr">
+    <display-name>RMC Découverte</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/380/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="Cherie25.fr">
+    <display-name>RMC Life</display-name>
+    <icon src="https://i81.servimg.com/u/f81/19/39/09/46/img_4810.jpg"/>
+  </channel>
+  <channel id="LCI.fr">
+    <display-name>LCI</display-name>
+    <icon src="https://static.teleboy.ch/shared/stations/462/icon320_light.png?v2023_48_0"/>
+  </channel>
+  <channel id="FranceInfo.fr">
+    <display-name>franceinfo:</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-2111.png"/>
+  </channel>
+  <channel id="ParisPremiere.fr">
+    <display-name>Paris Première</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-145.png"/>
+  </channel>
+  <channel id="CanalPlusSport.fr">
+    <display-name>Canal+ Sport</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-35.png"/>
+  </channel>
+  <channel id="CanalPlusCinema.fr">
+    <display-name>Canal+ Cinema</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-33.png"/>
+  </channel>
+  <channel id="PlanetePlus.fr">
+    <display-name>Planete+</display-name>
+    <icon src="https://focus.telerama.fr/500x500/0000/00/01/clear-147.png"/>
+  </channel>
+  <programme start="20251108005000 +0100" stop="20251108005500 +0100" channel="TF1.fr">
+    <title lang="fr">Tirage de l'EuroMillions</title>
+    <desc lang="fr">Consultez les derniers résultats d'EuroMillions ainsi que les codes gagnants My Million. Découvrez les 5 numéros gagnants et les 2 bonnes étoiles d'EuroMillions mais aussi les codes gagnants My Million des derniers tirages !</desc>
+    <category lang="fr">Services</category>
+    <category lang="fr">Loterie</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/2B5AC45913C78A243971B3A41738B8BA.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108005500 +0100" stop="20251108055000 +0100" channel="TF1.fr">
+    <title lang="fr">Programmes de la nuit</title>
+    <desc lang="fr">A suivre, des rediffusions des émissions de la chaîne, ainsi que des documentaires et autres reportages destinés à divertir les couche-tard comme les lève-tôt.</desc>
+    <category lang="fr">Programme</category>
+    <category lang="fr">Programme indéterminé</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/EBE64969228A4E87CCB86326164FE0B7.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108055000 +0100" stop="20251108110000 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <desc lang="fr">Azuro &amp; la brigade des dragons (ST) / Barbapapa en Famille (ST) / Alice &amp; Lewis (ST) / Dora (ST) / Ruben &amp; cie (ST) / Paw Patrol, la Pat'Patrouille (ST) / Mille Bornes Challenge (ST) / Les Chapadeurs (ST) / Miraculous World : Tokyo, Stellar Force (ST - AD) / Tu dis, tu stoppes !</desc>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Jeunesse</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/6026CDAE7E84331AE03FEFDBF011CD08.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108110000 +0100" stop="20251108114500 +0100" channel="TF1.fr">
+    <title lang="fr">Téléshopping samedi</title>
+    <desc lang="fr">Le magazine de la consommation et des conseils d'achat, coaché par Marie-Ange Nardi et Alexandre Devoise.</desc>
+    <credits>
+      <guest>Alexandre Devoise</guest>
+      <guest>Marie-Ange Nardi</guest>
+    </credits>
+    <category lang="fr">Services</category>
+    <category lang="fr">Télé-achat</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/73FF01695C2D7E129820A1D91D649756.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108114500 +0100" stop="20251108115000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <credits>
+      <guest>Laurent Mariotte</guest>
+    </credits>
+    <category lang="fr">Art de vivre</category>
+    <category lang="fr">Gastronomie</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/CB757B212CF266819A3DB8045483CF35.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108115000 +0100" stop="20251108125000 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <desc lang="fr">Emission du 8 novembre 2025 - Chaque jour, quatre candidats s'affrontent pour empocher les 30 000 euros de la cagnotte et décrocher l'étoile mystérieuse et ses cadeaux. Seule condition, bien répondre aux questions de culture générale posées par...</desc>
+    <credits>
+      <guest>Jean-Luc Reichmann</guest>
+    </credits>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Jeu</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/D8FDCD5A249EA59DD483EB9556F53EA2.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108125000 +0100" stop="20251108125500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <credits>
+      <guest>Laurent Mariotte</guest>
+    </credits>
+    <category lang="fr">Art de vivre</category>
+    <category lang="fr">Gastronomie</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/CB757B212CF266819A3DB8045483CF35.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108125500 +0100" stop="20251108130000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Météo du samedi 8 novembre 2025 à 12h46 sur TF1 présentée par Tatiana Silva ou Evelyne Dheliat. Consultez sans plus attendre les prévisions météorologiques du samedi 8 novembre 2025 à 12h46 et découvrez les températures du jour, du lendemain et des prochains jours en France métropolitaine et en Corse.</desc>
+    <category lang="fr">Services</category>
+    <category lang="fr">Météo</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/8F03EA99E2A380FBDFF696EA6BDCEFD2.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108130000 +0100" stop="20251108134000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <desc lang="fr">" JT 13h WE " du samedi 8 novembre 2025. Le samedi et dimanche, la rédaction de TF1 propose "LE 13H" un rendez-vous d'information qui met en exergue l'actualité régionale, nationale et internationale présenté par Anne-Claire Coudray ou Audrey Crespo-Mara, sa joker.</desc>
+    <credits>
+      <guest>Anne-Claire Coudray</guest>
+    </credits>
+    <category lang="fr">Information</category>
+    <category lang="fr">Journal</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/A2079DFEE4E14704D26E3F5B5863EF4A.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108134000 +0100" stop="20251108145000 +0100" channel="TF1.fr">
+    <title lang="fr">Grands reportages</title>
+    <sub-title lang="fr">Saint-Maur : au coeur d'une prison de haute sécurité</sub-title>
+    <desc lang="fr">C'est une des prisons les plus sécurisées de France, une maison centrale qui accueille essentiellement des criminels. Pendant plusieurs mois, une équipe a eu l'autorisation de plonger au coeur de la prison de Saint-Maur, dans l'Indre, qui depuis 50 ans accueille les détenus les plus dangereux du pays. Gros plan sur les défis sécuritaires hors norme de cet établissement où chaque objet du quotidien peut devenir une arme.</desc>
+    <credits>
+      <guest>Anne-Claire Coudray</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Information</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/AE6916039F7002CD0483C839505109E6.jpg"/>
+    <rating system="CSA">
+      <value>-10</value>
+      <icon src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Moins10.svg/200px-Moins10.svg.png"/>
+    </rating>
+  </programme>
+  <programme start="20251108145000 +0100" stop="20251108161000 +0100" channel="TF1.fr">
+    <title lang="fr">Grands reportages</title>
+    <sub-title lang="fr">La vie après la prison</sub-title>
+    <desc lang="fr">En France, 80 000 hommes et femmes sortent chaque année de prison. Ils doivent alors réapprendre la vie "du dehors", retrouver un logement, un travail, et parfois renouer avec leur famille et assumer ce "trou" dans leur CV. Ce travail commence souvent en détention, grâce à des dispositifs nouveaux.</desc>
+    <credits>
+      <guest>Anne-Claire Coudray</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Information</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/2E5761DC76D089F209E015AB65EBF20D.jpg"/>
+    <episode-num system="xmltv_ns">7.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108161000 +0100" stop="20251108171500 +0100" channel="TF1.fr">
+    <title lang="fr">Les Docs du week-end</title>
+    <sub-title lang="fr">Stars des émissions cultes : que sont-ils devenus ?</sub-title>
+    <desc lang="fr">Que sont devenues les stars des émissions cultes de la télévision ? De "Koh-Lanta" à "Premiers baisers" en passant par "L'Amour est dans le pré", retour sur la carrière de ces personnalités qui ont marqué les Français. Ils ont connu la gloire et la célébrité, mais des années plus tard, la plupart vivent loin du show-biz et des lumières des plateaux télé.</desc>
+    <credits>
+      <guest>Karine Ferri</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Société</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/C1A59BD2DE9FD191C10079A369EE4ADB.jpg"/>
+    <episode-num system="xmltv_ns">0.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108171500 +0100" stop="20251108175500 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne</title>
+    <desc lang="fr">Retour sur les moments forts de la journée des candidats de "Star Academy" avec un débrief de leurs prestations, des cours et des moments de vie.</desc>
+    <category lang="fr">Programme</category>
+    <category lang="fr">Téléréalité</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/D348DB5B2A1812FC7EE56A68D5AFEF4E.jpg"/>
+    <episode-num system="xmltv_ns">12.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108175500 +0100" stop="20251108190000 +0100" channel="TF1.fr">
+    <title lang="fr">50mn Inside l'actu</title>
+    <sub-title lang="fr">L'actu</sub-title>
+    <desc lang="fr">50' inside, L'actu du 8 novembre 2025 - 50' Inside, c'est toute l'actualité des stars résumée, chaque samedi. Le rendez-vous glamour pour retrouver toujours plus de news, d'interviews, d'actualité people en France et à l'étranger, de destinations de...</desc>
+    <credits>
+      <guest>Isabelle Ithurburu</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Culture</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/ACAE08220CA31B0CEA910FA289963EC2.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108190000 +0100" stop="20251108195000 +0100" channel="TF1.fr">
+    <title lang="fr">50mn Inside le mag</title>
+    <sub-title lang="fr">Le mag</sub-title>
+    <desc lang="fr">50' inside, Le mag du 8 novembre 2025 - 50' Inside, c'est toute l'actualité des stars résumée, chaque samedi. Le rendez-vous glamour pour retrouver toujours plus de news, d'interviews, d'actualité people en France et à l'étranger, de destinations de...</desc>
+    <credits>
+      <guest>Isabelle Ithurburu</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Culture</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/775E8761C33FEF8B50F2EE712D7FF044.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108195000 +0100" stop="20251108195500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <credits>
+      <guest>Laurent Mariotte</guest>
+    </credits>
+    <category lang="fr">Art de vivre</category>
+    <category lang="fr">Gastronomie</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/CB757B212CF266819A3DB8045483CF35.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108195500 +0100" stop="20251108200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Services</category>
+    <category lang="fr">Météo</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/A5D08C82B41A99323616BCACCB15867D.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108200000 +0100" stop="20251108205000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <desc lang="fr">" JT 20h WE " du samedi 8 novembre 2025. Du vendredi au dimanche, la rédaction de TF1 propose "LE 20H" un rendez-vous d'information exposant avec clarté l'actualité française et internationale présentée par Anne-Claire Coudray ou Audrey Crespo-Mara, sa joker.</desc>
+    <credits>
+      <guest>Anne-Claire Coudray</guest>
+    </credits>
+    <category lang="fr">Information</category>
+    <category lang="fr">Journal</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/E35F23298D1DB0C7D0BC2629144AFD90.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108205000 +0100" stop="20251108205500 +0100" channel="TF1.fr">
+    <title lang="fr">Tirage du Loto</title>
+    <desc lang="fr">Les derniers résultats des Loto. Tous les lundi, mercredi et samedi vers 20h35, Jean-Pierre Foucault, Elsa Fayer, Christophe Beaugrand, Karine Ferri ou Iris Mittenaere présentent les résultats des tirages officiels du Loto avec les cinq numéros gagnants ainsi que le numéro chance des derniers tirages.</desc>
+    <category lang="fr">Services</category>
+    <category lang="fr">Loterie</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/7AE05D882C6EA3D9D33957EADC6F7C74.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108205500 +0100" stop="20251108210000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Météo du samedi 8 novembre 2025 à 20h48 sur TF1 présentée par Tatiana Silva ou Evelyne Dheliat. Consultez sans plus attendre les prévisions météorologiques du samedi 8 novembre 2025 à 20h48 et découvrez les températures du jour, du lendemain et des prochains jours en France métropolitaine et en Corse.</desc>
+    <category lang="fr">Services</category>
+    <category lang="fr">Météo</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/8F03EA99E2A380FBDFF696EA6BDCEFD2.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108210000 +0100" stop="20251108225500 +0100" channel="TF1.fr">
+    <title lang="fr">Rugby : Quilter Nations Series</title>
+    <desc lang="fr">Comme chaque année, les meilleures nations de l'hémisphère sud posent leurs valises en Europe pour la traditionnelle tournée d'automne. Trois rencontres sont au programme du XV de France, l'une des têtes d'affiche de cette série de test-matches, qui ouvre sa campagne par un affrontement face aux champions du monde sud-africains, dans son antre du Stade de France. Deux ans après la désillusion du quart de finale de la Coupe du monde 2023, perdu face aux Springboks, les hommes de Fabien Galthié auront à cœur de prendre leur revanche devant leur public et pourront compter sur l'un de leurs hommes forts, Romain Ntamack.</desc>
+    <credits>
+      <commentator>Thomas Lombard</commentator>
+      <commentator>Stefan Etcheverry</commentator>
+    </credits>
+    <category lang="fr">Sport</category>
+    <category lang="fr">Rugby</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/BECCFBDB7C5CF600D7499522E69EFCF7.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108225500 +0100" stop="20251108234000 +0100" channel="TF1.fr">
+    <title lang="fr">Rugby : L'après-match</title>
+    <desc lang="fr">Après chaque match, Isabelle Ithurburu animera l'après-match aux côtés de Christian Califano. Au programme : débriefing, réactions et interviews pour une analyse complète de la rencontre.</desc>
+    <credits>
+      <guest>Christian Califano</guest>
+      <guest>Isabelle Ithurburu</guest>
+    </credits>
+    <category lang="fr">Sport</category>
+    <category lang="fr">Rugby</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/1A4E02E16EAF9A5E64AC1A7686138E47.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251108234000 +0100" stop="20251109013000 +0100" channel="TF1.fr">
+    <title lang="fr">Vendredi, tout est permis avec Arthur</title>
+    <desc lang="fr">Comme d'habitude, le "Vendredi, tout est permis avec Arthur". Et ce ne sont pas les célèbres invités du traditionnel maître de céans qui diront le contraire, eux que l'animateur fait danser, chanter, mimer, improviser et bien plus encore. Mais puisque le show l'exige, tous se prêtent de bonne grâce aux facéties du vendredi soir.</desc>
+    <credits>
+      <guest> Arthur</guest>
+    </credits>
+    <category lang="fr">Programme</category>
+    <category lang="fr">Divertissement</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/7BEF0B051D21B84E4642C038DD2E7B0A.jpg"/>
+    <episode-num system="xmltv_ns">13.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109013000 +0100" stop="20251109055000 +0100" channel="TF1.fr">
+    <title lang="fr">Programmes de la nuit</title>
+    <desc lang="fr">A suivre, des rediffusions des émissions de la chaîne, ainsi que des documentaires et autres reportages destinés à divertir les couche-tard comme les lève-tôt.</desc>
+    <category lang="fr">Programme</category>
+    <category lang="fr">Programme indéterminé</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/EBE64969228A4E87CCB86326164FE0B7.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109055000 +0100" stop="20251109100500 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <desc lang="fr">Azuro &amp; la brigade des dragons (ST) / Barbapapa en Famille (ST) / Super Wings (ST) / Dora (ST) / Les enquêtes sauvages (ST) / Paw Patrol, la Pat'Patrouille (ST) / Miraculous Les aventures de Ladybug et Chat Noir (ST - AD)</desc>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Jeunesse</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/6026CDAE7E84331AE03FEFDBF011CD08.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109100500 +0100" stop="20251109110000 +0100" channel="TF1.fr">
+    <title lang="fr">Automoto</title>
+    <desc lang="fr">Nouveau logo, nouveau décor, nouvel habillage et nouvelle pilote : l'émission présentée par Jean-Pierre Gagick fait peau neuve. Cette saison, une pilote réalise les essais chronométrés : Sarah Bovy, la première femme à avoir signé une pole position en championnat du monde d'endurance, prend place aux côtés des pilotes historiques de l'émission comme Anthony Beltoise ou Bruce Jouanny. Côté motos, les habitués retrouvent Bader Benlekehal. En parallèle, l'émission continue de proposer une large diversité de sujets et de reportages : nouvelle rubrique pratique, essais, comparatifs, sports mécaniques, vintage, l'objectif est de réunir et d'expliquer les thématiques automobiles et motos au plus grand nombre.</desc>
+    <credits>
+      <guest>Jean-Pierre Gagick</guest>
+    </credits>
+    <category lang="fr">Sport</category>
+    <category lang="fr">Sports mécaniques</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/EAEC09ED5FDB2BEC4AF3DBD68CEBE1DC.jpg"/>
+    <episode-num system="xmltv_ns">26.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109110000 +0100" stop="20251109115000 +0100" channel="TF1.fr">
+    <title lang="fr">Téléfoot</title>
+    <desc lang="fr">Chaque dimanche, Grégoire Margotton donne rendez-vous pour le meilleur du football mondial en compagnie des consultants qui continuent d'apporter leur expertise pour décrypter l'actualité du football : le champion du monde Bixente Lizarazu, et Rio Mavuba, ancien international français et champion de France avec Lille. A leurs côtés, les journalistes Thomas Mekhiche et Sévérine Parlakou complètent l'équipe.</desc>
+    <credits>
+      <guest>Rio Mavuba</guest>
+      <guest>Bixente Lizarazu</guest>
+      <guest>Grégoire Margotton</guest>
+      <guest>Thomas Mekhiche</guest>
+      <guest>Séverine Parlakou</guest>
+    </credits>
+    <category lang="fr">Sport</category>
+    <category lang="fr">Football</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/1C344DF74FF2BBB62BE69ED7225C8152.jpg"/>
+    <episode-num system="xmltv_ns">26.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109115000 +0100" stop="20251109125000 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <desc lang="fr">Emission du 9 novembre 2025 - Chaque jour, quatre candidats s'affrontent pour empocher les 30 000 euros de la cagnotte et décrocher l'étoile mystérieuse et ses cadeaux. Seule condition, bien répondre aux questions de culture générale posées par...</desc>
+    <credits>
+      <guest>Jean-Luc Reichmann</guest>
+    </credits>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Jeu</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/D8FDCD5A249EA59DD483EB9556F53EA2.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109125000 +0100" stop="20251109125500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <credits>
+      <guest>Laurent Mariotte</guest>
+    </credits>
+    <category lang="fr">Art de vivre</category>
+    <category lang="fr">Gastronomie</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/379073F402DA5268B6AD131BE7246E81.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109125500 +0100" stop="20251109130000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Météo du dimanche 9 novembre 2025 à 12h51 sur TF1 présentée par Tatiana Silva ou Evelyne Dheliat. Consultez sans plus attendre les prévisions météorologiques du dimanche 9 novembre 2025 à 12h51 et découvrez les températures du jour, du lendemain et des prochains jours en France métropolitaine et en Corse.</desc>
+    <category lang="fr">Services</category>
+    <category lang="fr">Météo</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/8F03EA99E2A380FBDFF696EA6BDCEFD2.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109130000 +0100" stop="20251109134000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <desc lang="fr">" JT 13h WE " du dimanche 9 novembre 2025. Le samedi et dimanche, la rédaction de TF1 propose "LE 13H" un rendez-vous d'information qui met en exergue l'actualité régionale, nationale et internationale présenté par Anne-Claire Coudray ou Audrey Crespo-Mara, sa joker.</desc>
+    <credits>
+      <guest>Anne-Claire Coudray</guest>
+    </credits>
+    <category lang="fr">Information</category>
+    <category lang="fr">Journal</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/A2079DFEE4E14704D26E3F5B5863EF4A.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109134000 +0100" stop="20251109145000 +0100" channel="TF1.fr">
+    <title lang="fr">Grands reportages</title>
+    <sub-title lang="fr">Changement de propriétaires</sub-title>
+    <desc lang="fr">Chaque année, en France, environ un million de transactions immobilières sont signées. Pour ceux qui vendent, c'est un peu d'eux-mêmes qu'ils laissent derrière eux. Pour ceux qui achètent, c'est la promesse d'une nouvelle vie. Une équipe sillonne la France, de la Dordogne à la Bretagne, en passant par l'Alsace ou le Morbihan, pour partir à la découverte de ces biens immobiliers dont le destin s'apprête à basculer.</desc>
+    <credits>
+      <guest>Anne-Claire Coudray</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Information</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/D84C8545406D40BC02FC228F8A83957A.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109145000 +0100" stop="20251109160500 +0100" channel="TF1.fr">
+    <title lang="fr">Reportages découverte</title>
+    <sub-title lang="fr">La renaissance des bâtiments abandonnés</sub-title>
+    <desc lang="fr">La plupart des Français rêve d'avoir un logement à leur image : une maison, un appartement ou un loft. Mais certains d'entre eux ont des envies bien plus originales, comme réhabiliter un lieu chargé d'Histoire et de souvenirs. Durant plus d'un an, une équipe suit ces amoureux du patrimoine dans leur projet insolite auquel ils consacrent leur temps, leurs économies et surtout leurs rêves.</desc>
+    <credits>
+      <guest>Anne-Claire Coudray</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Information</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/817BC80D364075F37B76AC5D88959801.jpg"/>
+    <episode-num system="xmltv_ns">7.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109160500 +0100" stop="20251109172000 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne</title>
+    <desc lang="fr">Retour sur les moments forts de la journée des candidats de "Star Academy" avec un débrief de leurs prestations, des cours et des moments de vie.</desc>
+    <category lang="fr">Programme</category>
+    <category lang="fr">Téléréalité</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/D348DB5B2A1812FC7EE56A68D5AFEF4E.jpg"/>
+    <episode-num system="xmltv_ns">12.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109172000 +0100" stop="20251109182000 +0100" channel="TF1.fr">
+    <title lang="fr">Sept à huit Life</title>
+    <desc lang="fr">Emission du 9 novembre 2025 - Retrouvez l'intégralité de Sept à Huit Life, magazine de l'information présenté par Harry Roselmack tous les dimanches soir.</desc>
+    <credits>
+      <guest>Harry Roselmack</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Société</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/C43B8683EBB5993B3B96FBEB251073B8.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109182000 +0100" stop="20251109195000 +0100" channel="TF1.fr">
+    <title lang="fr">Sept à huit</title>
+    <desc lang="fr">Emission du 9 novembre 2025 - Retrouvez l'intégralité de Sept à Huit, magazine de l'information présenté par Harry Roselmack tous les dimanches soir.</desc>
+    <credits>
+      <guest>Harry Roselmack</guest>
+    </credits>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Société</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/315E5652A01067235C0AFAA6CD05F6CC.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109195000 +0100" stop="20251109195500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <credits>
+      <guest>Laurent Mariotte</guest>
+    </credits>
+    <category lang="fr">Art de vivre</category>
+    <category lang="fr">Gastronomie</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/379073F402DA5268B6AD131BE7246E81.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109195500 +0100" stop="20251109200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Services</category>
+    <category lang="fr">Météo</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/8F03EA99E2A380FBDFF696EA6BDCEFD2.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109200000 +0100" stop="20251109204500 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <desc lang="fr">" JT 20h WE " du dimanche 9 novembre 2025. Du vendredi au dimanche, la rédaction de TF1 propose "LE 20H" un rendez-vous d'information exposant avec clarté l'actualité française et internationale présentée par Anne-Claire Coudray ou Audrey Crespo-Mara, sa joker.</desc>
+    <credits>
+      <guest>Anne-Claire Coudray</guest>
+    </credits>
+    <category lang="fr">Information</category>
+    <category lang="fr">Journal</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/C81AD70D8108120219B95AD77F3C749F.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109204500 +0100" stop="20251109205000 +0100" channel="TF1.fr">
+    <title lang="fr">TF1, rendez-vous sport</title>
+    <desc lang="fr">Emission du 9 novembre 2025 - Episode 10</desc>
+    <category lang="fr">Magazine</category>
+    <category lang="fr">Sport</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/841C3D857304156DB459B283E1AA9B84.jpg"/>
+    <episode-num system="xmltv_ns">7.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109205000 +0100" stop="20251109210000 +0100" channel="TF1.fr">
+    <title lang="fr">Le goût du détail</title>
+    <sub-title lang="fr">Courges</sub-title>
+    <desc lang="fr">Le goût du détail - Courge. 31</desc>
+    <category lang="fr">Art de vivre</category>
+    <category lang="fr">Gastronomie</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/00417DE2DDA6588D8C62A850C92F166F.jpg"/>
+    <episode-num system="xmltv_ns">2.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109210000 +0100" stop="20251109211000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Météo du dimanche 9 novembre 2025 à 21h00 sur TF1 présentée par Tatiana Silva ou Evelyne Dheliat. Consultez sans plus attendre les prévisions météorologiques du dimanche 9 novembre 2025 à 21h00 et découvrez les températures du jour, du lendemain et des prochains jours en France métropolitaine et en Corse.</desc>
+    <category lang="fr">Services</category>
+    <category lang="fr">Météo</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/A5D08C82B41A99323616BCACCB15867D.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251109211000 +0100" stop="20251109230000 +0100" channel="TF1.fr">
+    <title lang="fr">Beast</title>
+    <desc lang="fr">Parti en vacances en compagnie de ses deux filles, le docteur Nate Samuels choisit de les emmener en Afrique du Sud dans une réserve naturelle. Sur place, il retrouve son vieil ami Martin Battles, qui s'occupe du lieu et leur fait découvrir ces magnifiques paysages. Mais ils sont soudain pris en chasse par un lion. Unique survivant de la traque de braconniers sanguinaires, l'animal devient incontrôlable et dévaste tout sur son passage, prenant chaque intrus sur son territoire comme un ennemi. Les vacances de la famille Samuels, qui devaient être paisibles, se transforment en une mission de survie dont elle ne pourra sortir qu'en restant unie...</desc>
+    <credits>
+      <director>Baltasar Kormákur</director>
+      <actor>Chris Gxalaba</actor>
+      <actor>Ronald Mkwanazi</actor>
+      <actor>Thapelo Sebogodi</actor>
+      <actor>Martin Munro</actor>
+      <actor>Daniel Hadebe</actor>
+      <actor>Iyana Halley</actor>
+      <actor>Tafara Nyatsanza</actor>
+      <actor>Naledi Mogadime</actor>
+      <actor>Leah Jeffries</actor>
+      <actor>Idris Elba</actor>
+      <actor>Mduduzi Mavimbela</actor>
+      <actor>Sharlto Copley</actor>
+      <adapter>Ryan Engle</adapter>
+      <producer>James Lopez</producer>
+      <producer>Tony Ducret</producer>
+      <producer>Will Packer</producer>
+      <producer>Matt Reilly</producer>
+      <producer>Shayla Cowan</producer>
+      <producer>Jaime Primak Sullivan</producer>
+      <producer>Baltasar Kormákur</producer>
+      <producer>Bernard Bellew</producer>
+      <composer>Steven Price</composer>
+      <guest>Christophe Dalberg</guest>
+      <guest>Tarryn McCann</guest>
+      <guest>Mark O'Donovan</guest>
+      <guest>RVK Studios</guest>
+      <guest>Brendan Smithers</guest>
+      <guest>Will Packer Productions</guest>
+      <guest>Universal Pictures</guest>
+      <guest> Dentsu</guest>
+    </credits>
+    <category lang="fr">Action</category>
+    <category lang="fr">Policier</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/0709C883A1C2D584FFC3A9064798489B.jpg"/>
+    <rating system="CSA">
+      <value>-12</value>
+      <icon src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Moins12.svg/200px-Moins12.svg.png"/>
+    </rating>
+  </programme>
+  <programme start="20251109230000 +0100" stop="20251110010000 +0100" channel="TF1.fr">
+    <title lang="fr">Expendables 4</title>
+    <desc lang="fr">Après une opération en Libye au cours de laquelle Barney Ross a perdu la vie, Lee Christmas est écarté de l'équipe des Expendables au profit de Gina, son ex-amante. Une nouvelle mission attend les mercenaires, chargés cette fois-ci d'arrêter un groupe terroriste, dirigé par le mystérieux Ocelot, qui a pour objectif de déclencher un conflit nucléaire mondial. L'équipe se rend en Asie, ignorant qu'elle est suivie par Christmas qui a discrètement placé un dispositif GPS sur Gina pour pouvoir la suivre à la trace. Les mercenaires montent à bord du navire sur lequel Ocelot a placé des têtes nucléaires. Mais l'opération tourne mal et les Expendables sont repérés et pris en otage...</desc>
+    <credits>
+      <director>Scott Waugh</director>
+      <actor>Iko Uwais</actor>
+      <actor>50 Cent</actor>
+      <actor>Dolph Lundgren</actor>
+      <actor>Jason Statham</actor>
+      <actor>Sylvester Stallone</actor>
+      <actor>Randy Couture</actor>
+      <actor>Sheila Shah</actor>
+      <actor>Levy Tran</actor>
+      <actor>Tony Jaa</actor>
+      <actor>Jacob Scipio</actor>
+      <actor>Megan Fox</actor>
+      <actor>Andy Garcia</actor>
+      <adapter>Kurt Wimmer</adapter>
+      <adapter>Tad Daggerhart</adapter>
+      <adapter>Max Adams</adapter>
+      <producer>Jonah Leach</producer>
+      <producer>Yariv Lerner</producer>
+      <producer>Michael S. Constable</producer>
+      <producer>Eda Kowan</producer>
+      <producer>Allen Dam</producer>
+      <producer>Kevin King Templeton</producer>
+      <producer>Jonathan Yunger</producer>
+      <producer>Jason Statham</producer>
+      <producer>Les Weldon</producer>
+      <producer>Gisella Marengo</producer>
+      <producer>Steven Paul</producer>
+      <producer>Boaz Davidson</producer>
+      <composer>Guillaume Roussel</composer>
+      <guest>Boris Rehlinger</guest>
+      <guest>Ivan Rangelov</guest>
+      <guest>Millennium Films</guest>
+      <guest>Caroline Anglade</guest>
+      <guest>Pascal Nowak</guest>
+      <guest>Alexandre N'Guyen</guest>
+      <guest>Eliza Banzourkova</guest>
+      <guest>Biljana Jovanovic</guest>
+      <guest>Alain Dorval</guest>
+      <guest>Daniel Njo Lobé</guest>
+      <guest>Kira Kemble</guest>
+      <guest>Nu Boyana Film Studios</guest>
+      <guest>Media Capital Technologies</guest>
+      <guest>Serge Biavan</guest>
+      <guest>Luc Bernard</guest>
+      <guest>Bernard Gabay</guest>
+      <guest>Templeton Media</guest>
+      <guest>Campbell Grobman Films</guest>
+    </credits>
+    <category lang="fr">Film</category>
+    <category lang="fr">Action</category>
+    <icon src="https://img.bouygtel.fr/CMS/images/655FFBB49187CE3356B3B8176622993E.jpg"/>
+    <rating system="CSA">
+      <value>-12</value>
+      <icon src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Moins12.svg/200px-Moins12.svg.png"/>
+    </rating>
+  </programme>
+  <programme start="20251110010000 +0100" stop="20251110055000 +0100" channel="TF1.fr">
+    <title lang="fr">Programmes de la nuit</title>
+    <sub-title lang="fr">Divers</sub-title>
+    <desc lang="fr">A suivre, des rediffusions des émissions de la chaîne, ainsi que des documentaires et autres reportages destinés à divertir les couche-tard comme les lève-tôt.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Divers</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/100372850"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110055000 +0100" stop="20251110065500 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Les Pyjamasques Power Heroes Le cercle des Héros (ST) / Gus le chevalier minus (ST) / Robin des bois (ST) / Les Minijusticiers (ST)</desc>
+    <category lang="fr">Jeunesse</category>
+    <category lang="fr">Mag Jeunesse</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/120161606"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110065500 +0100" stop="20251110095500 +0100" channel="TF1.fr">
+    <title lang="fr">Bonjour ! La Matinale TF1</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Bonjour ! La Matinale TF1 est le premier rendez-vous d'information de la journée. Bruce Toussaint fait aussi intervenir les correspondants en direct en région.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Mag Actualites</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121177734"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110095500 +0100" stop="20251110105500 +0100" channel="TF1.fr">
+    <title lang="fr">Téléshopping</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Le magazine de la consommation et des conseils d'achat, coaché par Marie-Ange Nardi et Alexandre Devoise.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Teleachat</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/101978862"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110105500 +0100" stop="20251110114500 +0100" channel="TF1.fr">
+    <title lang="fr">Les Feux de l'amour</title>
+    <sub-title lang="fr">Episode 9 346</sub-title>
+    <desc lang="fr">Dans le petit monde de Genoa City, les rivalités entre familles influentes vont bon train et se transmettent de génération en génération. Alliances et trahisons, amour et haine, argent et pouvoir, les enjeux sont de taille et les clans Newman, Abbott, Foster et Chancellor n'en finissent plus de se déchirer, parfois au péril de certaines vies.</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Drame</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/101850862"/>
+    <episode-num system="xmltv_ns">0.9345.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110114500 +0100" stop="20251110115000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Mag Gastronomie</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/111200958"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110115000 +0100" stop="20251110125500 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Chaque jour, des candidats tentent de répondre à des questions ludiques et culturelles afin de gagner jusqu'à 30 000 euros. Mais ils devront avoir décroché la mystérieuse étoile aux cadeaux avant que ne retentissent Les 12 coups de midi.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Jeu</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/113632246"/>
+    <episode-num system="xmltv_ns">0.77.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110125500 +0100" stop="20251110130000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Mag Gastronomie</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/111200958"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110130000 +0100" stop="20251110135000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Tous les jours, à 13h, la rédaction propose un point sur l'actualité. Les informations nationales et internationales sont passées à la loupe et mises en perspective.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Journal</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/101387553"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110135000 +0100" stop="20251110135500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Mag Gastronomie</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/111200958"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110135500 +0100" stop="20251110140000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Meteo</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/107596323"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110140000 +0100" stop="20251110142500 +0100" channel="TF1.fr">
+    <title lang="fr">Plus belle la vie, encore plus belle - Saison 2</title>
+    <sub-title lang="fr">Ep 460</sub-title>
+    <desc lang="fr">Une situation préoccupante oblige Louis à passer aux aveux. Au Pavillon des fleurs, la rencontre entre Baptiste et Chloé est électrique. De son côté, Thomas hésite sur le choix de ses futures études et s'en confie à Riva...</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Comedie dramatique</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121532188"/>
+    <episode-num system="xmltv_ns">1.459.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110142500 +0100" stop="20251110160000 +0100" channel="TF1.fr">
+    <title lang="fr">Les champions de Noël</title>
+    <sub-title lang="fr">Téléfilm Comédie sentimentale</sub-title>
+    <desc lang="fr">Céleste est professeur d'astronomie à l'université ; son autre passion, après les étoiles, ce sont les quiz ! Chaque année, elle participe au grand tournoi de Noël organisé au bar de Nick. Cette fois, à contrecoeur, elle doit admettre Max, l'entraîneur de l'équipe de football américain de l'université, dans son équipe...</desc>
+    <category lang="fr">Telefilms</category>
+    <category lang="fr">Telefilm Comedie sentimentale</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121434513"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110160000 +0100" stop="20251110173000 +0100" channel="TF1.fr">
+    <title lang="fr">Coup de foudre au marché de Noël</title>
+    <sub-title lang="fr">Téléfilm Comédie sentimentale</sub-title>
+    <desc lang="fr">Lea, correctrice dans un quotidien, tombe par hasard sur le journal d'un homme qui pourrait bien être l'auteur anonyme d'un mystérieux tableau qui fait l'actualité dans toute la ville. Sa rédactrice en chef décide alors de l'envoyer enquêter en France en compagnie de Mark, un journaliste expérimenté...</desc>
+    <category lang="fr">Telefilms</category>
+    <category lang="fr">Telefilm Comedie sentimentale</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/media.prod.hawc.canal.aws.io-cplus.net/47d1d57d6b4c146b678b3fb13a9d0ed4.jpg"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110173000 +0100" stop="20251110183000 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne - Saison 13</title>
+    <sub-title lang="fr">Episode 22</sub-title>
+    <desc lang="fr">Retour sur les moments forts de la journée des candidats de Star Academy avec un débrief de leurs prestations, des cours et des moments de vie.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Telerealite</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121464238"/>
+    <episode-num system="xmltv_ns">12.21.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110183000 +0100" stop="20251110191000 +0100" channel="TF1.fr">
+    <title lang="fr">Ici tout commence - Saison 6</title>
+    <sub-title lang="fr">Ep 1303</sub-title>
+    <desc lang="fr">A l'hôtel, Teyssier lève le voile sur Clotilde. Face à Anaïs, Tom veut faire ses preuves. De son côté, Gary donne sa parole à Pénélope.</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Drame</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121547949"/>
+    <episode-num system="xmltv_ns">5.1302.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110191000 +0100" stop="20251110195500 +0100" channel="TF1.fr">
+    <title lang="fr">Demain nous appartient - Saison 9</title>
+    <sub-title lang="fr">Ep 2071</sub-title>
+    <desc lang="fr">La police s'intéresse à la situation des soeurs Colin. Le comportement de Fred interroge ses élèves et ses proches. Sylvain tombe sur une couronne mortuaire à son nom.</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Drame</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121547911"/>
+    <episode-num system="xmltv_ns">8.2070.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110195500 +0100" stop="20251110200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Meteo</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/107596323"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110200000 +0100" stop="20251110204500 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Le journal télévisé présente les faits marquants et les événements essentiels de l'actualité nationale et internationale, tout en mettant en valeur l'actualité régionale.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Journal</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/106746346"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110204500 +0100" stop="20251110205000 +0100" channel="TF1.fr">
+    <title lang="fr">Tirage du Loto</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Les derniers résultats des Loto. Tous les lundi, mercredi et samedi vers 20h35, Jean-Pierre Foucault, Elsa Fayer, Christophe Beaugrand, Karine Ferri ou Iris Mittenaere présentent les résultats des tirages officiels du Loto avec les cinq numéros gagnants ainsi que le numéro chance des derniers tirages.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Divers</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/109473079"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110205000 +0100" stop="20251110210000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Mag Gastronomie</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/111200958"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110210000 +0100" stop="20251110211000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Meteo</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/107596323"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110211000 +0100" stop="20251110214000 +0100" channel="TF1.fr">
+    <title lang="fr">Ghosts : Fantômes en héritage</title>
+    <sub-title lang="fr">L'héritage</sub-title>
+    <desc lang="fr">Alison et Nabil, qui sont à court d'argent pour acheter leur première maison, héritent du jour au lendemain d'un immense château. Ils décident d'y emménager et envisagent de le transformer en hôtel. Cependant, le château est également habité par des fantômes, qui sont fermement opposés à cette idée. Après un traumatisme accidentel, Alison peut les voir...</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Fantastique</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121434553"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110214000 +0100" stop="20251110221000 +0100" channel="TF1.fr">
+    <title lang="fr">Ghosts : Fantômes en héritage</title>
+    <sub-title lang="fr">La rencontre</sub-title>
+    <desc lang="fr">Alison, qui se remet de son accident, peut désormais voir et entendre les fantômes. Nabil tente de la rassurer en lui expliquant qu'il s'agit d'effets secondaires dus à sa commotion cérébrale. Le jeune homme se lance dans les travaux de rénovation du château, tandis que les fantômes essaient de communiquer avec Alison...</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Fantastique</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121476581"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110221000 +0100" stop="20251110225000 +0100" channel="TF1.fr">
+    <title lang="fr">Ghosts : Fantômes en héritage</title>
+    <sub-title lang="fr">Les travaux</sub-title>
+    <desc lang="fr">Les ouvriers ont commencé les travaux, ce qui insupporte les fantômes. Georges, le militaire, et Roland, l'homme politique, montent un plan pour les faire déguerpir. A l'occasion de l'anniversaire de la mort de Daniel, le scout, ce dernier demande à Alison de faire passer un message à sa famille...</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Fantastique</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121476569"/>
+    <rating system="CSA">
+      <value>-10</value>
+      <icon src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Moins10.svg/200px-Moins10.svg.png"/>
+    </rating>
+  </programme>
+  <programme start="20251110225000 +0100" stop="20251110225500 +0100" channel="TF1.fr">
+    <title lang="fr">Eurodreams</title>
+    <sub-title lang="fr">Emission du 10 nov. 2025</sub-title>
+    <desc lang="fr">Tous les lundis et jeudis après le prime-time, découvrez les six numéros gagnants et le N Dream et tentez de gagner jusqu'à 20 000 euros par mois pendant trente ans.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Mag Infos</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/115809704"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110225500 +0100" stop="20251110233000 +0100" channel="TF1.fr">
+    <title lang="fr">Ghosts : Fantômes en héritage</title>
+    <sub-title lang="fr">Le tournage</sub-title>
+    <desc lang="fr">Désespérés de devoir trouver de l'argent pour leur projet d'hôtellerie, Alison et Nabil voient finalement la chance leur sourire. Une société de production leur propose de louer leur château pour tourner un film historique. Ils voient débarquer l'acteur Pierre Jouvel, le joker amoureux d'Alison, ce qui rend Nabil jaloux...</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Fantastique</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121434517"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251110233000 +0100" stop="20251111001000 +0100" channel="TF1.fr">
+    <title lang="fr">Ghosts : Fantômes en héritage</title>
+    <sub-title lang="fr">Le voisin</sub-title>
+    <desc lang="fr">Alison et Nabil font la connaissance de leur voisin fortuné, Jacques de Meuret, qui leur annonce qu'ils doivent lui verser un droit de passage. Pour tenter de régler la situation à l'amiable, ils décident de convier Jacques et sa femme à un dîner bourgeois. Au même moment, les fantômes organisent eux aussi une fête spéciale...</desc>
+    <category lang="fr">Series</category>
+    <category lang="fr">Serie Fantastique</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121476547"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251111001000 +0100" stop="20251111005000 +0100" channel="TF1.fr">
+    <title lang="fr">Ghosts : Fantômes en héritage (Le début de la fin) S1 (6/6)</title>
+    <desc lang="fr">«Le début de la fin»Après avoir appris la grossesse d'Alison, le couple décide, au grand dam des fantômes, de renoncer au château, qui n'est pas compatible avec leurs projets d'avenir.</desc>
+    <category lang="fr">Série Science-Fiction</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/24/28/2605529_A.jpg"/>
+  </programme>
+  <programme start="20251111005000 +0100" stop="20251111013500 +0100" channel="TF1.fr">
+    <title lang="fr">New York Unité Spéciale (La musique adoucit le meurtre) S18 (6/21)</title>
+    <desc lang="fr">«La musique adoucit le meurtre»L'équipe enquête sur le viol et le passage à tabac d'une étudiante transgenre. Après avoir interrogé son petit ami, ils s'intéressant à une star du rap.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2023/07/29/07/2251129_A.jpg"/>
+  </programme>
+  <programme start="20251111013500 +0100" stop="20251111023000 +0100" channel="TF1.fr">
+    <title lang="fr">New York Unité Spéciale (Tourner la page) S18 (7/21)</title>
+    <desc lang="fr">«Tourner la page»Une femme a été agressée chez elle. Un homme, qui l'a harcelée par le passé, devient le principal suspect de l'enquête. Il est aussitôt interrogé.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2023/07/15/12/2243461_A.jpg"/>
+  </programme>
+  <programme start="20251111023000 +0100" stop="20251111031500 +0100" channel="TF1.fr">
+    <title lang="fr">New York Unité Spéciale (Carton rouge) S24 (7/22)</title>
+    <desc lang="fr">«Carton rouge»Dans une affaire qui concerne un sportif très populaire, Benson décide de fouiller dans le passé du suspect afin de découvrir d'éventuelles autres victimes.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/02/11/2554675_A.jpg"/>
+  </programme>
+  <programme start="20251111055000 +0100" stop="20251111065500 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <desc lang="fr">Les Pyjamasques Power Heroes Le cercle des Héros (ST) / Gus le chevalier minus (ST) / Robin des bois (ST) / Les Minijusticiers (ST).</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/16/12/2562822_A.jpg"/>
+  </programme>
+  <programme start="20251111065500 +0100" stop="20251111095500 +0100" channel="TF1.fr">
+    <title lang="fr">Bonjour ! La Matinale TF1</title>
+    <desc lang="fr">"Bonjour ! La Matinale TF1" est le premier rendez-vous de la journée à l'antenne de TF1 du lundi au vendredi de 6h55 à 10h00, présenté par Bruce Toussaint et sa bande chroniqueurs.</desc>
+    <category lang="fr">Magazine d'information</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/01/21/2596024_A.jpg"/>
+  </programme>
+  <programme start="20251111095500 +0100" stop="20251111105500 +0100" channel="TF1.fr">
+    <title lang="fr">Téléshopping</title>
+    <desc lang="fr">Le magazine de la consommation et des conseils d'achat, coaché par Marie-Ange Nardi et Alexandre Devoise.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2024/01/05/18/1907559_A.jpg"/>
+  </programme>
+  <programme start="20251111105500 +0100" stop="20251111114500 +0100" channel="TF1.fr">
+    <title lang="fr">Les Feux de l'amour (n°9347)</title>
+    <desc lang="fr">Le soap américain numéro 1 qui propose chaque jour de suivre les rivalités, les amours, les espoirs et les craintes des habitants de Genoa City à travers la vie des familles Newman, Abbott, Baldwin et Winters.</desc>
+    <category lang="fr">Série</category>
+    <icon src="https://images.voomotion.be/Events/2023/11/16/06/1681933_A.jpg"/>
+  </programme>
+  <programme start="20251111114500 +0100" stop="20251111115000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251111115000 +0100" stop="20251111125500 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <desc lang="fr">Chaque jour, quatre candidats s'affrontent pour empocher les 30 000 euros de la cagnotte et décrocher l'étoile mystérieuse et ses cadeaux. Seule condition, bien répondre aux questions de culture générale posées par Jean-Luc Reichmann.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/11/02/1726981_A.jpg"/>
+  </programme>
+  <programme start="20251111125500 +0100" stop="20251111130000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251111130000 +0100" stop="20251111135000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <desc lang="fr">Tous les jours, à 13h, la rédaction propose un point sur l'actualité. Les informations nationales et internationales sont passées à la loupe et mises en perspective.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/36/1877963_A.jpg"/>
+  </programme>
+  <programme start="20251111135000 +0100" stop="20251111135500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251111135500 +0100" stop="20251111140000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251111140000 +0100" stop="20251111142500 +0100" channel="TF1.fr">
+    <title lang="fr">Plus belle la vie, encore plus belle S2 (n°461)</title>
+    <desc lang="fr">Les habitants se mobilisent pour aider l'un des leurs, tandis qu'Alice reçoit une proposition mystérieuse. De son côté, Eric peine à retrouver sa place.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/39/2465990_A.jpg"/>
+  </programme>
+  <programme start="20251111142500 +0100" stop="20251111160000 +0100" channel="TF1.fr">
+    <title lang="fr">Passion Noël</title>
+    <desc lang="fr">Engagée par un riche investisseur qui veut organiser un Noël de rêve pour sa famille, une jeune entrepreneuse se découvre des atomes crochus avec l'intendant de ce dernier.</desc>
+    <category lang="fr">Film</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/28/37/2606171_A.jpg"/>
+  </programme>
+  <programme start="20251111160000 +0100" stop="20251111173000 +0100" channel="TF1.fr">
+    <title lang="fr">Noël au château enchanté</title>
+    <desc lang="fr">En déplacement en Irlande, deux soeurs déclarent vouloir organiser les festivités de Noël au propriétaire d'un château malgré leur inexpérience en la matière.</desc>
+    <category lang="fr">Film</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/28/37/2606172_A.jpg"/>
+  </programme>
+  <programme start="20251111173000 +0100" stop="20251111183000 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne S13</title>
+    <desc lang="fr">Rendez-vous tous les jours pour La Quotidienne incarnée par la voix de Karima CHARNI ! Chaque mercredi, après l'annonce des nommés par le directeur, Michael GOLDMAN, Karima CHARNI lancera les votes auprès des téléspectateurs pour soutenir leur candidat préféré.</desc>
+    <category lang="fr">Télé-Réalité</category>
+    <icon src="https://images.voomotion.be/Events/2024/03/28/21/1750348_A.jpg"/>
+  </programme>
+  <programme start="20251111183000 +0100" stop="20251111191000 +0100" channel="TF1.fr">
+    <title lang="fr">Ici tout commence S6 (n°1304)</title>
+    <desc lang="fr">Andréa met Clotilde en garde. Chez les Lanneau, Fleur fait place nette. A la coloc, Billie et Anaïs font la fine bouche.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/24/43/2605067_A.jpg"/>
+  </programme>
+  <programme start="20251111191000 +0100" stop="20251111195500 +0100" channel="TF1.fr">
+    <title lang="fr">Demain nous appartient S9 (n°2072)</title>
+    <desc lang="fr">Les enquêteurs découvrent que la mère des soeurs Colin a disparu. Sylvain pose un ultimatum à Christelle. William se sert des réseaux sociaux pour se venger.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/08/36/2598564_A.jpg"/>
+  </programme>
+  <programme start="20251111195500 +0100" stop="20251111200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251111200000 +0100" stop="20251111204500 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <desc lang="fr">Le journal télévisé présente les faits marquants et les événements essentiels de l'actualité nationale et internationale, tout en mettant en valeur l'actualité régionale.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/38/2482985_A.jpg"/>
+  </programme>
+  <programme start="20251111204500 +0100" stop="20251111205000 +0100" channel="TF1.fr">
+    <title lang="fr">My Million</title>
+    <desc lang="fr">Au menu, les derniers résultats d'EuroMillions ainsi que les codes gagnants My Million, avec les 5 numéros gagnants et les 2 bonnes étoiles de la loterie.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2024/12/20/16/1678181_A.jpg"/>
+  </programme>
+  <programme start="20251111205000 +0100" stop="20251111210000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251111210000 +0100" stop="20251111211000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251111211000 +0100" stop="20251111235500 +0100" channel="TF1.fr">
+    <title lang="fr">Harry Potter et la Coupe de feu</title>
+    <desc lang="fr">Désigné à la surprise générale par la Coupe de feu, Harry Potter va se joindre aux élèves en lice pour le Tournoi des Trois Sorciers, organisé à Poudlard.</desc>
+    <category lang="fr">Fantastique</category>
+    <icon src="https://images.voomotion.be/Events/2024/12/25/13/2268102_A.jpg"/>
+  </programme>
+  <programme start="20251111235500 +0100" stop="20251112012000 +0100" channel="TF1.fr">
+    <title lang="fr">Harry Potter : aux origines de la magie</title>
+    <desc lang="fr">Retour sur l'histoire de la saga littéraire "Harry Potter", la désormais classiques suite de low fantasy de J.K. Rowling, dont le premier des 7 volumes est paru en 1997.</desc>
+    <category lang="fr">Documentaire</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/15/45/2377562_A.jpg"/>
+  </programme>
+  <programme start="20251112012000 +0100" stop="20251112012500 +0100" channel="TF1.fr">
+    <title lang="fr">Tirage de l'EuroMillions</title>
+    <desc lang="fr">Consultez les derniers résultats d'EuroMillions ainsi que les codes gagnants My Million. Tous les mardi et vendredi, Elsa fayer ou Karine Ferri vous présentent les résultats des tirages officiels de My Million vers 20h50 puis EuroMillions vers 21h50. Découvrez les 5 numéros gagnants et les 2 bonnes étoiles d'EuroMillions mais aussi les codes gagnants My Million des derniers tirages !</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/56/2541815_A.jpg"/>
+  </programme>
+  <programme start="20251112055000 +0100" stop="20251112065500 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <desc lang="fr">Les Pyjamasques Power Heroes Le cercle des Héros (ST) / Gus le chevalier minus (ST) / Robin des bois (ST) / Les Minijusticiers (ST).</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/16/12/2562822_A.jpg"/>
+  </programme>
+  <programme start="20251112065500 +0100" stop="20251112095500 +0100" channel="TF1.fr">
+    <title lang="fr">Bonjour ! La Matinale TF1</title>
+    <desc lang="fr">"Bonjour ! La Matinale TF1" est le premier rendez-vous de la journée à l'antenne de TF1 du lundi au vendredi de 6h55 à 10h00, présenté par Bruce Toussaint et sa bande chroniqueurs.</desc>
+    <category lang="fr">Magazine d'information</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/01/21/2596024_A.jpg"/>
+  </programme>
+  <programme start="20251112095500 +0100" stop="20251112105500 +0100" channel="TF1.fr">
+    <title lang="fr">Téléshopping</title>
+    <desc lang="fr">Le magazine de la consommation et des conseils d'achat, coaché par Marie-Ange Nardi et Alexandre Devoise.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2024/01/05/18/1907559_A.jpg"/>
+  </programme>
+  <programme start="20251112105500 +0100" stop="20251112114500 +0100" channel="TF1.fr">
+    <title lang="fr">Les Feux de l'amour (n°9348)</title>
+    <desc lang="fr">Le soap américain numéro 1 qui propose chaque jour de suivre les rivalités, les amours, les espoirs et les craintes des habitants de Genoa City à travers la vie des familles Newman, Abbott, Baldwin et Winters.</desc>
+    <category lang="fr">Série</category>
+    <icon src="https://images.voomotion.be/Events/2023/11/16/06/1681933_A.jpg"/>
+  </programme>
+  <programme start="20251112114500 +0100" stop="20251112115000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251112115000 +0100" stop="20251112125500 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <desc lang="fr">Chaque jour, quatre candidats s'affrontent pour empocher les 30 000 euros de la cagnotte et décrocher l'étoile mystérieuse et ses cadeaux. Seule condition, bien répondre aux questions de culture générale posées par Jean-Luc Reichmann.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/11/02/1726981_A.jpg"/>
+  </programme>
+  <programme start="20251112125500 +0100" stop="20251112130000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251112130000 +0100" stop="20251112135000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <desc lang="fr">Tous les jours, à 13h, la rédaction propose un point sur l'actualité. Les informations nationales et internationales sont passées à la loupe et mises en perspective.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/36/1877963_A.jpg"/>
+  </programme>
+  <programme start="20251112135000 +0100" stop="20251112135500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251112135500 +0100" stop="20251112140000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251112140000 +0100" stop="20251112142500 +0100" channel="TF1.fr">
+    <title lang="fr">Plus belle la vie, encore plus belle S2 (n°462)</title>
+    <desc lang="fr">Barbara met son plan à exécution avec une aide précieuse, tandis que Baptiste et Chloé se confient sur leurs difficultés. Eric rend visite à Laura.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/39/2465990_A.jpg"/>
+  </programme>
+  <programme start="20251112142500 +0100" stop="20251112160000 +0100" channel="TF1.fr">
+    <title lang="fr">Les règles d'or d'un Noël parfait</title>
+    <desc lang="fr">Une mère de famille voit une héroïne de films de Noël sortir de son écran de télévision pour l'aider à réaliser son rêve d'organiser un réveillon parfait avec sa famille.</desc>
+    <category lang="fr">Film</category>
+    <icon src="https://images.voomotion.be/Events/2024/04/09/11/1854058_A.jpg"/>
+  </programme>
+  <programme start="20251112160000 +0100" stop="20251112173000 +0100" channel="TF1.fr">
+    <title lang="fr">La recette d'un Noël parfait</title>
+    <desc lang="fr">Après une déception amoureuse, une jeune cheffe quitte Londres pour s'installer à Chicago où elle travaille pour une hotline culinaire et s'éprend d'un jeune homme.</desc>
+    <category lang="fr">Film</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/25/17/1748525_A.jpg"/>
+  </programme>
+  <programme start="20251112173000 +0100" stop="20251112183000 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne S13</title>
+    <desc lang="fr">Rendez-vous tous les jours pour La Quotidienne incarnée par la voix de Karima CHARNI ! Chaque mercredi, après l'annonce des nommés par le directeur, Michael GOLDMAN, Karima CHARNI lancera les votes auprès des téléspectateurs pour soutenir leur candidat préféré.</desc>
+    <category lang="fr">Télé-Réalité</category>
+    <icon src="https://images.voomotion.be/Events/2025/05/17/36/1752448_A.jpg"/>
+  </programme>
+  <programme start="20251112183000 +0100" stop="20251112191000 +0100" channel="TF1.fr">
+    <title lang="fr">Ici tout commence S6 (n°1305)</title>
+    <desc lang="fr">Face à Hector, Clotilde crache le morceau. Gaëtan veut mettre Alice dans sa poche. Chez les Lanneau, Solal et Lionel trouvent un terrain d'entente.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/24/43/2605067_A.jpg"/>
+  </programme>
+  <programme start="20251112191000 +0100" stop="20251112195500 +0100" channel="TF1.fr">
+    <title lang="fr">Demain nous appartient S9 (n°2073)</title>
+    <desc lang="fr">Violette aide Judith et Jordan à localiser le domicile d'Esmée et Diane. Victor fait changer les plans de Charles. A l'hôpital, la gaffe de Noor accentue les tensions.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/08/36/2598564_A.jpg"/>
+  </programme>
+  <programme start="20251112195500 +0100" stop="20251112200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251112200000 +0100" stop="20251112204500 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <desc lang="fr">Le journal télévisé présente les faits marquants et les événements essentiels de l'actualité nationale et internationale, tout en mettant en valeur l'actualité régionale.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/38/2482985_A.jpg"/>
+  </programme>
+  <programme start="20251112204500 +0100" stop="20251112205000 +0100" channel="TF1.fr">
+    <title lang="fr">Tirage du Loto</title>
+    <desc lang="fr">Les derniers résultats des Loto. Tous les lundi, mercredi et samedi vers 20h35, Jean-Pierre Foucault, Elsa Fayer, Christophe Beaugrand, Karine Ferri ou Iris Mittenaere présentent les résultats des tirages officiels du Loto avec les cinq numéros gagnants ainsi que le numéro chance des derniers tirages.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/10/2541809_A.jpg"/>
+  </programme>
+  <programme start="20251112205000 +0100" stop="20251112210000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251112210000 +0100" stop="20251112211000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251112211000 +0100" stop="20251112215500 +0100" channel="TF1.fr">
+    <title lang="fr">S.W.A.T. *2017 (L'infiltré) S8 (12/22)</title>
+    <desc lang="fr">«L'infiltré»Alors qu'il travaille sous couverture pour l'unité, Alfaro rencontre un vieil associé à Long Beach. Il s'embarque alors dans une mission dangereuse.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/28/02/2606610_A.jpg"/>
+  </programme>
+  <programme start="20251112215500 +0100" stop="20251112225000 +0100" channel="TF1.fr">
+    <title lang="fr">S.W.A.T. *2017 (40 ans de service) S6 (21/22)</title>
+    <desc lang="fr">«40 ans de service»Alors qu'il mène une opération antigang, le SWAT découvre qu'un cartel dangereux est sur le point de s'implanter dans la ville. Hicks fête une date importante.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2024/02/08/06/2284654_A.jpg"/>
+  </programme>
+  <programme start="20251112225000 +0100" stop="20251112233500 +0100" channel="TF1.fr">
+    <title lang="fr">S.W.A.T. *2017 (La vengeance de Zamora) S6 (22/22)</title>
+    <desc lang="fr">«La vengeance de Zamora»Avide de vengeance envers ceux qui ont tué son fils, un chef de cartel sème le chaos à Los Angeles. L'équipe et la DEA se chargent d'y mettre un terme.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2024/02/08/06/2284656_A.jpg"/>
+  </programme>
+  <programme start="20251112233500 +0100" stop="20251113002500 +0100" channel="TF1.fr">
+    <title lang="fr">S.W.A.T. *2017 (Le royaume des bienheureux) S4 (6/18)</title>
+    <desc lang="fr">«Le royaume des bienheureux»Chris fait appel à l'équipe pour venir en aide à une adolescente issue d'un mystérieux culte religieux. Hondo, de son côté, reçoit de mauvaises nouvelles de Darryl.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/28/00/2136989_A.jpg"/>
+  </programme>
+  <programme start="20251113002500 +0100" stop="20251113011000 +0100" channel="TF1.fr">
+    <title lang="fr">S.W.A.T. *2017 (Tendre l'autre joue) S6 (19/22)</title>
+    <desc lang="fr">«Tendre l'autre joue»L'équipe doit retrouver l'identité des ravisseurs qui ont pris en otage la famille d'un gardien de prison. Tan, lui, s'apprête à faire un choix difficile.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/21/14/2603742_A.jpg"/>
+  </programme>
+  <programme start="20251113011000 +0100" stop="20251113021500 +0100" channel="TF1.fr">
+    <title lang="fr">S.W.A.T. *2017 (La ruée vers l'or) S6 (20/22)</title>
+    <desc lang="fr">«La ruée vers l'or»L'équipe se lance sur les traces de cambrioleurs qui prennent pour cible des personnes âgées. Hondo aide un vieil ami à retrouver sa fille portée disparue.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2025/08/05/39/2413332_A.jpg"/>
+  </programme>
+  <programme start="20251113055000 +0100" stop="20251113065500 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <desc lang="fr">Une émission jeunesse qui propose les meilleures séries de dessins animés du moment.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/16/12/2562822_A.jpg"/>
+  </programme>
+  <programme start="20251113065500 +0100" stop="20251113095500 +0100" channel="TF1.fr">
+    <title lang="fr">Bonjour ! La Matinale TF1</title>
+    <desc lang="fr">"Bonjour ! La Matinale TF1" est le premier rendez-vous de la journée à l'antenne de TF1 du lundi au vendredi de 6h55 à 10h00, présenté par Bruce Toussaint et sa bande chroniqueurs.</desc>
+    <category lang="fr">Magazine d'information</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/01/21/2596024_A.jpg"/>
+  </programme>
+  <programme start="20251113095500 +0100" stop="20251113105500 +0100" channel="TF1.fr">
+    <title lang="fr">Téléshopping</title>
+    <desc lang="fr">Le magazine de la consommation et des conseils d'achat, coaché par Marie-Ange Nardi et Alexandre Devoise.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2024/01/05/18/1907559_A.jpg"/>
+  </programme>
+  <programme start="20251113105500 +0100" stop="20251113114500 +0100" channel="TF1.fr">
+    <title lang="fr">Les Feux de l'amour (n°9349)</title>
+    <desc lang="fr">Le soap américain numéro 1 qui propose chaque jour de suivre les rivalités, les amours, les espoirs et les craintes des habitants de Genoa City à travers la vie des familles Newman, Abbott, Baldwin et Winters.</desc>
+    <category lang="fr">Série</category>
+    <icon src="https://images.voomotion.be/Events/2023/11/16/06/1681933_A.jpg"/>
+  </programme>
+  <programme start="20251113114500 +0100" stop="20251113115000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251113115000 +0100" stop="20251113125500 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <desc lang="fr">Chaque jour, quatre candidats s'affrontent pour empocher les 30 000 euros de la cagnotte et décrocher l'étoile mystérieuse et ses cadeaux. Seule condition, bien répondre aux questions de culture générale posées par Jean-Luc Reichmann.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/11/02/1726981_A.jpg"/>
+  </programme>
+  <programme start="20251113125500 +0100" stop="20251113130000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251113130000 +0100" stop="20251113135000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <desc lang="fr">Tous les jours, à 13h, la rédaction propose un point sur l'actualité. Les informations nationales et internationales sont passées à la loupe et mises en perspective.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/36/1877963_A.jpg"/>
+  </programme>
+  <programme start="20251113135000 +0100" stop="20251113135500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251113135500 +0100" stop="20251113140000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251113140000 +0100" stop="20251113142500 +0100" channel="TF1.fr">
+    <title lang="fr">Plus belle la vie, encore plus belle S2 (n°463)</title>
+    <desc lang="fr">Chabrol poursuit son chantage sur les Mistraliens, qui organisent leur riposte avec un complice inattendu. Apolline fait face à un imprévu avant son oral.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/39/2465990_A.jpg"/>
+  </programme>
+  <programme start="20251113142500 +0100" stop="20251113162500 +0100" channel="TF1.fr">
+    <title lang="fr">Coup de foudre au gala de Noël</title>
+    <desc lang="fr">Une organisatrice d'événements et un riche héritier se découvrent des atomes crochus alors qu'ils tentent de retrouver un objet inestimable qui a disparu.</desc>
+    <category lang="fr">Film</category>
+    <icon src="https://images.voomotion.be/Events/2025/11/04/00/2609424_A.jpg"/>
+  </programme>
+  <programme start="20251113162500 +0100" stop="20251113172500 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne S13</title>
+    <desc lang="fr">Rendez-vous tous les jours pour La Quotidienne incarnée par la voix de Karima CHARNI ! Chaque mercredi, après l'annonce des nommés par le directeur, Michael GOLDMAN, Karima CHARNI lancera les votes auprès des téléspectateurs pour soutenir leur candidat préféré.</desc>
+    <category lang="fr">Télé-Réalité</category>
+    <icon src="https://images.voomotion.be/Events/2024/03/28/21/1750348_A.jpg"/>
+  </programme>
+  <programme start="20251113172500 +0100" stop="20251113195500 +0100" channel="TF1.fr">
+    <title lang="fr">13 Novembre, dix ans après : La France se souvient</title>
+    <desc lang="fr">Cérémonie d'hommage aux victimes des attentats du 13 novembre 2015, en présence du président de la République, Emmanuel Macron, qui inaugure à cette occasion le Jardin du Souvenir, un nouvel espace de mémoire en plein coeur de Paris.</desc>
+    <category lang="fr">Divertissement</category>
+    <icon src="https://images.voomotion.be/Events/2024/02/27/51/1768818_A.jpg"/>
+  </programme>
+  <programme start="20251113195500 +0100" stop="20251113200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251113200000 +0100" stop="20251113203500 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <desc lang="fr">Le journal télévisé présente les faits marquants et les événements essentiels de l'actualité nationale et internationale, tout en mettant en valeur l'actualité régionale.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/38/2482985_A.jpg"/>
+  </programme>
+  <programme start="20251113203500 +0100" stop="20251113204000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251113204000 +0100" stop="20251113222500 +0100" channel="TF1.fr">
+    <title lang="fr">France / Ukraine</title>
+    <desc lang="fr">En manque d'inspiration offensive et trop friables défensivement, les Bleus ont été tenus en échec par l'Islande à la mi-octobre, malgré des réalisations de Christopher Nkunku et Jean-Philippe Mateta (2-2). Ce résultat décevant contraint désormais les hommes de Didier Deschamps, toujours en tête du groupe D, à s'imposer au Parc des Princes face à l'Ukraine pour valider définitivement leur billet pour la Coupe du monde 2026. Une mission tout à fait à leur portée, d'autant que les vice-champions du monde tricolores, privés de Kylian Mbappé à Reykjavik, devraient retrouver leur capitaine et leader offensif pour cette avant-dernière rencontre des éliminatoires.</desc>
+    <category lang="fr">Football</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/27/57/2525517_A.jpg"/>
+  </programme>
+  <programme start="20251113222500 +0100" stop="20251113224000 +0100" channel="TF1.fr">
+    <title lang="fr">Après match</title>
+    <desc lang="fr">Après la rencontre, retrouvez L'après-match, présenté par Thomas Mekhiche. Débrief, interviews, revivez les moments forts !</desc>
+    <category lang="fr">Football</category>
+    <icon src="https://images.voomotion.be/Events/2025/03/06/00/2273553_A.jpg"/>
+  </programme>
+  <programme start="20251113224000 +0100" stop="20251113224500 +0100" channel="TF1.fr">
+    <title lang="fr">Eurodreams</title>
+    <desc lang="fr">Tous les lundis et jeudis après le prime-time, découvrez les six numéros gagnants et le N Dream et tentez de gagner jusqu'à 20 000 euros par mois pendant trente ans.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/25/2419720_A.jpg"/>
+  </programme>
+  <programme start="20251113224500 +0100" stop="20251113233000 +0100" channel="TF1.fr">
+    <title lang="fr">Esprits criminels (Un bruit dans la tête) S13 (21/22)</title>
+    <desc lang="fr">«Un bruit dans la tête»L'unité d'élite est appelée en renfort à Taos, au Nouveau-Mexique : plusieurs personnes ont été assassinées d'un coup de perceuse dans le crâne.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2025/09/05/11/2586161_A.jpg"/>
+  </programme>
+  <programme start="20251113233000 +0100" stop="20251114002000 +0100" channel="TF1.fr">
+    <title lang="fr">Esprits criminels (Un élève discipliné) S11 (21/22)</title>
+    <desc lang="fr">«Un élève discipliné»En ouvrant un colis adressé à une tueuse incarcérée dans leur établissement, deux surveillants découvrent les vêtements souillés de deux adolescents disparus.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/21/05/2041708_A.jpg"/>
+  </programme>
+  <programme start="20251114002000 +0100" stop="20251114011000 +0100" channel="TF1.fr">
+    <title lang="fr">Esprits criminels (La grande évasion) S11 (22/22)</title>
+    <desc lang="fr">«La grande évasion»Hotch a été arrêté par la police, soupçonné de participer à un complot. Ses collègues tentent de le disculper et découvrent une conspiration de grande ampleur.</desc>
+    <category lang="fr">Série Policière</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/21/39/2548839_A.jpg"/>
+  </programme>
+  <programme start="20251114055000 +0100" stop="20251114065500 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <desc lang="fr">Les Pyjamasques Power Heroes Le cercle des Héros (ST) / Gus le chevalier minus (ST) / Robin des bois (ST) / Les Minijusticiers (ST).</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/16/12/2562822_A.jpg"/>
+  </programme>
+  <programme start="20251114065500 +0100" stop="20251114095500 +0100" channel="TF1.fr">
+    <title lang="fr">Bonjour ! La Matinale TF1</title>
+    <desc lang="fr">"Bonjour ! La Matinale TF1" est le premier rendez-vous de la journée à l'antenne de TF1 du lundi au vendredi de 6h55 à 10h00, présenté par Bruce Toussaint et sa bande chroniqueurs.</desc>
+    <category lang="fr">Magazine d'information</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/01/21/2596024_A.jpg"/>
+  </programme>
+  <programme start="20251114095500 +0100" stop="20251114105500 +0100" channel="TF1.fr">
+    <title lang="fr">Téléshopping</title>
+    <desc lang="fr">Le magazine de la consommation et des conseils d'achat, coaché par Marie-Ange Nardi et Alexandre Devoise.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2024/01/05/18/1907559_A.jpg"/>
+  </programme>
+  <programme start="20251114105500 +0100" stop="20251114114500 +0100" channel="TF1.fr">
+    <title lang="fr">Les Feux de l'amour (n°9350)</title>
+    <desc lang="fr">Le soap américain numéro 1 qui propose chaque jour de suivre les rivalités, les amours, les espoirs et les craintes des habitants de Genoa City à travers la vie des familles Newman, Abbott, Baldwin et Winters.</desc>
+    <category lang="fr">Série</category>
+    <icon src="https://images.voomotion.be/Events/2023/11/16/06/1681933_A.jpg"/>
+  </programme>
+  <programme start="20251114114500 +0100" stop="20251114115000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251114115000 +0100" stop="20251114125500 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <desc lang="fr">Chaque jour, quatre candidats s'affrontent pour empocher les 30 000 euros de la cagnotte et décrocher l'étoile mystérieuse et ses cadeaux. Seule condition, bien répondre aux questions de culture générale posées par Jean-Luc Reichmann.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/11/02/1726981_A.jpg"/>
+  </programme>
+  <programme start="20251114125500 +0100" stop="20251114130000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251114130000 +0100" stop="20251114135000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <desc lang="fr">Tous les jours, à 13h, la rédaction propose un point sur l'actualité. Les informations nationales et internationales sont passées à la loupe et mises en perspective.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/36/1877963_A.jpg"/>
+  </programme>
+  <programme start="20251114135000 +0100" stop="20251114135500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251114135500 +0100" stop="20251114140000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251114140000 +0100" stop="20251114142500 +0100" channel="TF1.fr">
+    <title lang="fr">Plus belle la vie, encore plus belle S2 (n°464)</title>
+    <desc lang="fr">Après un rebondissement inattendu, la police s'implique dans l'affaire. Mirta demande à Luna de prendre part à l'éducation de son petit-fils.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/39/2465990_A.jpg"/>
+  </programme>
+  <programme start="20251114142500 +0100" stop="20251114160000 +0100" channel="TF1.fr">
+    <title lang="fr">Notre histoire de Noël</title>
+    <desc lang="fr">Alors qu'il se retrouve en tête-à-tête avec les parents de sa petite amie, un jeune homme découvre les merveilleux détails de leur rencontre une décennie plus tôt.</desc>
+    <category lang="fr">Film</category>
+    <icon src="https://images.voomotion.be/Events/2025/11/04/37/2609444_A.jpg"/>
+  </programme>
+  <programme start="20251114160000 +0100" stop="20251114173000 +0100" channel="TF1.fr">
+    <title lang="fr">L'âme soeur de Noël</title>
+    <desc lang="fr">Une vétérinaire, spécialiste des phoques, est appelée par sa meilleure amie, directrice du centre de soins pour animaux marins, pour y effectuer un remplacement.</desc>
+    <category lang="fr">Film</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/21/04/2603680_A.jpg"/>
+  </programme>
+  <programme start="20251114173000 +0100" stop="20251114183000 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne S13</title>
+    <desc lang="fr">Rendez-vous tous les jours pour La Quotidienne incarnée par la voix de Karima CHARNI ! Chaque mercredi, après l'annonce des nommés par le directeur, Michael GOLDMAN, Karima CHARNI lancera les votes auprès des téléspectateurs pour soutenir leur candidat préféré.</desc>
+    <category lang="fr">Télé-Réalité</category>
+    <icon src="https://images.voomotion.be/Events/2025/05/17/36/1752448_A.jpg"/>
+  </programme>
+  <programme start="20251114183000 +0100" stop="20251114191000 +0100" channel="TF1.fr">
+    <title lang="fr">Ici tout commence S6 (n°1306)</title>
+    <desc lang="fr">Avec Teyssier, Hector impose ses règles. De son côté, Billie cherche son ange gardien. Angèle révèle le pot aux roses à Alice.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/24/43/2605067_A.jpg"/>
+  </programme>
+  <programme start="20251114191000 +0100" stop="20251114195500 +0100" channel="TF1.fr">
+    <title lang="fr">Demain nous appartient S9 (n°2074)</title>
+    <desc lang="fr">Judith révèle son trauma à Jordan. Soraya et Gabriel ont rendez-vous chez la gynécologue. Le discours de Fred provoque un énorme malaise chez les auditeurs.</desc>
+    <category lang="fr">Série Dramatique</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/08/36/2598564_A.jpg"/>
+  </programme>
+  <programme start="20251114195500 +0100" stop="20251114200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251114200000 +0100" stop="20251114204500 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <desc lang="fr">Le journal télévisé présente les faits marquants et les événements essentiels de l'actualité nationale et internationale, tout en mettant en valeur l'actualité régionale.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/38/2482985_A.jpg"/>
+  </programme>
+  <programme start="20251114204500 +0100" stop="20251114205000 +0100" channel="TF1.fr">
+    <title lang="fr">My Million</title>
+    <desc lang="fr">Au menu, les derniers résultats d'EuroMillions ainsi que les codes gagnants My Million, avec les 5 numéros gagnants et les 2 bonnes étoiles de la loterie.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2024/12/20/16/1678181_A.jpg"/>
+  </programme>
+  <programme start="20251114205000 +0100" stop="20251114210000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251114210000 +0100" stop="20251114211000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251114211000 +0100" stop="20251114223000 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy S13</title>
+    <desc lang="fr">Originaires de France, de Suisse ou de Belgique, dix-sept académiciens ont fait leurs premiers pas dans le mythique château de Dammarie-les-Lys, bien décidés à réaliser leur rêve et à marcher dans les traces de leurs illustres idoles. Qui de Victor, Anouk, Bastiaan, Ema, Théo P., Lily, Sarah, Théo L., Noah, Ambre, Mehdi, Léane, Léo, Lenny, Jeanne ou Mélissa succèdera à Marine, la grande gagnante de la précédente édition ? Ces talents en herbe vont se donner tous les moyens pour atteindre leur objectif. Pour cela, ils doivent mettre en pratique les précieux conseils délivrés quotidiennement par un corps enseignant aux petits soins.</desc>
+    <category lang="fr">Télé-Réalité</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/30/30/2607474_A.jpg"/>
+  </programme>
+  <programme start="20251114223000 +0100" stop="20251114234000 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy S13</title>
+    <desc lang="fr">Agés de 18 à 24 ans, dix-sept artistes en devenir ont gagné leur place dans l'aventure qui se joue entre les murs du légendaire château de Dammarie-les-Lys. Leur point commun ? Un talent artistique qu'ils vont perfectionner au fil de l'aventure. Les défis seront nombreux, mais ils devront, chaque semaine, donner le meilleur d'eux-mêmes pour rester en lice et espérer atteindre la finale. Le grand gagnant de cette saison 2025 remportera un contrat d'enregistrement exclusif avec Sony Music Entertainment France, lui garantissant la production d'un premier album, ainsi que la somme de 100 000 euros. Pour cette édition, Michael Goldman s'est entouré d'un nouveau corps professoral.</desc>
+    <category lang="fr">Télé-Réalité</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/03/22/2300249_A.jpg"/>
+  </programme>
+  <programme start="20251114234000 +0100" stop="20251115004500 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, retour au château S13</title>
+    <desc lang="fr">Karima Charni raccompagne les élèves au château, et revient avec eux sur le prime du soir. Deux de leurs camarades ont été contraints de quitter l'aventure, et c'est toujours un déchirement de repartir sans la présence de ces personnes. Mais c'est la dure réalité, et même si leur amitié est importante, ils gardent tous en tête leur objectif final. Et s'il existe des favoris pour la victoire finale, certains luttent chaque semaine pour rester en course. Avant d'attaquer la nouvelle semaine de travail, les élèves laissent maintenant place à la détente.</desc>
+    <category lang="fr">Télé-Réalité</category>
+    <icon src="https://images.voomotion.be/Events/2025/05/17/36/1752448_A.jpg"/>
+  </programme>
+  <programme start="20251115004500 +0100" stop="20251115005000 +0100" channel="TF1.fr">
+    <title lang="fr">Tirage de l'EuroMillions</title>
+    <desc lang="fr">Consultez les derniers résultats d'EuroMillions ainsi que les codes gagnants My Million. Tous les mardi et vendredi, Elsa fayer ou Karine Ferri vous présentent les résultats des tirages officiels de My Million vers 20h50 puis EuroMillions vers 21h50. Découvrez les 5 numéros gagnants et les 2 bonnes étoiles d'EuroMillions mais aussi les codes gagnants My Million des derniers tirages !</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/56/2541815_A.jpg"/>
+  </programme>
+  <programme start="20251115055000 +0100" stop="20251115110000 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <desc lang="fr">Une émission jeunesse qui propose les meilleures séries de dessins animés du moment.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/16/12/2562822_A.jpg"/>
+  </programme>
+  <programme start="20251115110000 +0100" stop="20251115114500 +0100" channel="TF1.fr">
+    <title lang="fr">Téléshopping samedi</title>
+    <desc lang="fr">Téléshopping s'invite dans le quotidien des Français, dès leur réveil, avec convivialité et bonne humeur. Marie-Ange Nardi et Alexandre Devoise rythment les matins de Téléshopping avec une grande complicité, accompagnés d'une équipe d'une quinzaine de chroniqueurs et experts. Entre animation et vente, l'exercice est particulier. Le travail est précis et minutieux, pour mettre en avant parfaitement les produits et donner l'impression aux téléspectateurs qu'ils peuvent les toucher. Avec convivialité et pédagogie, ils accueillent les téléspectateurs pour un moment sympathique et amusant, grâce à un enthousiasme communicatif.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/15/2541858_A.jpg"/>
+  </programme>
+  <programme start="20251115114500 +0100" stop="20251115115000 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251115115000 +0100" stop="20251115125000 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <desc lang="fr">Chaque jour, quatre candidats s'affrontent pour empocher les 30 000 euros de la cagnotte et décrocher l'étoile mystérieuse et ses cadeaux. Seule condition, bien répondre aux questions de culture générale posées par Jean-Luc Reichmann.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/11/02/1726981_A.jpg"/>
+  </programme>
+  <programme start="20251115125000 +0100" stop="20251115125500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251115125500 +0100" stop="20251115130000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251115130000 +0100" stop="20251115134000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <desc lang="fr">Tous les jours, à 13h, la rédaction propose un point sur l'actualité. Les informations nationales et internationales sont passées à la loupe et mises en perspective.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/36/1877963_A.jpg"/>
+  </programme>
+  <programme start="20251115134000 +0100" stop="20251115145000 +0100" channel="TF1.fr">
+    <title lang="fr">Restos du coeur : Tous mobilisés</title>
+    <desc lang="fr">Anne-Claire Coudray dévoile les coulisses des Restos du coeur pour découvrir qui sont les bénévoles qui se mobilisent pour faire vivre l'association.</desc>
+    <category lang="fr">Doc Société</category>
+    <icon src="https://images.voomotion.be/Events/2025/11/01/30/2608366_A.jpg"/>
+  </programme>
+  <programme start="20251115145000 +0100" stop="20251115161000 +0100" channel="TF1.fr">
+    <title lang="fr">Grands reportages</title>
+    <desc lang="fr">Ils étaient notaires, directeur d'Ehpad, patron de pompes funèbres ou encore avocat. Des professionnels a priori insoupçonnables jusqu'à ce que la justice mette au jour un vaste réseau de détournement d'héritages piloté par Jean-Louis Magnin, un ancien notaire radié de l'ordre. Une équipe a enquêté pendant plus d'un an et dévoile les coulisses d'une escroquerie hors du commun, soigneusement orchestrée pour exploiter les failles du système judiciaire français. Au total, onze successions détournées, plus de dix millions d'euros de préjudice estimé, soixante-dix personnes entendues, neuf prévenus, et un seul homme à la manoeuvre.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/11/01/05/2608368_A.jpg"/>
+  </programme>
+  <programme start="20251115161000 +0100" stop="20251115171500 +0100" channel="TF1.fr">
+    <title lang="fr">Les Docs du week-end</title>
+    <desc lang="fr">Finalistes de la "Star'Ac", comédiens ou encore animateurs d'émissions cultes, ils sont devenus des stars dans les années 2000. Mais que sont-ils devenus ? Focus sur Laurent Kérusoré, qui, en 2005, intègre le casting de "Plus belle la vie". Le comédien raconte les dessous du feuilleton culte et confie comment il a occupé son quotidien, avant ses retrouvailles avec le public. Zoom également sur Lucie Bernardoni, qui est passée de finaliste de la "Star'Ac" 4, à coach emblématique de l'émission, dix-huit ans plus tard. Quant à Cendrine Dominguez et Véronique Mounier, respectivement figures emblématiques de "Fort Boyard" et de " L'amour est dans le pré", elles ont toutes les deux quitté les plateaux de télévision.</desc>
+    <category lang="fr">Mag Société</category>
+    <icon src="https://images.voomotion.be/Events/2023/07/06/19/1677338_A.jpg"/>
+  </programme>
+  <programme start="20251115171500 +0100" stop="20251115175500 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne S13</title>
+    <desc lang="fr">Rendez-vous tous les jours pour La Quotidienne incarnée par la voix de Karima CHARNI ! Chaque mercredi, après l'annonce des nommés par le directeur, Michael GOLDMAN, Karima CHARNI lancera les votes auprès des téléspectateurs pour soutenir leur candidat préféré.</desc>
+    <category lang="fr">Télé-Réalité</category>
+    <icon src="https://images.voomotion.be/Events/2024/03/28/21/1750348_A.jpg"/>
+  </programme>
+  <programme start="20251115175500 +0100" stop="20251115190000 +0100" channel="TF1.fr">
+    <title lang="fr">50mn Inside le mag</title>
+    <desc lang="fr">50' Inside, c'est toute l'actualité des stars résumée, chaque samedi. Le rendez-vous glamour pour retrouver toujours plus de news, d'interviews, d'actualité people en France et à l'étranger, de destinations de rêve et de reportages exclusifs au bout du monde pour partir à la rencontre de vos personnalités préférées et vous faire découvrir leurs repaires secrets.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2023/09/04/22/1677332_A.jpg"/>
+  </programme>
+  <programme start="20251115190000 +0100" stop="20251115195000 +0100" channel="TF1.fr">
+    <title lang="fr">50mn Inside le mag</title>
+    <desc lang="fr">50' Inside, c'est toute l'actualité des stars résumée, chaque samedi. Le rendez-vous glamour pour retrouver toujours plus de news, d'interviews, d'actualité people en France et à l'étranger, de destinations de rêve et de reportages exclusifs au bout du monde pour partir à la rencontre de vos personnalités préférées et vous faire découvrir leurs repaires secrets.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2023/09/04/22/1677332_A.jpg"/>
+  </programme>
+  <programme start="20251115195000 +0100" stop="20251115195500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <desc lang="fr">Chaque jour, Laurent Mariotte propose des recettes simples et savoureuses pour profiter des ingrédients de saison, en donnant la part belle aux produits locaux.</desc>
+    <category lang="fr">Magazine</category>
+    <icon src="https://images.voomotion.be/Events/2025/07/09/37/2558807_A.jpg"/>
+  </programme>
+  <programme start="20251115195500 +0100" stop="20251115200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251115200000 +0100" stop="20251115204500 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <desc lang="fr">Le journal télévisé présente les faits marquants et les événements essentiels de l'actualité nationale et internationale, tout en mettant en valeur l'actualité régionale.</desc>
+    <category lang="fr">Infos</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/38/2482985_A.jpg"/>
+  </programme>
+  <programme start="20251115204500 +0100" stop="20251115205000 +0100" channel="TF1.fr">
+    <title lang="fr">Tirage du Loto</title>
+    <desc lang="fr">Les derniers résultats des Loto. Tous les lundi, mercredi et samedi vers 20h35, Jean-Pierre Foucault, Elsa Fayer, Christophe Beaugrand, Karine Ferri ou Iris Mittenaere présentent les résultats des tirages officiels du Loto avec les cinq numéros gagnants ainsi que le numéro chance des derniers tirages.</desc>
+    <category lang="fr">Jeu</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/10/2541809_A.jpg"/>
+  </programme>
+  <programme start="20251115205000 +0100" stop="20251115210000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Météo</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/12/55/2541807_A.jpg"/>
+  </programme>
+  <programme start="20251115210000 +0100" stop="20251115225500 +0100" channel="TF1.fr">
+    <title lang="fr">France / Fidji</title>
+    <desc lang="fr">Une semaine après leur affrontement face aux champions du monde sud-africains, Gaël Fickou et les Bleus poursuivent leur tournée d'automne avec un nouveau défi de taille. A Bordeaux, le XV de France affrontera les Fidji, une sélection spectaculaire et redoutée sur la scène internationale. Connus pour leur puissance, leur vitesse et leur créativité, les Fidjiens s'appuient aujourd'hui sur un groupe largement composé de joueurs évoluant en Europe, et notamment en France. Un test exigeant pour les hommes de Fabien Galthié, qui devront faire preuve de rigueur et d'intensité pour contenir une équipe capable d'exploits face aux plus grandes nations.</desc>
+    <category lang="fr">Sport</category>
+    <icon src="https://images.voomotion.be/Events/2024/01/26/30/1805125_A.jpg"/>
+  </programme>
+  <programme start="20251115225500 +0100" stop="20251115234000 +0100" channel="TF1.fr">
+    <title lang="fr">Rugby : L'après-match</title>
+    <desc lang="fr">Après chaque rencontre, les téléspectateurs pourront retrouver Isabelle Ithurburu à la présentation de l'après-match, accompagnée de Christian Califano. Débrief, réactions et interviews seront au programme !</desc>
+    <category lang="fr">Sport</category>
+    <icon src="https://images.voomotion.be/Events/2025/10/24/16/2605514_A.jpg"/>
+  </programme>
+  <programme start="20251115234000 +0100" stop="20251116011500 +0100" channel="TF1.fr">
+    <title lang="fr">Vendredi, tout est permis avec Arthur</title>
+    <desc lang="fr">Patrick Chanfray, Antonia de Rendinger, Tareek, Manu Levy, Kevin Razy se prêtent au fameux jeu du "roast". C'est Arthur, ce soir, qui active ce bouton. Les sociétaires peuvent ainsi appuyer dessus pour dire tout ce qu'ils ont sur le coeur à Arthur, tout ce qu'ils gardent au fond d'eux. Ils ont enfin la possibilité de l'utiliser face à leur présentateur préféré. Ils continuent de jouer à des épreuves farfelues, mais aussi de se venger de toutes ces années de décor penché, d'In the dark, de décollage immédiat et bien plus. Une soirée qui s'annonce pleine de rires et de rebondissements.</desc>
+    <category lang="fr">Divertissement</category>
+    <icon src="https://images.voomotion.be/Events/2025/06/19/01/2369349_A.jpg"/>
+  </programme>
+  <programme start="20251116011500 +0100" stop="20251116055000 +0100" channel="TF1.fr">
+    <title lang="fr">Programmes de la nuit</title>
+    <sub-title lang="fr">Divers</sub-title>
+    <desc lang="fr">A suivre, des rediffusions des émissions de la chaîne, ainsi que des documentaires et autres reportages destinés à divertir les couche-tard comme les lève-tôt.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Divers</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/100372850"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116055000 +0100" stop="20251116100500 +0100" channel="TF1.fr">
+    <title lang="fr">TFou</title>
+    <sub-title lang="fr">Emission du 16 nov. 2025</sub-title>
+    <desc lang="fr">Une émission jeunesse qui propose les meilleures séries de dessins animés du moment.</desc>
+    <category lang="fr">Jeunesse</category>
+    <category lang="fr">Mag Jeunesse</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/120161606"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116100500 +0100" stop="20251116110000 +0100" channel="TF1.fr">
+    <title lang="fr">Automoto</title>
+    <sub-title lang="fr">Emission du 16 nov. 2025</sub-title>
+    <desc lang="fr">Nouveau logo, nouveau décor, nouvel habillage et nouvelle pilote : Automoto fait peau neuve en cette nouvelle saison. L'émission propose une large diversité de sujets et de reportages : nouvelle rubrique pratique, essais, comparatifs, sports mécaniques, vintage, l'objectif est de réunir et d'expliquer les thématiques automobiles et motos au plus grand nombre.</desc>
+    <category lang="fr">Sport</category>
+    <category lang="fr">Mag Sports mecaniques</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/120523540"/>
+    <episode-num system="xmltv_ns">26.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116110000 +0100" stop="20251116115000 +0100" channel="TF1.fr">
+    <title lang="fr">Téléfoot</title>
+    <sub-title lang="fr">Emission du 16 nov. 2025</sub-title>
+    <desc lang="fr">Chaque dimanche, Grégoire Margotton donne rendez-vous pour le meilleur du football mondial en compagnie des consultants qui continuent d'apporter leur expertise pour décrypter l'actualité du football : le champion du monde Bixente Lizarazu, et Rio Mavuba, ancien international français et champion de France avec Lille. A leurs côtés, les journalistes Thomas Mekhiche et Sévérine Parlakou complètent l'équipe.</desc>
+    <category lang="fr">Sport</category>
+    <category lang="fr">Mag Football</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/100191292"/>
+    <episode-num system="xmltv_ns">26.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116115000 +0100" stop="20251116125000 +0100" channel="TF1.fr">
+    <title lang="fr">Les douze coups de midi</title>
+    <sub-title lang="fr">Emission du 16 nov. 2025</sub-title>
+    <desc lang="fr">Chaque jour, des candidats tentent de répondre à des questions ludiques et culturelles afin de gagner jusqu'à 30 000 euros. Mais ils devront avoir décroché la mystérieuse étoile aux cadeaux avant que ne retentissent Les 12 coups de midi.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Jeu</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/113632246"/>
+    <episode-num system="xmltv_ns">0.83.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116125000 +0100" stop="20251116125500 +0100" channel="TF1.fr">
+    <title lang="fr">Petits plats en équilibre</title>
+    <sub-title lang="fr">Emission du 16 nov. 2025</sub-title>
+    <desc lang="fr">Laurent Mariotte donne toutes les astuces pour préparer de bons petits plats, comme un vrai chef, avec des ingrédients frais et de saison.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Mag Gastronomie</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/111200958"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116125500 +0100" stop="20251116130000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Meteo</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/107596323"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116130000 +0100" stop="20251116134000 +0100" channel="TF1.fr">
+    <title lang="fr">JT 13h</title>
+    <sub-title lang="fr">Emission du 16 nov. 2025</sub-title>
+    <desc lang="fr">Tous les jours, à 13h, la rédaction propose un point sur l'actualité. Les informations nationales et internationales sont passées à la loupe et mises en perspective.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Journal</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/101387553"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116134000 +0100" stop="20251116145000 +0100" channel="TF1.fr">
+    <title lang="fr">Reportages découverte</title>
+    <sub-title lang="fr">Jamais sans mon commerce</sub-title>
+    <desc lang="fr">Cafés, restaurants, boulangeries, épiceries, des lieux de service mais aussi de convivialité que les habitants voient inéluctablement disparaître depuis une vingtaine d'années. Dans le Lot-et-Garonne, la Sarthe, l'Orne ou l'Ille-et-Vilaine, une équipe a suivi pendant près d'un an des femmes et des hommes déterminés à ne pas voir mourir leur village et à sauver les commerces qui les font vivre.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Mag Actualites</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121530678"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116145000 +0100" stop="20251116161000 +0100" channel="TF1.fr">
+    <title lang="fr">Grands reportages</title>
+    <sub-title lang="fr">Objectif : tout plaquer</sub-title>
+    <desc lang="fr">Qui n'a jamais rêvé de tout plaquer, s'envoler loin de la vie qu'il mène pour repartir à zéro ailleurs ou se reconvertir, dans un tout autre métier ? Seul, c'est déjà un pari risqué, alors, lorsque qu'une famille décide de sauter le pas, c'est une sacrée aventure qui l'attend. Pendant près de deux ans, une équipe a suivi ces familles qui changent de cap. A travers leurs portraits, cette série en deux épisodes explore les joies et les difficultés de ce défi.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Mag Actualites</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/112491930"/>
+    <episode-num system="xmltv_ns">8.0.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116161000 +0100" stop="20251116174500 +0100" channel="TF1.fr">
+    <title lang="fr">Star Academy, la quotidienne - Saison 13</title>
+    <sub-title lang="fr">Episode 28</sub-title>
+    <desc lang="fr">Retour sur les moments forts de la journée des candidats de Star Academy avec un débrief de leurs prestations, des cours et des moments de vie.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Telerealite</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/121464238"/>
+    <episode-num system="xmltv_ns">12.27.</episode-num>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116174500 +0100" stop="20251116195500 +0100" channel="TF1.fr">
+    <title lang="fr">Azerbaïdjan / France</title>
+    <sub-title lang="fr">Eliminatoires de la Coupe du Mon...</sub-title>
+    <desc lang="fr">Solide à défaut d'être brillante, l'équipe de France achève sa campagne des éliminatoires de la Coupe du monde 2026 à Bakou, face à l'Azerbaïdjan, avec l'ambition de conclure sur une note positive. Cette rencontre devrait permettre au sélectionneur tricolore Didier Deschamps de faire une nouvelle fois tourner son effectif.</desc>
+    <category lang="fr">Sport</category>
+    <category lang="fr">Football</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/canalplus-cdn.canal-plus.io/p1/unit/30251721/canal-ouah_50061/STD169/myCANAL_16x9_sport_1920x1080-2025-11-05T132442.616-Korj"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116195500 +0100" stop="20251116200000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Meteo</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/107596323"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116200000 +0100" stop="20251116204500 +0100" channel="TF1.fr">
+    <title lang="fr">JT 20h</title>
+    <sub-title lang="fr">Emission du 16 nov. 2025</sub-title>
+    <desc lang="fr">Le journal télévisé présente les faits marquants et les événements essentiels de l'actualité nationale et internationale, tout en mettant en valeur l'actualité régionale.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Journal</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/106746346"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116204500 +0100" stop="20251116205000 +0100" channel="TF1.fr">
+    <title lang="fr">TF1, rendez-vous sport</title>
+    <sub-title lang="fr">Emission du 16 nov. 2025</sub-title>
+    <desc lang="fr">Programme court et quotidien qui revient en images sur les moments forts de l'actualité sportive.</desc>
+    <category lang="fr">Sport</category>
+    <category lang="fr">Mag Sport</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/100191347"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116205000 +0100" stop="20251116210000 +0100" channel="TF1.fr">
+    <title lang="fr">Le goût du détail</title>
+    <sub-title lang="fr">Komboucha</sub-title>
+    <desc lang="fr">Ils sont pêcheurs, éleveurs, maraîchers, confiseurs, fromagers : leur point commun ? Ils ont le goût du détail, ce tour de main, ce regard avisé, cette expertise ancienne retrouvée qui fait toute la différence. Chaque semaine, ces artisans du goût délivrent le secret de leur savoir-faire.</desc>
+    <category lang="fr">Divertissement</category>
+    <category lang="fr">Mag Culinaire</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/112400323"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116210000 +0100" stop="20251116211000 +0100" channel="TF1.fr">
+    <title lang="fr">Météo</title>
+    <desc lang="fr">Prévisions météorologiques en France par le service de TF1.</desc>
+    <category lang="fr">Actualites</category>
+    <category lang="fr">Meteo</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/107596323"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+  <programme start="20251116211000 +0100" stop="20251116231000 +0100" channel="TF1.fr">
+    <title lang="fr">Wonder Woman 1984</title>
+    <sub-title lang="fr">Film Fantastique</sub-title>
+    <desc lang="fr">1984, à Washington. Diana Prince, alias Wonder Woman, travaille pour l'institut du Smithsonian. Elle y rencontre Barbara Minerva, une archéologue excentrique. En fait, il s'agit de Cheetah, une déesse maléfique. Dans un contexte de Guerre froide, Diana doit l'affronter ainsi que Maxwell Lord, un riche homme d'affaires...</desc>
+    <category lang="fr">Cinema</category>
+    <category lang="fr">Film Fantastique</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/103380268"/>
+    <rating system="CSA">
+      <value>-10</value>
+      <icon src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Moins10.svg/200px-Moins10.svg.png"/>
+    </rating>
+  </programme>
+  <programme start="20251116231000 +0100" stop="20251117013500 +0100" channel="TF1.fr">
+    <title lang="fr">Wonder Woman</title>
+    <sub-title lang="fr">Film Fantastique</sub-title>
+    <desc lang="fr">Hippolyta, la reine des Amazones, entraîne sa fille, Diana, pour qu'elle devienne une guerrière redoutable. La jeune femme, qui vit une île paradisiaque, finit par découvrir ses pouvoirs. Un jour, elle porte secours à Steve Trevor, un pilote américain, et découvre qu'un conflit mondial fait rage...</desc>
+    <category lang="fr">Cinema</category>
+    <category lang="fr">Film Fantastique</category>
+    <icon src="https://thumb.canalplus.pro/http/unsafe/640x360/filters:quality(80)/img-hapi.canalplus.pro:80/ServiceImage/ImageID/99967514"/>
+    <rating system="CSA">
+      <value>Tout public</value>
+    </rating>
+  </programme>
+
+</tv>

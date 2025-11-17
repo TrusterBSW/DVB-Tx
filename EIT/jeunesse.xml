@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tsduck>
+  <EIT service_id="0x1004" transport_stream_id="0x0016" original_network_id="0xFF16">
+
+    <event event_id="1000" start_time="2025-11-09 12:10:00" duration="23:20:00">
+      <short_event_descriptor language_code="fra">
+        <event_name>Big Buck Bunny</event_name>
+	<text>An enormous, fluffy, and utterly adorable rabbit is heartlessly harassed by the ruthless, loud, bullying gang of a flying squirrel, who is determined to squash his happiness.</text>
+      </short_event_descriptor>
+    </event>
+
+    <event event_id="1001" start_time="2025-11-10 12:10:00" duration="23:20:00">
+      <short_event_descriptor language_code="fra">
+        <event_name>Big Buck Bunny</event_name>
+	<text>An enormous, fluffy, and utterly adorable rabbit is heartlessly harassed by the ruthless, loud, bullying gang of a flying squirrel, who is determined to squash his happiness.</text>
+      </short_event_descriptor>
+    </event>
+
+    <event event_id="1002" start_time="2025-11-11 12:10:00" duration="23:20:00">
+      <short_event_descriptor language_code="fra">
+        <event_name>Big Buck Bunny</event_name>
+	<text>An enormous, fluffy, and utterly adorable rabbit is heartlessly harassed by the ruthless, loud, bullying gang of a flying squirrel, who is determined to squash his happiness.</text>
+      </short_event_descriptor>
+
+      <extended_event_descriptor descriptor_number="0" last_descriptor_number="4" language_code="fra">
+        <text>Un lapin bienveillant se reveille dans un monde magnifique et colore rempli de papillons. Tout semble idyllique jusqu'a ce que trois petits rongeurs cruels apparaissent. Ils commencent a terroriser les creatures innocentes </text>
+      </extended_event_descriptor>
+      <extended_event_descriptor descriptor_number="1" last_descriptor_number="4" language_code="fra">
+        <text>et a tuer les papillons sans pitie. Le lapin doux observe avec impuissance ces actes cruels. Son irritation monte chaque jour. Il voit ses amis souffrir constamment des mains de ces trois voyous mechants. L'exasperation devient </text>
+      </extended_event_descriptor>
+      <extended_event_descriptor descriptor_number="2" last_descriptor_number="4" language_code="fra">
+        <text> insupportable. Le moment de reagir approche inexorablement pour le lapin pacifique. Excede par tant de vilenie, il bascule et decide d'agir enfin. Il conçoit une serie de pieges ingenieux et spectaculaire pour se venge r</text>
+      </extended_event_descriptor>
+      <extended_event_descriptor descriptor_number="3" last_descriptor_number="4" language_code="fra">
+        <text>des trois brutes. Ses plans sont elabores avec soin. Chaque piege est plus terrifiant que le precedent. La vengeance du lapin transforme les trois rongeurs en victimes. Les pieges fonctionnent parfaitement. </text>
+      </extended_event_descriptor>  
+      <extended_event_descriptor descriptor_number="4" last_descriptor_number="4" language_code="fra">
+        <text>Les brutes subissent les consequences de leurs actes. Justice poétique et humoristique s'abat sur eux. Un final amusant et cathart ique clôt l'histoire magnifiquement.</text>
+      </extended_event_descriptor>  
+      <parental_rating_descriptor>
+        <country rating="0x00" country_code="FRA"/><!--0x00 : Tous publics; 0x01 : 1 + 3 = 4 ans minimum; 0x04 : 4 + 3 = 7 ans minimum; 0x07 : 7 + 3 = 10 ans minimum; 0x0C : 12 + 3 = 15 ans minimum; 0x0F : 15 + 3 = 18 ans minimum-->
+        <!--<country rating="0x07" country_code="DEU"/>-->
+        <!--<country rating="0x0C" country_code="GBR"/>-->
+      </parental_rating_descriptor>
+    </event>
+
+  </EIT>
+</tsduck>
+
+

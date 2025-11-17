@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tsduck>
+  <EIT service_id="0x1003" transport_stream_id="0x0016" original_network_id="0xFF16">
+
+    <event event_id="1000" start_time="2025-11-09 12:10:00" duration="23:20:00">
+      <short_event_descriptor language_code="fra">
+        <event_name>Tears of Steel</event_name>
+	<text>Guerriers et scientifiques tentent de rejouer une rupture amoureuse du passe pour stopper l apocalypse robot presente a Amsterdam creed par une femme qui devint cyborg par amertume</text>
+      </short_event_descriptor>
+    </event>
+
+    <event event_id="1001" start_time="2025-11-10 12:10:00" duration="23:20:00">
+      <short_event_descriptor language_code="fra">
+        <event_name>Tears of Steel</event_name>
+	<text>Guerriers et scientifiques tentent de rejouer une rupture amoureuse du passe pour stopper l apocalypse robot presente a Amsterdam creed par une femme qui devint cyborg par amertume</text>
+      </short_event_descriptor>
+    </event>
+
+    <event event_id="1002" start_time="2025-11-11 12:10:00" duration="23:20:00">
+      <short_event_descriptor language_code="fra">
+        <event_name>Tears of Steel</event_name>
+	<text>Guerriers et scientifiques tentent de rejouer une rupture amoureuse du passe pour stopper l apocalypse robot presente a Amsterdam creed par une femme qui devint cyborg par amertume</text>
+      </short_event_descriptor>
+    </event>
+
+  </EIT>
+</tsduck>
+
+
