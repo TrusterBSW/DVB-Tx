@@ -85,9 +85,22 @@ sudo apt install ffmpeg gnuradio screen
 
 ### Installation de TSDuck
 
+Téléchargez le paquet `.deb` correspondant à votre distribution depuis les [releases GitHub](https://github.com/tsduck/tsduck/releases).
+
 ```bash
-curl -fsSL https://tsduck.io/install.sh | sudo bash
+wget https://github.com/tsduck/tsduck/releases/download/v3.40-4165/tsduck_3.40-4165.debian13_amd64.deb
+sudo dpkg -i tsduck_3.40-4165.debian13_amd64.deb
+sudo apt -f install
 ```
+#### Mise à jour automatique
+
+Une fois TSDuck installé, tu peux vérifier et mettre à jour vers la dernière version avec :
+
+```bash
+tsversion --check    # Vérifie si une nouvelle version est disponible
+tsversion --upgrade  # Télécharge et installe la dernière version
+```
+
 ---
 
 ## **Démarrage**
@@ -326,9 +339,21 @@ sudo apt install ffmpeg gnuradio screen
 
 ### Installation of TSDuck
 
+Download the `.deb` package matching your distribution from the [GitHub releases](https://github.com/tsduck/tsduck/releases).
+
+**For Debian 13 (Intel 64-bit):**
 ```bash
-curl -fsSL https://tsduck.io/install.sh | sudo bash
+wget https://github.com/tsduck/tsduck/releases/download/v3.40-4165/tsduck_3.40-4165.debian13_amd64.deb
+sudo dpkg -i tsduck_3.40-4165.debian13_amd64.deb
+sudo apt -f install
 ```
+Once TSDuck is installed, you can check and update to the latest version with:
+
+```bash
+tsversion --check    # Check if a new version is available
+tsversion --upgrade  # Download and install the latest version
+```
+
 ---
 
 ## **Startup**
