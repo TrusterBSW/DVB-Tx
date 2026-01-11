@@ -243,6 +243,7 @@ This project is **only** **legal** if :
 
 - Management of **two simultaneous multiplexes** on one HackRF (~63 Mbit/s)  
 - Automatic generation of the **EIT** from **XMLTV**  
+- ~~Broadcast web dashboard to share services status~~ [URL2Stream](https://github.com/TrusterBSW/URL2Stream)
 - Integration with **DizqueTV** (playlists and advanced planning)  
 - Backup video/image in cas a live feed drops 
 - TSDuck exports toward **InfluxDB + Grafana**
