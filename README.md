@@ -111,6 +111,12 @@ git clone https://github.com/TrusterBSW/DVB-Tx
 cd DVB-Tx/DVB
 ```
 
+### Ajouts des droits à l'utilisateur
+
+```bash
+sudo usermod -a -G plugdev $USER
+```
+
 ### Diffuser les fichiers Video inclus
 ```./start.sh file -f ```
 
