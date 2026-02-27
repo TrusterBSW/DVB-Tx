@@ -64,11 +64,12 @@ Sources → │    FFmpeg     │  ─→─  │    TSDuck    │  ─→─  �
 - **FFmpeg**  
 - **TSDuck**  
 - **GNU Radio 3.10**  
-- **HackRF Tools** (si utilisation RF)
+- **gr-osmosdr**
 
 ### Recommandé :
 - **screen** (utilisé pour mettre FFmpeg et GNU Radio en arrière plan)
 - **Git-LFS** (utilisé pour les vidéo d'exemple disponible dans /Video)
+- **yt-dlp** (utilisé pour obtenir les url des flux video pour l'option live)
 
 ---
 
@@ -78,7 +79,7 @@ Sources → │    FFmpeg     │  ─→─  │    TSDuck    │  ─→─  �
 
 ```bash
 sudo apt update
-sudo apt install git ffmpeg gnuradio gr-osmosdr screen git-lfs
+sudo apt install git ffmpeg gnuradio gr-osmosdr screen git-lfs yt-dlp
 ```
 
 ### 2. Installation de TSDuck
