@@ -71,20 +71,14 @@ Sources → │    FFmpeg     │  ─→─  │    TSDuck    │  ─→─  �
 
 ## **Installation**
 
-### 1. Installation FFmpeg, GNU Radio et screen (Debian / Ubuntu)
+### 1. Installating FFmpeg, GNU Radio et screen (Debian / Ubuntu)
 
 ```bash
 sudo apt update
-sudo apt install git ffmpeg gnuradio screen
+sudo apt install git ffmpeg gnuradio screen git-lfs
 ```
 
-### 2. Installation Git-LFS
-
-```bash
-git lfs install
-```
-
-### 3. Installation of TSDuck
+### 2. Installation of TSDuck
 
 Download the `.deb` package matching your distribution from the [GitHub releases](https://github.com/tsduck/tsduck/releases).
 
@@ -98,6 +92,7 @@ Once TSDuck is installed, you can check and update to the latest version with:
 ```bash
 tsversion --check    # Check if a new version is available
 tsversion --upgrade  # Download and install the latest version
+sudo apt -f install
 ```
 
 ---

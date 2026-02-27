@@ -78,16 +78,10 @@ Sources → │    FFmpeg     │  ─→─  │    TSDuck    │  ─→─  �
 
 ```bash
 sudo apt update
-sudo apt install git ffmpeg gnuradio screen
+sudo apt install git ffmpeg gnuradio screen git-lsf
 ```
 
-### 2. Installation Git-LFS
-
-```bash
-git lfs install
-```
-
-### 3. Installation de TSDuck
+### 2. Installation de TSDuck
 
 Téléchargez le paquet `.deb` correspondant à votre distribution depuis les [releases GitHub](https://github.com/tsduck/tsduck/releases).
 
@@ -103,6 +97,7 @@ Une fois TSDuck installé, vous pouvez vérifier et mettre à jour vers la derni
 ```bash
 tsversion --check    # Vérifie si une nouvelle version est disponible
 tsversion --upgrade  # Télécharge et installe la dernière version
+sudo apt -f install
 ```
 
 ---
@@ -117,10 +112,10 @@ cd DVB-Tx/DVB
 ```
 
 ### Diffuser les fichiers Video inclus
-```./start.sh file```
+```./start.sh file -f ```
 
 ### Diffuser des flux en direct
-```./start.sh live```
+```./start.sh live -f ```
 
 **Options du script start.sh**
 
