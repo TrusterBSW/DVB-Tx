@@ -6,7 +6,7 @@
 #
 # GNU Radio Python Flow Graph
 # Title: Dvbt Tx Pipe
-# GNU Radio version: 3.10.11.0
+# GNU Radio version: 3.10.12.0
 
 from gnuradio import blocks
 import pmt
@@ -37,8 +37,7 @@ class dvbt_tx_pipe(gr.top_block):
         # Variables
         ##################################################
         self.samp_rate = samp_rate = (8000000.0 * 8) / 7
-        self.center_freq = center_freq = 554e6  ##DVT UHF CH31
-        #self.center_freq = center_freq = 226e6 ##Uniquement DVB-T2
+        self.center_freq = center_freq = 474e6
 
         ##################################################
         # Blocks
@@ -51,8 +50,8 @@ class dvbt_tx_pipe(gr.top_block):
         self.osmosdr_sink_0.set_sample_rate(samp_rate)
         self.osmosdr_sink_0.set_center_freq(center_freq, 0)
         self.osmosdr_sink_0.set_freq_corr(0, 0)
-        self.osmosdr_sink_0.set_gain(30, 0)
-        self.osmosdr_sink_0.set_if_gain(20, 0)
+        self.osmosdr_sink_0.set_gain(10, 0)
+        self.osmosdr_sink_0.set_if_gain(40, 0)
         self.osmosdr_sink_0.set_bb_gain(20, 0)
         self.osmosdr_sink_0.set_antenna('', 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
@@ -80,7 +79,7 @@ class dvbt_tx_pipe(gr.top_block):
             8192 + 256,
             0,
             '')
-        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_char*1, 'mpeg-live.ts', False, 0, 0)
+        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_char*1, 'mpeg-live.ts', True, 0, 0)
         self.blocks_file_source_0.set_begin_tag(pmt.PMT_NIL)
 
 
