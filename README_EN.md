@@ -75,7 +75,7 @@ Sources → │    FFmpeg     │  ─→─  │    TSDuck    │  ─→─  �
 
 ```bash
 sudo apt update
-sudo apt install git ffmpeg gnuradio screen git-lfs
+sudo apt install git ffmpeg gnuradio gr-osmosdr screen git-lfs
 ```
 
 ### 2. Installation of TSDuck
