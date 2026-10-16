@@ -173,7 +173,7 @@ sources), `ts-output.toml` (sans radio : le TS part en UDP vers un modulateur ex
 | `http(s)://...`, `...m3u8` | flux HTTP ou HLS (reconnexion automatique) |
 | `m3u:/liste.m3u#Nom` | entrée d'une playlist M3U (par nom, tvg-name, tvg-id ou `#index`) ; URL ou fichier |
 | `twitch://chaine` | Twitch via streamlink (ou yt-dlp) |
-| `ytdlp:https://...` | tout ce que yt-dlp sait lire |
+| `ytdlp:https://...` | tout ce que yt-dlp sait lire (YouTube : vidéo et audio séparés, H.264/AAC choisis par défaut) |
 | `htsp://user:mdp@hote:9982/Chaine` | chaîne tvheadend (par nom ou numéro), via son port de streaming HTTP |
 | `rtmp://hote/app/cle` ; `rtmp://0.0.0.0:1935/live/cle?listen` | RTMP en lecture ; ou en écoute pour recevoir OBS |
 | `rtsp://`, `srt://`, `udp://`, `rtp://` | flux réseau |
@@ -188,10 +188,13 @@ sources), `ts-output.toml` (sans radio : le TS part en UDP vers un modulateur ex
 Les sources de capture sont encodées (H.264 + AAC par défaut, débit `auto` = la part du multiplex
 laissée par les autres chaînes) ; les autres sont copiées telles quelles. `encode = true` ou
 `encode = { video_bitrate = "4M", video_codec = "h264_vaapi", hwaccel = "vaapi" }` force
-l'encodage (voir `[defaults.encode]`). `ffmpeg_input`/`ffmpeg_output` ajoutent des options ffmpeg.
-Essayées sur le banc : fichiers, dossier (fichiers de formats différents), HLS, M3U, RTMP en écoute, UDP direct, pipe nommé, stdin,
-`exec:` et mire. Pas encore essayées (faute de matériel ou de compte) : Twitch, YouTube,
-tvheadend, RTSP, SRT, v4l2 et écran.
+l'encodage (voir `[defaults.encode]`). Avant de copier un fichier, un flux HTTP/HLS ou une vidéo
+yt-dlp, ffprobe vérifie les codecs : une vidéo VP9/AV1 est encodée en H.264, un audio Opus/Vorbis
+en AAC (seule la partie incompatible est réencodée ; `codec_check = false` pour ne jamais le faire). `ffmpeg_input`/`ffmpeg_output` ajoutent des options ffmpeg.
+Essayées sur le banc : fichiers (y compris VP9/Opus réencodés), dossier (fichiers de formats
+différents), HLS, M3U, YouTube via yt-dlp, RTMP en écoute, UDP direct, pipe nommé, stdin, `exec:`
+et mire. Pas encore essayées (faute de matériel ou de compte) : Twitch, tvheadend, RTSP, SRT, v4l2
+et écran.
 
 ## Numéros de chaînes (LCN) et ONID
 

@@ -76,6 +76,16 @@ def _query(src):
     return src, {}
 
 
+def resolve_ytdlp(ytdlp, url, fmt, timeout=90):
+    """yt-dlp -g: one URL (muxed or HLS) or two (video, audio)"""
+    r = subprocess.run([ytdlp, "-q", "--no-warnings", "-g", "-f", fmt, url], capture_output=True, text=True,
+                       timeout=timeout)
+    urls = [u for u in r.stdout.splitlines() if u.startswith("http")]
+    if r.returncode or not urls:
+        raise ValueError(f"yt-dlp: {(r.stderr.strip().splitlines() or ['no URL'])[-1]}")
+    return urls[:2]
+
+
 def resolve_m3u(spec, timeout=20):
     """m3u:/path/or/url#Name -> stream URL"""
     body = spec[4:]
@@ -138,6 +148,8 @@ class Recipe:
         self.extra_audio = None
         self.vf = []
         self.playlist = None       # files of a folder, played one ffmpeg after the other
+        self.maps = None           # stream selection forced by the recipe
+        self.probe = []            # URLs/paths whose codecs may be checked before copying
 
 
 def recipe_for(src, opts, ing, work_dir, pl_index=0):
@@ -170,18 +182,27 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
         if shutil.which(ing["streamlink"]):
             r.producer = [ing["streamlink"], "--stdout", "--loglevel", "warning", "--twitch-disable-ads",
                           f"https://www.twitch.tv/{chan}", quality]
+            r.inputs = ["-i", "pipe:0"]
         else:
-            r.producer = [ing["ytdlp"], "-q", "--no-part", "-o", "-", f"https://www.twitch.tv/{chan}"]
-        r.inputs = ["-i", "pipe:0"]
+            urls = resolve_ytdlp(ing["ytdlp"], f"https://www.twitch.tv/{chan}", "best")
+            r.inputs = http_input(urls[0])
     elif src.startswith("ytdlp:"):
-        r.producer = [ing["ytdlp"], "-q", "--no-part", "-f", opts.get("ytdlp_format", "best"), "-o", "-", src[6:]]
-        r.inputs = ["-i", "pipe:0"]
+        urls = resolve_ytdlp(ing["ytdlp"], src[6:], opts.get(
+            "ytdlp_format", "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/b[vcodec^=avc1]/bv*[height<=1080]+ba/b"))
+        r.probe = list(urls)
+        r.inputs = http_input(urls[0])
+        if len(urls) == 2:                     # separate video and audio (YouTube DASH)
+            r.inputs += http_input(urls[1])
+            r.maps = ["0:v:0", "1:a:0"]
     elif src.startswith("m3u:"):
-        r.inputs = http_input(resolve_m3u(src))
+        u = resolve_m3u(src)
+        r.inputs = http_input(u)
+        r.probe = [u]
     elif src.startswith("htsp://") or src.startswith("tvh://"):
         r.inputs = http_input(htsp_to_http(src.replace("tvh://", "htsp://", 1)))
     elif re.match(r"https?://", src):
         r.inputs = http_input(src)
+        r.probe = [src]
     elif src.startswith("rtmp://") or src.startswith("rtmps://"):
         path, q = _query(src)
         if "listen" in q:
@@ -239,6 +260,7 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
                 raise ValueError(f"no video file in {path}")
             r.playlist = files
             r.inputs = ["-i", files[pl_index % len(files)]]
+            r.probe = [files[pl_index % len(files)]]
         elif os.path.exists(path):
             import stat as st_
             if st_.S_ISFIFO(os.stat(path).st_mode):
@@ -246,17 +268,53 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
                 r.realtime_source = True
             else:
                 r.inputs = (["-stream_loop", "-1"] if loop else []) + ["-i", path]
+                r.probe = [path]
         else:
             raise ValueError(f"source {src!r}: file not found and unknown scheme")
 
     if readrate == "auto":
         readrate = not r.realtime_source
-    if readrate:
-        r.inputs = ["-re"] + r.inputs
+    if readrate:                               # -re before every input
+        out = []
+        for a in r.inputs:
+            if a == "-i":
+                out.append("-re")
+            out.append(a)
+        r.inputs = out
+        # the input options of the first input go before its -re: keep them in front
+
     r.inputs = ext_in + r.inputs
     if opts.get("encode_on"):
         r.encode = True
     return r
+
+
+DVB_VIDEO = {"h264", "hevc", "mpeg2video", "mpeg1video"}
+DVB_AUDIO = {"aac", "mp2", "mp3", "ac3", "eac3", "aac_latm"}
+_PROBE_CACHE = {}
+
+
+def probe_codecs(urls, ffprobe="ffprobe", timeout=20):
+    """{'video': set, 'audio': set} of the codecs of the inputs (cached for local files)"""
+    out = {"video": set(), "audio": set()}
+    for u in urls:
+        key = (u, os.path.getmtime(u)) if os.path.exists(u) else None
+        if key and key in _PROBE_CACHE:
+            res = _PROBE_CACHE[key]
+        else:
+            try:
+                p = subprocess.run([ffprobe, "-v", "error", "-show_entries", "stream=codec_type,codec_name", "-of", "csv=p=0",
+                                    u], capture_output=True, text=True, timeout=timeout)
+                res = [l.split(",") for l in p.stdout.splitlines() if "," in l]
+            except (OSError, subprocess.SubprocessError):
+                res = []
+            if key:
+                _PROBE_CACHE[key] = res
+        for cols in res:
+            name, kind = cols[0], cols[1] if len(cols) > 1 else ""
+            if kind in out:
+                out[kind].add(name)
+    return out
 
 
 def _audio_input(spec):
@@ -325,17 +383,33 @@ def build_command(inp, plan, pl_index=0):
     if not rec.use_stdin and not rec.producer:
         ff.append("-nostdin")
     ff += ["-fflags", "+genpts+discardcorrupt"] + rec.inputs
-    maps = list(o.get("map") or [])
+    maps = list(rec.maps or o.get("map") or [])
     extra = _audio_input(rec.extra_audio) if rec.extra_audio else None
     if extra:
         ff += extra
         maps = ["0:v:0", "1:a:0"]
     for m in maps:
         ff += ["-map", m]
+    if not rec.encode and rec.probe and o.get("encode_on") is None and o.get("codec_check", True):
+        codecs = probe_codecs(rec.probe, ing.get("ffprobe", "ffprobe"))
+        bad_v = bool(codecs["video"]) and not codecs["video"] & DVB_VIDEO
+        bad_a = bool(codecs["audio"]) and not codecs["audio"] & DVB_AUDIO
+        if bad_v:
+            rec.encode = True
+            rec.note = f"video {'/'.join(sorted(codecs['video']))} is not a DVB codec: encoded"
+        elif bad_a:
+            enc = o["encode"]
+            rec.audio_only = ["-c:v", "copy", "-c:a", enc.get("audio_codec", "aac"), "-b:a",
+                              str(enc.get("audio_bitrate", "128k")), "-ar", str(enc.get("audio_rate", 48000)), "-ac", "2"]
+            rec.note = f"audio {'/'.join(sorted(codecs['audio']))} is not a DVB codec: audio encoded"
     if rec.encode:
         ff += encode_args(o, rec, inp.service, ing) if inp.service is not None else _backup_encode(o)
+    elif getattr(rec, "audio_only", None):
+        ff += rec.audio_only
     else:
         ff += ["-c", "copy"]
+    if getattr(rec, "note", None):
+        log.info("input %s: %s", inp.name, rec.note)
     ff += list(o.get("ffmpeg_output", []))
     ff += ["-f", "mpegts", "-muxdelay", str(o.get("mux_delay", 0.7)), "-pcr_period", "20",
            "-mpegts_flags", "+resend_headers", "-max_interleave_delta", "0",

@@ -376,7 +376,7 @@ def build(cfg):
                 if k == "encode" and isinstance(v, dict):
                     opts["encode"] = dict(opts["encode"], **v)
                     opts["encode_on"] = True
-                elif k == "encode":
+                elif k == "encode" and v != "auto":
                     opts["encode_on"] = bool(v)
                 else:
                     opts[k] = v
