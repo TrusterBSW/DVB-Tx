@@ -23,6 +23,7 @@ typedef struct mux_svc_cfg {
     input *primary, *backup;
     int switch_timeout_ms, return_ms, max_late_ms, early_ms, pcr_max_ms;
     int pmt_period_ms;
+    int priority;                  /* 1..10: under overload, higher ones are served first */
 } mux_svc_cfg;
 
 typedef struct mux_table_cfg {

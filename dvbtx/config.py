@@ -31,7 +31,7 @@ DEFAULTS = {
     "engine": {"binary": "", "log_level": "info", "stats_interval_ms": 1000},
     "defaults": {
         "backup": "", "buffer_ms": 1000, "switch_timeout_ms": 3000, "return_ms": 10000, "max_late_ms": 600,
-        "early_ms": 100, "pcr_max_ms": 35, "pmt_period_ms": 100, "mux_delay": 0.7, "ring_pkts": 65536,
+        "early_ms": 100, "pcr_max_ms": 35, "priority": 5, "pmt_period_ms": 100, "mux_delay": 0.7, "ring_pkts": 65536,
         "readrate": "auto", "map": ["0:v:0?", "0:a?"], "loop": True,
         "encode": {"video_codec": "libx264", "preset": "veryfast", "video_bitrate": "auto", "gop_s": 1.0,
                    "audio_codec": "aac", "audio_bitrate": "128k", "audio_rate": 48000, "pix_fmt": "yuv420p",
@@ -609,7 +609,8 @@ def write_engine_ini(plan, path, si_dir):
               f"backup = {s.backup_input.index if s.backup_input else -1}",
               f"switch_timeout_ms = {int(o['switch_timeout_ms'])}", f"return_ms = {int(o['return_ms'])}",
               f"max_late_ms = {int(o['max_late_ms'])}", f"early_ms = {int(o['early_ms'])}",
-              f"pcr_max_ms = {int(o['pcr_max_ms'])}", f"pmt_period_ms = {int(o['pmt_period_ms'])}", ""]
+              f"pcr_max_ms = {int(o['pcr_max_ms'])}", f"pmt_period_ms = {int(o['pmt_period_ms'])}",
+              f"priority = {int(o.get('priority', 5))}", ""]
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         f.write("\n".join(L))

@@ -73,6 +73,8 @@ switch_timeout_ms = 3000                # silence before switching to the backup
 return_ms = 10000                       # primary stable for this long before switching back
 max_late_ms = 600                       # packets later than this are dropped
 early_ms = 100                          # packets may leave this much in advance to smooth the peaks
+priority = 5                            # 1-10: when a multiplex is overloaded, higher priorities are served first
+                                        # and the lower ones get the delays (then the losses)
 pcr_max_ms = 35                         # a PCR is inserted if the source leaves a longer gap
 mux_delay = 0.7                         # ffmpeg -muxdelay: decoding margin given to the receiver (s)
 readrate = "auto"                       # pace the reading at real time (-re): auto = files, HTTP/HLS, playlists

@@ -264,6 +264,11 @@ sur un réseau de confiance) :
 - sources : état du processus ffmpeg, relances, dernières lignes du journal, bouton « Relancer » ;
 - alertes actives et historique.
 
+**Priorités** : quand un multiplex est saturé (sources copiées dont le débit dépasse la capacité),
+`priority` (1 à 10, 5 par défaut) décide qui garde la marge : les chaînes prioritaires restent à
+l'heure, les autres prennent le retard puis les pertes. Essayé : 6 Mbit/s demandés pour 5 Mbit/s,
+la chaîne en priorité 9 garde 800 ms de marge, celle en priorité 2 descend à 200 ms.
+
 **La marge de décodage** : pour chaque image, le temps entre son émission et l'instant où le
 récepteur doit la décoder (DTS − PCR à l'émission, minimum sur chaque seconde). Avec la source
 habituelle elle est de ~700 ms (`mux_delay`) ; quand le multiplex est trop plein, elle baisse ; sous

@@ -553,6 +553,9 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
         sc.early_ms = (int)conf_int(s, "early_ms", 0);
         sc.pcr_max_ms = (int)conf_int(s, "pcr_max_ms", 35);
         sc.pmt_period_ms = (int)conf_int(s, "pmt_period_ms", 100);
+        sc.priority = (int)conf_int(s, "priority", 5);
+        if (sc.priority < 1 || sc.priority > 10)
+            sc.priority = 5;
         if (mux_add_service(g_carriers[ci]->mux, &sc) < 0) {
             snprintf(err, errlen, "service %d: too many services on carrier %d", s->index, ci);
             return -1;

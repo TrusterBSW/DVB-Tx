@@ -668,16 +668,19 @@ void mux_pull(void *ctx, uint8_t *out)
     /* 2. most urgent service packet */
     for (int pass = 0; pass < 64; pass++) {
         svc *pick = NULL;
-        int64_t pick_t = INT64_MAX;
+        int64_t pick_t = INT64_MAX, pick_d = INT64_MAX;
         for (int i = 0; i < m->nsvc; i++) {
             svc *s = m->svc[i];
             svc_check(m, s, now);
             if (!svc_peek(m, s, now))
                 continue;
             int64_t t = s->head.t_ideal;
-            if (t <= now + (int64_t)s->c.early_ms * 1000000 && t < pick_t) {
+            /* earliest deadline first, the deadline moved 100 ms earlier per priority step above 5 */
+            int64_t d = t - (int64_t)(s->c.priority - 5) * 100000000;
+            if (t <= now + (int64_t)s->c.early_ms * 1000000 && d < pick_d) {
                 pick = s;
                 pick_t = t;
+                pick_d = d;
             }
         }
         if (!pick)
