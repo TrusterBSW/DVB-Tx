@@ -120,7 +120,7 @@ static sdr_dev *hk_open(const sdr_params *p, char *err, int errlen)
         return NULL;
     }
     double corr = 1.0 / (1.0 + p->ppm * 1e-6);   /* crystal error moves rate and LO alike */
-    double bw = p->bandwidth > 0 ? p->bandwidth : p->rate * 0.9;  // carriers may sit near +-rate/2
+    double bw = p->bandwidth > 0 ? p->bandwidth : p->rate;   /* the supervisor computes it from the band edges */
     if ((r = hackrf_set_sample_rate(d->dev, p->rate * corr)) != HACKRF_SUCCESS ||
         (r = hackrf_set_baseband_filter_bandwidth(
              d->dev, hackrf_compute_baseband_filter_bw((uint32_t)bw))) != HACKRF_SUCCESS ||

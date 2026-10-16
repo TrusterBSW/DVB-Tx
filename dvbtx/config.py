@@ -48,6 +48,7 @@ CARRIER_DEFAULTS = {"standard": "dvbt", "bandwidth": 8_000_000, "mode": "8k", "c
                     "code_rate": "7/8", "guard": "1/32", "cell_id": 0, "gain_db": 0.0, "monitor": [],
                     "si_reserve": 0.03}
 
+HACKRF_FILTERS = [1.75e6, 2.5e6, 3.5e6, 5e6, 5.5e6, 6e6, 7e6, 8e6, 9e6, 10e6, 12e6, 14e6, 15e6, 20e6, 24e6, 28e6]
 DRIVER_RATES = {"hackrf": (8e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6, 1e9), "null": (1, 1e10)}
 
 
@@ -555,8 +556,15 @@ def _plan_radio(r):
             raise ConfigError(f"radio {r.name}: center must differ from the DVB-T carriers by a multiple of {spacing:.4f} Hz")
     for c in cars:
         c.offset = round((c.frequency - r.center) / spacing) * spacing if c.standard == "dvbt" else c.frequency - r.center
-    need = 2 * (max(abs(c.offset) + occupied_half(c) for c in cars) + 150e3)
+    edge = max(abs(c.offset) + occupied_half(c) for c in cars)
+    need = 2 * (edge + 150e3)
     lo_rate, hi_rate = DRIVER_RATES.get(r.driver, (0, 1e12))
+    if r.driver == "hackrf" and r.bandwidth <= 0:
+        # analog filter wide enough for the band edges (a filter cutting them distorts single-carrier
+        # signals: DVB-C 256-QAM errors), and a rate that keeps the DAC images out of it
+        filt = next((f for f in HACKRF_FILTERS if f / 2 >= edge + 100e3), HACKRF_FILTERS[-1])
+        r.bandwidth = filt
+        need = max(need, min(hi_rate, edge + filt / 2 + 300e3))
     if ofdm:
         gi_den = max(int(c.params.get("guard", "1/32").split("/")[1]) for c in ofdm)
         if r.rate <= 0:
@@ -656,7 +664,8 @@ def describe(plan):
         if not r.carriers:
             continue
         out.append(f"radio {r.name} ({r.driver}{' ' + r.args if r.args else ''}): LO {r.center / 1e6:.4f} MHz, "
-                   f"{r.rate / 1e6:.6f} MS/s{f' (FFT {r.nfft})' if r.nfft else ''}, gain {r.gain:g} dB{' +amp' if r.amp else ''}")
+                   f"{r.rate / 1e6:.6f} MS/s{f' (FFT {r.nfft})' if r.nfft else ''}"
+                   f"{f', filter {r.bandwidth / 1e6:g} MHz' if r.bandwidth else ''}, gain {r.gain:g} dB{' +amp' if r.amp else ''}")
     for c in plan.carriers:
         p = c.params
         where = f"{c.frequency / 1e6:.3f} MHz (offset {c.offset / 1e6:+.3f})" if c.radio else f"-> {c.output}"
