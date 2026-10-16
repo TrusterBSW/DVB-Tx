@@ -332,9 +332,11 @@ code_rate = "2/3"               # 1/2 3/5 2/3 3/4 4/5 5/6   -> 40,02 Mbit/s avec
 ```
 
 Le modulateur T2 (porté de gr-dtv, identique à lui) produit le signal à son débit élémentaire ;
-un filtre polyphase passe-bas (77,9 dB de rapport signal/erreur dans la bande) le ramène à la
-fréquence de la radio, où il se mélange avec les autres porteuses. Coût mesuré : ~70 % d'un cœur
-pour un 32K 256-QAM sur un HackRF à 18,3 MS/s (modulateur ~16 %, rééchantillonnage ~50 %).
+un banc de filtres en fréquence (voir plus bas) le ramène exactement à la fréquence de la radio
+(écart à un rééchantillonnage idéal : −110 dB à 16,33 MS/s, −136 dB à 18,29 MS/s), où il se mélange
+avec les autres porteuses. Coût mesuré sur le Threadripper, 32K 256-QAM 5/6 à 16,33 MS/s :
+modulateur 38 % d'un cœur + rééchantillonnage 38 % (deux threads), contre 95 % sur un seul thread
+avec l'ancien filtre polyphase.
 `dvbtx calc` et la page web calculent son débit utile ; la NIT contient le
 `T2_delivery_system_descriptor`.
 
@@ -371,12 +373,25 @@ code_rate = "3/4"               # selon la modulation (QPSK 1/4-9/10, 8PSK 3/5-9
 # rolloff = 0.35 (0.25, 0.20), pilots = true, frame = "normal" (ou "short"), gold_code = 0
 ```
 
-Coût CPU mesuré sur le Threadripper : une porteuse DVB-S2 8PSK à 10 Msym/s, rééchantillonnée à
-24,9 MS/s, prend environ la moitié d'un cœur (filtre de mise en forme ~44 %, codage ~12 %).
+Ces porteuses (DVB-C, DVB-S, DVB-S2, et la T2) sont calculées directement à la fréquence de la
+radio par des bancs de filtres en fréquence (overlap-save) : à chaque bloc, les symboles de chaque
+porteuse passent par une FFT, sont pondérés par la réponse exacte du cosinus surélevé (plate pour
+la T2), placés à la fréquence de la porteuse, et une seule IFFT par banc donne les échantillons de
+la radio. Le planificateur choisit une fréquence d'échantillonnage dont les débits symbole sont des
+fractions simples (`dvbtx check` l'affiche). Mesuré avec un récepteur idéal
+(`tests/rx_sc_mer.py`, radio null, échantillons 16 bits, 256-QAM, multiplex réel) :
 
-Ces porteuses (DVB-C, DVB-S, DVB-S2) passent par un filtre polyphase (mise en forme RRC + rééchantillonnage vers la
-fréquence de la radio en une passe) puis un oscillateur numérique : elles se placent à n'importe
-quelle fréquence et se mélangent librement avec des porteuses DVB-T sur la même radio.
+| | banc en fréquence | ancien filtre polyphase (16 symboles) |
+|---|---|---|
+| 1 porteuse DVB-C 6,9 Msym/s | MER 88,8 dB | 50,1 dB |
+| 2 porteuses DVB-C adjacentes (6,9 et 6,875 Msym/s, 8 MHz d'écart) | 85,6 et 85,7 dB | 21,0 dB (les lobes du filtre tombent sur la voisine) |
+| CPU, 1 porteuse DVB-C 256-QAM à 16,6 MS/s | 31 % (banc) + 31 % (codage) | 88 % |
+
+À l'antenne (tuner Sony) : HackRF T2 32K 256-QAM 5/6 et DVB-C 128-QAM sans erreur, B210 DVB-C
+256-QAM et T2 sans erreur (sur 8 minutes de T2 B210, 1 paquet erroné sur 8 millions avec le banc,
+5 avec l'ancien filtre, aucune sous-alimentation de la radio) ; le 256-QAM sur HackRF reste limité par le bruit analogique de la radio
+(même résultat avec les deux filtres : la mise en forme n'y est pour rien). `synth = "fir"` sur une
+porteuse garde l'ancien filtre (utilisé aussi quand le débit n'est pas une fraction simple).
 
 ## Plusieurs porteuses, plusieurs radios
 

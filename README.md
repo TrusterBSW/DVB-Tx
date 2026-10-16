@@ -166,16 +166,24 @@ The C DVB-T coder is **sample-exact against GNU Radio gr-dtv** (`tests/`) on 2k/
 ## Status
 
 DVB-T ✅ (validated over the air) · HackRF ✅ · USRP/UHD ✅ · SoapySDR (built, untested) ·
-DVB-C (16/64/256-QAM) ✅ symbol-exact against the mini-cmts J.83A encoder, demodulated in software (MER 37 dB,
-no RS error) · DVB-S (QPSK 1/2-7/8) ✅ demodulated by leandvb · DVB-S2 (QPSK/8PSK/16APSK/32APSK) ✅ symbol-exact against gr-dtv ·
+DVB-C (16/32/64/128/256-QAM) ✅ symbol-exact against the mini-cmts J.83A encoder, received over the air (Sony
+tuner: 256-QAM error-free on a B210, 128-QAM on a HackRF) · DVB-S (QPSK 1/2-7/8) ✅ demodulated by leandvb ·
+DVB-S2 (QPSK/8PSK/16APSK/32APSK) ✅ symbol-exact against gr-dtv, 8PSK 9/10 at 20 Msym/s decoded error-free by
+gr-dvbs2rx ·
 DVB-T2 (single PLP, 1K-32K, normal/extended, PP1-PP8, QPSK-256QAM rotated, normal/short frames) ✅ sample-exact
-against gr-dtv on 23 configurations (`docs/DVBT2_PORT.md`), resampled to the radio rate (77.9 dB in-band SNR) and
+against gr-dtv on 23 configurations (`docs/DVBT2_PORT.md`), resampled to the radio rate (exact, see below) and
 mixable with the other carriers: `standard = "dvbt2"` with `fft`, `extended`, `guard`, `pilot`, `constellation`,
 `rotation`, `code_rate`, `frame`.
 
 DVB-C, DVB-S and DVB-S2 carriers (`standard = "dvbc"` with `symbol_rate`, `constellation`; `"dvbs"` with
-`symbol_rate`, `code_rate`; `"dvbs2"` with `symbol_rate`, `modulation`, `code_rate`, `rolloff`, `pilots`, `frame`) go through a polyphase RRC resampler and an NCO: any frequency, freely mixed with
-DVB-T carriers on the same radio.
+`symbol_rate`, `code_rate`; `"dvbs2"` with `symbol_rate`, `modulation`, `code_rate`, `rolloff`, `pilots`, `frame`)
+and DVB-T2 are synthesised directly at the radio rate by frequency-domain filter banks (overlap-save): each block of
+symbols goes through an FFT, is weighted by the exact root-raised-cosine response (flat for the DVB-T2 resampling),
+placed at the carrier frequency, and one IFFT per bank gives the radio samples. The planner picks a radio rate of
+which the symbol rates are simple fractions (`dvbtx check` shows it). Measured with an ideal receiver
+(`tests/rx_sc_mer.py`, null radio, 16-bit samples, 256-QAM): 85.6 dB of MER with an adjacent carrier, against
+21 dB with the former 16-symbol polyphase filter; DVB-T2 resampling within -110 dB of ideal. `synth = "fir"` on a
+carrier keeps the polyphase filter (also used when the rate is not a simple fraction).
 
 ## License
 
