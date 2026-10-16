@@ -47,7 +47,16 @@ CARRIER_DEFAULTS = {"standard": "dvbt", "bandwidth": 8_000_000, "mode": "8k", "c
                     "code_rate": "7/8", "guard": "1/32", "cell_id": 0, "gain_db": 0.0, "monitor": [],
                     "si_reserve": 0.03}
 
-DRIVER_RATES = {"hackrf": (2e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6, 1e9), "null": (1, 1e10)}
+DRIVER_RATES = {"hackrf": (8e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6, 1e9), "null": (1, 1e10)}
+
+
+def occupied_half(car):
+    """half of the occupied bandwidth of a carrier"""
+    if car.standard == "dvbt":
+        bw = int(car.params.get("bandwidth", 8_000_000))
+        fft = capacity.DVBT_MODES[car.params.get("mode", "8k")]
+        return (6817 if fft == 8192 else 1705) * capacity.dvbt_spacing(bw, car.params.get("mode", "8k")) / 2
+    return float(car.params["symbol_rate"]) * (1 + float(car.params.get("rolloff", 0.15))) / 2
 
 
 class ConfigError(ValueError):
@@ -304,8 +313,16 @@ def build(cfg):
         if "channel" in cc and "frequency" not in cc:
             cc["frequency"] = channel_frequency(cc["channel"])
         freq = float(_num(cc.get("frequency", 0), f"carrier {ci} frequency"))
-        params = {k: cc[k] for k in ("bandwidth", "mode", "constellation", "code_rate", "guard", "symbol_rate",
-                                     "modulation", "pilots", "frame", "ts_rate", "rolloff") if k in cc}
+        keys = {"dvbt": ("bandwidth", "mode", "constellation", "code_rate", "guard"),
+                "dvbc": ("constellation", "symbol_rate", "rolloff"),
+                "dvbs": ("code_rate", "symbol_rate", "rolloff", "polarization", "orbital"),
+                "dvbs2": ("modulation", "code_rate", "symbol_rate", "rolloff", "pilots", "frame"),
+                "ts": ("ts_rate", "bandwidth", "mode", "constellation", "code_rate", "guard")}.get(std, ())
+        if std == "dvbc" and "constellation" not in c:
+            cc["constellation"] = "256qam"
+        if std == "dvbs" and "code_rate" not in c:
+            cc["code_rate"] = "3/4"
+        params = {k: cc[k] for k in keys if k in cc}
         if "bandwidth" in params:
             params["bandwidth"] = int(_num(params["bandwidth"], "bandwidth"))
         try:
@@ -318,8 +335,22 @@ def build(cfg):
             radio = by_name.get(rsel) if isinstance(rsel, str) else (radios[rsel] if isinstance(rsel, int) and rsel < len(radios) else None)
             if radio is None:
                 raise ConfigError(f"carrier {ci}: radio {rsel!r} is not defined ([[radio]])")
-            if std != "dvbt":
-                raise ConfigError(f"carrier {ci}: standard {std} is not implemented yet in this version (dvbt, ts)")
+            if std not in ("dvbt", "dvbc", "dvbs"):
+                raise ConfigError(f"carrier {ci}: standard {std} is not implemented yet in this version "
+                                  "(dvbt, dvbc, dvbs, ts)")
+            if std == "dvbs":
+                params.setdefault("symbol_rate", 27_500_000)
+                params["symbol_rate"] = float(_num(params["symbol_rate"], "symbol_rate"))
+                params.setdefault("rolloff", 0.35)
+                params.setdefault("code_rate", "3/4")
+                ts_rate = capacity.rate(std, **params)
+            if std == "dvbc":
+                params.setdefault("symbol_rate", 6_900_000)
+                params["symbol_rate"] = float(_num(params["symbol_rate"], "symbol_rate"))
+                params.setdefault("rolloff", 0.15)
+                if params.get("constellation") not in ("16qam", "64qam", "256qam"):
+                    raise ConfigError(f"carrier {ci}: DVB-C constellation must be 16qam, 64qam or 256qam")
+                ts_rate = capacity.rate(std, **params)
             if freq <= 0:
                 raise ConfigError(f"carrier {ci}: frequency (or channel) is required")
         tsid = int(cc.get("tsid", ci + 1))
@@ -465,58 +496,64 @@ def _input_kind(src, opts):
 
 def _plan_radio(r):
     cars = r.carriers
-    ref = cars[0].params
-    for c in cars[1:]:
-        for k in ("mode", "guard", "bandwidth"):
-            if c.params.get(k) != ref.get(k):
-                raise ConfigError(f"radio {r.name}: carriers {cars[0].name} and {c.name} differ in {k}; carriers "
-                                  "sharing one radio need the same mode, guard interval and bandwidth")
-    bw = int(ref.get("bandwidth", 8_000_000))
-    spacing = capacity.dvbt_spacing(bw, ref.get("mode", "8k"))
-    fft = capacity.DVBT_MODES[ref.get("mode", "8k")]
-    occ_half = (6817 if fft == 8192 else 1705) * spacing / 2
-    freqs = sorted(c.frequency for c in cars)
-    for c in cars:
-        d = (c.frequency - freqs[0]) / spacing
-        if abs(d - round(d)) > 1e-3:
-            raise ConfigError(f"radio {r.name}: {c.name} at {c.frequency / 1e6:.6f} MHz is not on the "
-                              f"{spacing:.4f} Hz grid of {freqs[0] / 1e6:.6f} MHz")
-    for a, b in zip(freqs, freqs[1:]):
-        if b - a < 2 * occ_half + 50e3:
-            raise ConfigError(f"radio {r.name}: carriers at {a / 1e6:.3f} and {b / 1e6:.3f} MHz overlap")
+    ofdm = [c for c in cars if c.standard == "dvbt"]
+    if ofdm:
+        ref = ofdm[0].params
+        for c in ofdm[1:]:
+            for k in ("mode", "guard", "bandwidth"):
+                if c.params.get(k) != ref.get(k):
+                    raise ConfigError(f"radio {r.name}: DVB-T carriers {ofdm[0].name} and {c.name} differ in {k}; "
+                                      "DVB-T carriers sharing one radio need the same mode, guard interval and bandwidth")
+        bw = int(ref.get("bandwidth", 8_000_000))
+        spacing = capacity.dvbt_spacing(bw, ref.get("mode", "8k"))
+        fft = capacity.DVBT_MODES[ref.get("mode", "8k")]
+        f0 = min(c.frequency for c in ofdm)
+        for c in ofdm:
+            d = (c.frequency - f0) / spacing
+            if abs(d - round(d)) > 1e-3:
+                raise ConfigError(f"radio {r.name}: {c.name} at {c.frequency / 1e6:.6f} MHz is not on the "
+                                  f"{spacing:.4f} Hz grid of {f0 / 1e6:.6f} MHz")
+    spans = sorted((c.frequency - occupied_half(c), c.frequency + occupied_half(c), c) for c in cars)
+    for (a0, a1, ca), (b0, b1, cb) in zip(spans, spans[1:]):
+        if b0 < a1 + 50e3:
+            raise ConfigError(f"radio {r.name}: carriers {ca.name} and {cb.name} overlap")
+    lo_edge, hi_edge = spans[0][0], max(s[1] for s in spans)
     if r.center <= 0:
-        if len(freqs) == 1:
-            lo = bw / 2 if r.lo_offset == "auto" else float(_num(r.lo_offset, "lo_offset"))
-            target = freqs[0] - lo                 # keep the LO leakage out of the channel
+        if len(cars) == 1:
+            c = cars[0]
+            lo = occupied_half(c) * 1.05 if r.lo_offset == "auto" else float(_num(r.lo_offset, "lo_offset"))
+            target = c.frequency - lo             # keep the LO leakage out of the channel
         else:
-            target = (freqs[0] + freqs[-1]) / 2
-        r.center = freqs[0] + round((target - freqs[0]) / spacing) * spacing
-    else:
-        d = (freqs[0] - r.center) / spacing
+            target = (lo_edge + hi_edge) / 2
+        r.center = f0 + round((target - f0) / spacing) * spacing if ofdm else round(target / 1000) * 1000
+    elif ofdm:
+        d = (f0 - r.center) / spacing
         if abs(d - round(d)) > 1e-3:
-            raise ConfigError(f"radio {r.name}: center must differ from the carriers by a multiple of {spacing:.4f} Hz")
+            raise ConfigError(f"radio {r.name}: center must differ from the DVB-T carriers by a multiple of {spacing:.4f} Hz")
     for c in cars:
-        c.offset = round((c.frequency - r.center) / spacing) * spacing
-    need = 2 * (max(abs(c.offset) for c in cars) + occ_half + 150e3)
-    gi_den = max(int(c.params.get("guard", "1/32").split("/")[1]) for c in cars)
+        c.offset = round((c.frequency - r.center) / spacing) * spacing if c.standard == "dvbt" else c.frequency - r.center
+    need = 2 * (max(abs(c.offset) + occupied_half(c) for c in cars) + 150e3)
     lo_rate, hi_rate = DRIVER_RATES.get(r.driver, (0, 1e12))
-    if r.rate <= 0:
-        nfft = _smooth_size(max(need, lo_rate) / spacing, fft)   # integer oversampling of the native rate
-        r.rate = nfft * spacing
-    else:
-        nfft = round(r.rate / spacing)
-        if abs(nfft * spacing - r.rate) > 1e-6 * r.rate:
-            raise ConfigError(f"radio {r.name}: rate {r.rate:.0f} is not a multiple of {spacing:.6f} Hz "
-                              f"(for instance {_smooth_size(r.rate / spacing, 64) * spacing:.3f})")
-        if r.rate < need:
-            raise ConfigError(f"radio {r.name}: rate {r.rate / 1e6:.3f} MS/s too low for the carriers "
-                              f"(needs {need / 1e6:.3f})")
+    if ofdm:
+        gi_den = max(int(c.params.get("guard", "1/32").split("/")[1]) for c in ofdm)
+        if r.rate <= 0:
+            nfft = _smooth_size(max(need, lo_rate) / spacing, fft)   # integer oversampling of the native rate
+            r.rate = nfft * spacing
+        else:
+            nfft = round(r.rate / spacing)
+            if abs(nfft * spacing - r.rate) > 1e-6 * r.rate:
+                raise ConfigError(f"radio {r.name}: rate {r.rate:.0f} is not a multiple of {spacing:.6f} Hz "
+                                  f"(for instance {_smooth_size(r.rate / spacing, 64) * spacing:.3f})")
+        if nfft % gi_den:
+            raise ConfigError(f"radio {r.name}: FFT size {nfft} not divisible by the guard interval")
+        r.nfft = nfft
+    elif r.rate <= 0:
+        r.rate = max(lo_rate, math.ceil(need / 100e3) * 100e3)
+    if r.rate < need:
+        raise ConfigError(f"radio {r.name}: rate {r.rate / 1e6:.3f} MS/s too low for the carriers (needs {need / 1e6:.3f})")
     if r.rate > hi_rate * 1.0001:
         raise ConfigError(f"radio {r.name}: {len(cars)} carriers need {r.rate / 1e6:.3f} MS/s, more than "
                           f"{r.driver} can do ({hi_rate / 1e6:.2f}); split them over several radios")
-    if nfft % gi_den:
-        raise ConfigError(f"radio {r.name}: FFT size {nfft} not divisible by the guard interval")
-    r.nfft = nfft
 
 
 def write_engine_ini(plan, path, si_dir):
@@ -541,7 +578,14 @@ def write_engine_ini(plan, path, si_dir):
     for car in plan.carriers:
         p = car.params
         L += [f"[carrier {car.index}]", f"standard = {car.standard}", f"tsid = {car.tsid}"]
-        if car.standard == "dvbt":
+        if car.standard == "dvbs":
+            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
+                  f"code_rate = {p['code_rate']}", f"rolloff = {p.get('rolloff', 0.35)}", f"gain_db = {car.gain_db}"]
+        elif car.standard == "dvbc":
+            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
+                  f"constellation = {p['constellation']}", f"rolloff = {p.get('rolloff', 0.15)}",
+                  f"gain_db = {car.gain_db}"]
+        elif car.standard == "dvbt":
             L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"mode = {p.get('mode', '8k')}",
                   f"constellation = {p.get('constellation', '64qam')}", f"code_rate = {p.get('code_rate', '7/8')}",
                   f"guard = {p.get('guard', '1/32').split('/')[1]}", f"bandwidth = {p.get('bandwidth', 8000000)}",
@@ -578,12 +622,19 @@ def describe(plan):
         if not r.carriers:
             continue
         out.append(f"radio {r.name} ({r.driver}{' ' + r.args if r.args else ''}): LO {r.center / 1e6:.4f} MHz, "
-                   f"{r.rate / 1e6:.6f} MS/s (FFT {r.nfft}), gain {r.gain:g} dB{' +amp' if r.amp else ''}")
+                   f"{r.rate / 1e6:.6f} MS/s{f' (FFT {r.nfft})' if r.nfft else ''}, gain {r.gain:g} dB{' +amp' if r.amp else ''}")
     for c in plan.carriers:
         p = c.params
         where = f"{c.frequency / 1e6:.3f} MHz (offset {c.offset / 1e6:+.3f})" if c.radio else f"-> {c.output}"
-        desc_ = (f"DVB-T {p.get('mode')} {p.get('constellation')} {p.get('code_rate')} GI {p.get('guard')} "
-                 f"{int(p.get('bandwidth', 0)) // 1000000} MHz" if c.standard == "dvbt" else c.standard)
+        if c.standard == "dvbt":
+            desc_ = (f"DVB-T {p.get('mode')} {p.get('constellation')} {p.get('code_rate')} GI {p.get('guard')} "
+                     f"{int(p.get('bandwidth', 0)) // 1000000} MHz")
+        elif c.standard == "dvbc":
+            desc_ = f"DVB-C {p['constellation']} {p['symbol_rate'] / 1e6:g} Msym/s rolloff {p.get('rolloff', 0.15)}"
+        elif c.standard == "dvbs":
+            desc_ = f"DVB-S QPSK {p['code_rate']} {p['symbol_rate'] / 1e6:g} Msym/s rolloff {p.get('rolloff', 0.35)}"
+        else:
+            desc_ = c.standard
         out.append(f"carrier {c.index} {c.name!r}: {desc_}, {where}, TSID {c.tsid}, useful rate "
                    f"{c.ts_rate / 1e6:.3f} Mbit/s, {len(c.services)} service(s)")
         for s in c.services:

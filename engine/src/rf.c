@@ -19,8 +19,11 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "dvbc.h"
+#include "dvbs.h"
 #include "dvbt.h"
 #include "ofdm.h"
+#include "scgen.h"
 #include "sdr.h"
 #include "ts.h"
 #include "util.h"
@@ -47,7 +50,13 @@ typedef struct carrier {
     /* dvbt */
     dvbt_cfg tc;
     dvbt *mod;
-    int ncar;
+    /* single carrier (dvbc) */
+    void *src;                    /* dvbc / dvbs symbol source */
+    sym_fn symf;
+    scgen *sg;
+    double symbol_rate, rolloff;
+    int bits, cr_k, cr_n;
+    int ncar;                     /* elements per ring slot: OFDM carriers, or samples of a block */
     float complex *ring;
     uint64_t wr, rd;
     pthread_mutex_t lock;
@@ -75,8 +84,11 @@ struct radio {
 
     ofdm_group *grp;
     int nfft, ncp, symlen;
-    carrier *mem[64];
+    carrier *mem[64];             /* DVB-T carriers sharing the OFDM synthesis */
     int nmem;
+    carrier *sc[64];              /* single-carrier modulations added after it */
+    int nsc;
+    int blklen;                   /* samples per output block */
 
     _Atomic int64_t t0;           /* CLOCK_MONOTONIC ns at which sample 0 is (virtually) on air */
     int64_t win_start, win_min, track_start;
@@ -204,6 +216,22 @@ static void *dvbt_thread(void *arg)
 {
     carrier *c = arg;
     rt_priority(40, "the carrier threads");
+    if (!c->mod) {                 /* single carrier: blocks of radio samples */
+        while (g_running) {
+            pthread_mutex_lock(&c->lock);
+            while (g_running && c->wr - c->rd >= RING_SYMS)
+                pthread_cond_wait(&c->cond, &c->lock);
+            pthread_mutex_unlock(&c->lock);
+            if (!g_running)
+                break;
+            scgen_block(c->sg, c->ring + (size_t)(c->wr % RING_SYMS) * c->ncar, c->ncar);
+            pthread_mutex_lock(&c->lock);
+            c->wr++;
+            pthread_cond_broadcast(&c->cond);
+            pthread_mutex_unlock(&c->lock);
+        }
+        return NULL;
+    }
     while (g_running) {
         pthread_mutex_lock(&c->lock);
         while (g_running && c->wr - c->rd >= RING_SYMS)
@@ -251,34 +279,50 @@ static void *radio_thread(void *arg)
 {
     radio *r = arg;
     rt_priority(50, "the radio threads");
-    float complex *out = xcalloc(r->symlen, sizeof *out);
+    float complex *out = xcalloc(r->blklen, sizeof *out);
     const float complex *cars[64];
     const float complex *bufs[1] = { out };
     int64_t next_track = 0;
     while (g_running) {
-        for (int i = 0; i < r->nmem; i++) {
-            carrier *c = r->mem[i];
+        carrier *all[128];
+        int nall = 0;
+        for (int i = 0; i < r->nmem; i++)
+            all[nall++] = r->mem[i];
+        for (int i = 0; i < r->nsc; i++)
+            all[nall++] = r->sc[i];
+        for (int i = 0; i < nall; i++) {
+            carrier *c = all[i];
             pthread_mutex_lock(&c->lock);
             while (g_running && c->wr == c->rd)
                 pthread_cond_wait(&c->cond, &c->lock);
             pthread_mutex_unlock(&c->lock);
-            cars[i] = c->ring + (size_t)(c->rd % RING_SYMS) * c->ncar;
         }
         if (!g_running)
             break;
-        ofdm_group_synth(r->grp, cars, out);
-        for (int i = 0; i < r->nmem; i++) {
-            carrier *c = r->mem[i];
+        if (r->nmem) {
+            for (int i = 0; i < r->nmem; i++)
+                cars[i] = r->mem[i]->ring + (size_t)(r->mem[i]->rd % RING_SYMS) * r->mem[i]->ncar;
+            ofdm_group_synth(r->grp, cars, out);
+        } else {
+            memset(out, 0, sizeof(float complex) * r->blklen);
+        }
+        for (int i = 0; i < r->nsc; i++) {
+            const float complex *b = r->sc[i]->ring + (size_t)(r->sc[i]->rd % RING_SYMS) * r->sc[i]->ncar;
+            for (int k = 0; k < r->blklen; k++)
+                out[k] += b[k];
+        }
+        for (int i = 0; i < nall; i++) {
+            carrier *c = all[i];
             pthread_mutex_lock(&c->lock);
             c->rd++;
             pthread_cond_broadcast(&c->cond);
             pthread_mutex_unlock(&c->lock);
         }
-        if (r->drv->write(r->dev, bufs, r->symlen, r->scale)) {
+        if (r->drv->write(r->dev, bufs, r->blklen, r->scale)) {
             LOGE("radio %d: write failed", r->idx);
             break;
         }
-        r->written += (uint64_t)r->symlen;
+        r->written += (uint64_t)r->blklen;
         int64_t now = mono_ns();
         if (now >= next_track) {
             radio_track(r);
@@ -408,6 +452,38 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             }
             c->radio = g_radios[ri];
             clk = radio_clock;
+        } else if (!strcmp(c->standard, "dvbc")) {
+            const char *cons = conf_str(s, "constellation", "256qam");
+            c->bits = !strcmp(cons, "16qam") ? 4 : !strcmp(cons, "64qam") ? 6 : !strcmp(cons, "256qam") ? 8 : 0;
+            if (!c->bits) {
+                snprintf(err, errlen, "carrier %d: DVB-C constellation must be 16qam, 64qam or 256qam", c->idx);
+                return -1;
+            }
+            c->symbol_rate = conf_num(s, "symbol_rate", 6.9e6);
+            c->rolloff = conf_num(s, "rolloff", 0.15);
+            ts_rate = dvbc_ts_rate(c->symbol_rate, c->bits);
+            int ri = (int)conf_int(s, "radio", 0);
+            if (ri < 0 || ri >= g_nradios) {
+                snprintf(err, errlen, "carrier %d: radio %d does not exist", c->idx, ri);
+                return -1;
+            }
+            c->radio = g_radios[ri];
+            clk = radio_clock;
+        } else if (!strcmp(c->standard, "dvbs")) {
+            if (parse_code_rate(conf_str(s, "code_rate", "3/4"), &c->cr_k, &c->cr_n)) {
+                snprintf(err, errlen, "carrier %d: bad code_rate", c->idx);
+                return -1;
+            }
+            c->symbol_rate = conf_num(s, "symbol_rate", 27.5e6);
+            c->rolloff = conf_num(s, "rolloff", 0.35);
+            ts_rate = dvbs_ts_rate(c->symbol_rate, c->cr_k, c->cr_n);
+            int ri = (int)conf_int(s, "radio", 0);
+            if (ri < 0 || ri >= g_nradios) {
+                snprintf(err, errlen, "carrier %d: radio %d does not exist", c->idx, ri);
+                return -1;
+            }
+            c->radio = g_radios[ri];
+            clk = radio_clock;
         } else if (!strcmp(c->standard, "ts")) {
             ts_rate = conf_num(s, "ts_rate", 0);
             if (ts_rate <= 0) {
@@ -485,63 +561,97 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
     for (int i = 0; i < g_ncarriers; i++)
         mux_start(g_carriers[i]->mux);
 
-    /* OFDM groups: one per radio, all its carriers share mode, guard interval and bandwidth */
+    /* per radio: one OFDM synthesis for its DVB-T carriers (same mode, guard interval and bandwidth),
+     * plus its single-carrier modulations; each carrier gets its share of the power */
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
         dvbt_cfg *ref = NULL;
-        double ptot = 0;
+        double wtot = 0;
         for (int i = 0; i < g_ncarriers; i++) {
             carrier *c = g_carriers[i];
             if (c->radio != r)
                 continue;
-            if (!ref)
-                ref = &c->tc;
-            else if (c->tc.fft != ref->fft || c->tc.gi != ref->gi || c->tc.bw_hz != ref->bw_hz) {
-                snprintf(err, errlen, "radio %d: carriers %d and %d differ in mode/guard/bandwidth; "
-                         "one radio needs identical OFDM parameters", ri, r->mem[0]->idx, c->idx);
-                return -1;
-            }
-            if (r->nmem >= 64) {
+            if (r->nmem + r->nsc >= 64) {
                 snprintf(err, errlen, "radio %d: too many carriers", ri);
                 return -1;
             }
-            r->mem[r->nmem++] = c;
-            ptot += dvbt_mean_power(&c->tc) * pow(10.0, c->gain_db / 10.0);
+            wtot += pow(10.0, c->gain_db / 10.0);
+            if (!strcmp(c->standard, "dvbt")) {
+                if (!ref)
+                    ref = &c->tc;
+                else if (c->tc.fft != ref->fft || c->tc.gi != ref->gi || c->tc.bw_hz != ref->bw_hz) {
+                    snprintf(err, errlen, "radio %d: DVB-T carriers %d and %d differ in mode/guard/bandwidth; "
+                             "one radio needs identical OFDM parameters", ri, r->mem[0]->idx, c->idx);
+                    return -1;
+                }
+                r->mem[r->nmem++] = c;
+            } else {
+                r->sc[r->nsc++] = c;
+            }
         }
-        if (!r->nmem) {
+        if (!r->nmem && !r->nsc) {
             snprintf(err, errlen, "radio %d has no carrier", ri);
             return -1;
         }
-        double spacing = dvbt_sample_rate(ref) / ref->fft;
-        double nf = r->p.rate / spacing;
-        r->nfft = (int)lround(nf);
-        if (fabs(nf - r->nfft) > 1e-6 * nf) {
-            snprintf(err, errlen, "radio %d: rate %.3f is not a multiple of the subcarrier spacing %.6f Hz "
-                     "(use for instance %.3f)", ri, r->p.rate, spacing, ceil(nf / ref->fft) * ref->fft * spacing);
-            return -1;
+        if (r->nmem) {
+            double spacing = dvbt_sample_rate(ref) / ref->fft;
+            double nf = r->p.rate / spacing;
+            r->nfft = (int)lround(nf);
+            if (fabs(nf - r->nfft) > 1e-6 * nf) {
+                snprintf(err, errlen, "radio %d: rate %.3f is not a multiple of the subcarrier spacing %.6f Hz "
+                         "(use for instance %.3f)", ri, r->p.rate, spacing, ceil(nf / ref->fft) * ref->fft * spacing);
+                return -1;
+            }
+            r->ncp = r->nfft / ref->gi;
+            r->symlen = r->nfft + r->ncp;
+            r->blklen = r->symlen;
+            r->grp = ofdm_group_new(r->nfft, r->ncp, 1);
+            for (int i = 0; i < r->nmem; i++) {
+                carrier *c = r->mem[i];
+                double b = c->offset_hz / spacing;
+                int bins = (int)lround(b);
+                if (fabs(b - bins) > 1e-3) {
+                    snprintf(err, errlen, "carrier %d: offset %.1f Hz is not a multiple of %.6f Hz", c->idx,
+                             c->offset_hz, spacing);
+                    return -1;
+                }
+                double w = pow(10.0, c->gain_db / 10.0) / wtot;
+                float g = (float)sqrt(w / dvbt_mean_power(&c->tc));
+                int rr = ofdm_group_add(r->grp, dvbt_ncarriers(&c->tc), bins, g);
+                if (rr < 0) {
+                    snprintf(err, errlen, "carrier %d: %s", c->idx,
+                             rr == -2 ? "overlaps another carrier" : "outside the radio bandwidth");
+                    return -1;
+                }
+                c->ncar = dvbt_ncarriers(&c->tc);
+                c->ring = xcalloc((size_t)RING_SYMS * c->ncar, sizeof(float complex));
+                c->mod = dvbt_new(&c->tc, mux_pull, c->mux);
+            }
+        } else {
+            r->blklen = 16384;
         }
-        r->ncp = r->nfft / ref->gi;
-        r->symlen = r->nfft + r->ncp;
-        r->grp = ofdm_group_new(r->nfft, r->ncp, 1);
-        for (int i = 0; i < r->nmem; i++) {
-            carrier *c = r->mem[i];
-            double b = c->offset_hz / spacing;
-            int bins = (int)lround(b);
-            if (fabs(b - bins) > 1e-3) {
-                snprintf(err, errlen, "carrier %d: offset %.1f Hz is not a multiple of %.6f Hz", c->idx,
-                         c->offset_hz, spacing);
+        for (int i = 0; i < r->nsc; i++) {
+            carrier *c = r->sc[i];
+            double half = c->symbol_rate * (1 + c->rolloff) / 2;
+            if (fabs(c->offset_hz) + half > r->p.rate / 2) {
+                snprintf(err, errlen, "carrier %d: outside the radio bandwidth", c->idx);
                 return -1;
             }
-            float g = (float)(pow(10.0, c->gain_db / 20.0) / sqrt(ptot));
-            int rr = ofdm_group_add(r->grp, dvbt_ncarriers(&c->tc), bins, g);
-            if (rr < 0) {
-                snprintf(err, errlen, "carrier %d: %s", c->idx,
-                         rr == -2 ? "overlaps another carrier" : "outside the radio bandwidth");
+            float g = (float)sqrt(pow(10.0, c->gain_db / 10.0) / wtot);
+            if (!strcmp(c->standard, "dvbs")) {
+                c->src = dvbs_new(c->cr_k, c->cr_n, mux_pull, c->mux);
+                c->symf = dvbs_symbol;
+            } else {
+                c->src = dvbc_new(c->bits, mux_pull, c->mux);
+                c->symf = dvbc_symbol;
+            }
+            if (!c->src) {
+                snprintf(err, errlen, "carrier %d: invalid modulation parameters", c->idx);
                 return -1;
             }
-            c->ncar = dvbt_ncarriers(&c->tc);
+            c->sg = scgen_new(c->symbol_rate, r->p.rate, c->offset_hz, c->rolloff, 16, g, c->symf, c->src);
+            c->ncar = r->blklen;
             c->ring = xcalloc((size_t)RING_SYMS * c->ncar, sizeof(float complex));
-            c->mod = dvbt_new(&c->tc, mux_pull, c->mux);
         }
         r->scale = (float)pow(10.0, -r->backoff_db / 20.0);
         r->drv = sdr_load(r->driver, err, errlen);
@@ -564,10 +674,10 @@ int rf_start(void)
             return -1;
         }
         /* before the radio reports anything: on air after its buffer and our symbol ring */
-        int64_t lead = (int64_t)r->p.buffer_ms * 1000000 + (int64_t)(RING_SYMS * r->symlen / r->p.rate * 1e9);
+        int64_t lead = (int64_t)r->p.buffer_ms * 1000000 + (int64_t)(RING_SYMS * r->blklen / r->p.rate * 1e9);
         atomic_store(&r->t0, mono_ns() + lead);
         LOGI("radio %d: %s at %.3f MHz, %.6f MS/s, %d carrier(s), FFT %d", ri, r->driver, r->p.freq_hz / 1e6,
-             r->p.rate / 1e6, r->nmem, r->nfft);
+             r->p.rate / 1e6, r->nmem + r->nsc, r->nfft);
     }
     for (int i = 0; i < g_ncarriers; i++) {
         carrier *c = g_carriers[i];
@@ -636,7 +746,7 @@ int rf_stats_json(char *buf, int len, double dt)
         n += snprintf(buf + n, len - n,
                       "%s{\"index\":%d,\"driver\":\"%s\",\"freq\":%.0f,\"rate\":%.3f,\"carriers\":%d,"
                       "\"underruns\":%llu,\"late\":%llu,\"fill\":%.3f,\"cpu\":%.1f,\"samples\":%llu}",
-                      ri ? "," : "", ri, r->driver, r->p.freq_hz, r->p.rate, r->nmem,
+                      ri ? "," : "", ri, r->driver, r->p.freq_hz, r->p.rate, r->nmem + r->nsc,
                       (unsigned long long)r->last.underruns, (unsigned long long)r->last.late, r->last.fill, load,
                       (unsigned long long)r->last.samples);
     }

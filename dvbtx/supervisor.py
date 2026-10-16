@@ -89,6 +89,13 @@ class SiManager:
 
     def _delivery(self, car):
         p = car.params
+        if car.standard == "dvbc":
+            return si.cable_delivery(car.frequency, p["symbol_rate"], p["constellation"])
+        if car.standard == "dvbs":
+            # the frequency in the NIT is the satellite one: the L-band IF + the LNB oscillator
+            return si.satellite_delivery(car.frequency + float(p.get("lnb_lo", 9_750_000_000)), p["symbol_rate"],
+                                         p["code_rate"], p.get("polarization", "h"), False, "qpsk",
+                                         float(p.get("rolloff", 0.35)), float(p.get("orbital", 19.2)))
         if car.standard == "dvbt" or (car.standard == "ts" and car.frequency and "constellation" in p):
             return si.terrestrial_delivery(car.frequency, p.get("bandwidth", 8_000_000), p.get("constellation", "64qam"),
                                            p.get("code_rate", "7/8"), p.get("guard", "1/32"), p.get("mode", "8k"),

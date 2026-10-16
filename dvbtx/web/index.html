@@ -177,7 +177,11 @@ function render(s) {
     }
     const occ = l ? ((l.rate - l.null_rate) / cap) * 100 : null;
     const p = c.params;
-    const std = c.standard === "dvbt" ? `DVB-T ${p.mode} ${p.constellation} ${p.code_rate} GI ${p.guard} ${(p.bandwidth / 1e6)} MHz` : c.standard;
+    const std = c.standard === "dvbt" ? `DVB-T ${p.mode} ${p.constellation} ${p.code_rate} GI ${p.guard} ${(p.bandwidth / 1e6)} MHz`
+      : c.standard === "dvbc" ? `DVB-C ${p.constellation} ${(p.symbol_rate / 1e6)} Msym/s`
+      : c.standard === "dvbs" ? `DVB-S QPSK ${p.code_rate} ${(p.symbol_rate / 1e6)} Msym/s`
+      : c.standard === "dvbt2" ? `DVB-T2 ${p.fft || ""} ${p.constellation || ""} ${p.code_rate || ""} ${p.pilot || ""}`
+      : c.standard === "ts" ? "TS seul (sans radio)" : c.standard;
     const ts = c.tsduck;
     const rows = c.services.map((sv, i) => {
       const lv = sv.live || {}, inp = sv.input || {};

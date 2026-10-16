@@ -7,7 +7,7 @@ CFLAGS += -std=gnu11 -Wall -Wextra -Wno-unused-parameter -pthread -DPLUGIN_DIR=\
 LDLIBS = -lfftw3f -lm -ldl -pthread
 BUILD = build
 
-SRC = src/main.c src/conf.c src/util.c src/input.c src/psi.c src/mux.c src/rf.c src/dvbt.c src/outer.c src/ofdm.c
+SRC = src/main.c src/conf.c src/util.c src/input.c src/psi.c src/mux.c src/rf.c src/dvbt.c src/outer.c src/ofdm.c src/dvbc.c src/dvbs.c src/scgen.c
 OBJ = $(SRC:src/%.c=$(BUILD)/%.o)
 PLUGINS = $(BUILD)/dvbtx-sdr-null.so
 HAVE_HACKRF := $(shell pkg-config --exists libhackrf && echo y)
