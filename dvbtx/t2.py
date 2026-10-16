@@ -24,7 +24,7 @@ rate() returns the useful TS bit rate (188-byte packets), equal to dvbt2_ts_rate
 from fractions import Fraction
 
 DEFAULTS = dict(bandwidth=8e6, fft="32k", extended=True, guard="1/128", pilot="PP7",
-                constellation="256qam", rotation=True, code_rate="2/3", frame="normal",
+                constellation="256qam", rotation=True, code_rate="5/6", frame="normal",
                 fec_blocks=0, data_symbols=0, ti_blocks=0, l1_constellation="64qam", papr=0,
                 cell_id=0, network_id=0x3085, t2_system_id=0x8001, t2_frames=0, frequency=0)
 

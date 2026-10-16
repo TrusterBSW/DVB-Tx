@@ -327,12 +327,16 @@ def build(cfg):
                 "dvbs2": ("modulation", "code_rate", "symbol_rate", "rolloff", "pilots", "frame", "gold_code",
                           "polarization", "orbital", "lnb_lo"),
                 "ts": ("ts_rate", "bandwidth", "mode", "constellation", "code_rate", "guard")}.get(std, ())
-        if std == "dvbt2":                       # DVB-T defaults do not apply
-            for k, v in (("constellation", "256qam"), ("code_rate", "2/3"), ("guard", "1/128")):
+        if std == "dvbt2":                       # DVB-T defaults do not apply: maximum capacity validated
+            for k, v in (("constellation", "256qam"), ("code_rate", "5/6"), ("guard", "1/128")):   # over the air
                 if k not in c:
                     cc[k] = v
         if std == "dvbc" and "constellation" not in c:
-            cc["constellation"] = "256qam"
+            # 256-QAM needs ~34 dB of signal quality: a HackRF reaches 32-34 dB (errors measured),
+            # 128-QAM is error-free on it; other radios (B210: 41 dB) do 256-QAM
+            rsel = cc.get("radio", 0)
+            rdrv = next((r.driver for r in radios if r.name == rsel or r.index == rsel), "")
+            cc["constellation"] = "128qam" if rdrv == "hackrf" else "256qam"
         if std in ("dvbs", "dvbs2") and "code_rate" not in c:
             cc["code_rate"] = "3/4"
         params = {k: cc[k] for k in keys if k in cc}
