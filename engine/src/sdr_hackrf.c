@@ -99,6 +99,24 @@ static const char *arg_value(const char *args, const char *key, char *buf, size_
     return NULL;
 }
 
+/* args "if=2400e6": force the intermediate frequency of the MAX2837 (2150-2750 MHz) below 2150 MHz,
+ * where the RFFC5072 mixes it down (LO = IF + RF); default: the firmware's choice (about 2350 MHz) */
+static int set_freq(hackrf_device *dev, double freq, const char *args)
+{
+    char v[32];
+    if (freq < 2150e6 && arg_value(args, "if", v, sizeof v)) {
+        double ifq = strtod(v, NULL);
+        /* like the firmware: the mixer LO on a whole MHz (a fractional one adds spurs), the
+         * remainder on the IF */
+        double lo = round((ifq + freq) / 1e6) * 1e6;
+        ifq = lo - freq;
+        if (ifq >= 2150e6 && ifq <= 2750e6)
+            return hackrf_set_freq_explicit(dev, (uint64_t)llround(ifq), (uint64_t)llround(lo),
+                                            RF_PATH_FILTER_LOW_PASS);
+    }
+    return hackrf_set_freq(dev, (uint64_t)llround(freq));
+}
+
 static sdr_dev *hk_open(const sdr_params *p, char *err, int errlen)
 {
     int r = hackrf_init();
@@ -124,7 +142,7 @@ static sdr_dev *hk_open(const sdr_params *p, char *err, int errlen)
     if ((r = hackrf_set_sample_rate(d->dev, p->rate * corr)) != HACKRF_SUCCESS ||
         (r = hackrf_set_baseband_filter_bandwidth(
              d->dev, hackrf_compute_baseband_filter_bw((uint32_t)bw))) != HACKRF_SUCCESS ||
-        (r = hackrf_set_freq(d->dev, (uint64_t)llround(p->freq_hz * corr))) != HACKRF_SUCCESS ||
+        (r = set_freq(d->dev, p->freq_hz * corr, p->args)) != HACKRF_SUCCESS ||
         (r = hackrf_set_txvga_gain(d->dev, (uint32_t)(p->gain < 0 ? 0 : p->gain > 47 ? 47 : p->gain))) !=
             HACKRF_SUCCESS ||
         (r = hackrf_set_amp_enable(d->dev, p->amp ? 1 : 0)) != HACKRF_SUCCESS) {
