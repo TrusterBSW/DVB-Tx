@@ -321,16 +321,17 @@ def sdt_sections(tsid, onid, services, version, charset="iso8859-9", actual=True
 
 
 def event_descriptors(ev, charset="iso8859-9"):
-    """Descriptors of one event: short_event, extended_event (long text), content, parental rating."""
+    """Descriptors of one event: short_event (title only), extended_event (the whole description,
+    sub-title first), content, parental rating."""
     lang = lang_code(ev.get("lang"))
     out = []
-    name = dvb_text(ev.get("title", ""), charset, 120)
-    sub = ev.get("subtitle") or ""
-    long_text = ev.get("description") or ""
-    short = sub if sub else long_text
-    text = dvb_text(short, charset, 250 - 5 - len(name) - 1)
-    out.append(desc(0x4D, lang + bytes([len(name)]) + name + bytes([len(text)]) + text))
-    if long_text and (sub or len(dvb_text(long_text, charset, 4000)) > len(text)):
+    name = dvb_text(ev.get("title", ""), charset, 240)
+    out.append(desc(0x4D, lang + bytes([len(name)]) + name + b"\x00"))
+    sub = (ev.get("subtitle") or "").strip()
+    long_text = (ev.get("description") or "").strip()
+    if sub and not long_text.startswith(sub):
+        long_text = f"{sub}. {long_text}" if long_text else sub
+    if long_text:
         full = dvb_text(long_text, charset, 4000)
         prefix = full[:3] if full[:1] == b"\x10" else (full[:1] if full[:1] and full[0] < 0x20 else b"")
         body = full[len(prefix):]
