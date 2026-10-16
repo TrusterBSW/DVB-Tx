@@ -33,6 +33,7 @@ DEFAULTS = {
         "backup": "", "buffer_ms": 1000, "switch_timeout_ms": 3000, "return_ms": 10000, "max_late_ms": 600,
         "early_ms": 100, "pcr_max_ms": 35, "priority": 5, "pmt_period_ms": 100, "mux_delay": 0.7, "ring_pkts": 65536,
         "readrate": "auto", "map": ["0:v:0?", "0:a?"], "loop": True,
+        "copy_audio_codecs": ["aac", "mp2", "mp3", "ac3", "eac3", "aac_latm"],
         "encode": {"video_codec": "libx264", "preset": "veryfast", "video_bitrate": "auto", "gop_s": 1.0,
                    "audio_codec": "aac", "audio_bitrate": "128k", "audio_rate": 48000, "pix_fmt": "yuv420p",
                    "size": "", "fps": "", "hwaccel": "", "tune": "", "deinterlace": False,

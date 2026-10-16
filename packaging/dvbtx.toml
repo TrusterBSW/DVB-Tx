@@ -81,6 +81,8 @@ mux_delay = 0.7                         # ffmpeg -muxdelay: decoding margin give
 readrate = "auto"                       # pace the reading at real time (-re): auto = files, HTTP/HLS, playlists
 loop = true                             # loop files and folders
 map = ["0:v:0?", "0:a?"]                # streams kept: first video, every audio track
+copy_audio_codecs = ["aac", "mp2", "mp3", "ac3", "eac3"]   # audio copied as is; others are encoded (a TV
+                                        # without E-AC-3: remove "eac3" and the 5.1 tracks become AAC stereo)
 codec_check = true                      # copied files/HTTP/playlists: ffprobe first; video not in H.264/HEVC/MPEG-2
                                         # (VP9, AV1...) is encoded, audio not in AAC/MP2/AC-3/E-AC-3 (Opus...) too
 # ytdlp_format = "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/b"   # yt-dlp format selection

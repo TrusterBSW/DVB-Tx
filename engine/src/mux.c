@@ -504,7 +504,8 @@ int mux_add_service(mux *m, const mux_svc_cfg *c)
     s->cur = -1;
     s->created = mono_ns();
     s->out_pcr_pid = PID_NULL;
-    s->pmt_version = 0;
+    /* a different version at every start: a TV that cached the PMT of the previous run reads it again */
+    s->pmt_version = (int)((real_ns() / 1000000000LL + c->sid) & 31);
     carousel *k = car_add(m, CK_PMT, s->pmt_pid, c->pmt_period_ms);
     if (!k)
         return -1;

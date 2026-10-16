@@ -393,7 +393,8 @@ def build_command(inp, plan, pl_index=0):
     if not rec.encode and rec.probe and o.get("encode_on") is None and o.get("codec_check", True):
         codecs = probe_codecs(rec.probe, ing.get("ffprobe", "ffprobe"))
         bad_v = bool(codecs["video"]) and not codecs["video"] & DVB_VIDEO
-        bad_a = bool(codecs["audio"]) and not codecs["audio"] & DVB_AUDIO
+        allowed_a = set(o.get("copy_audio_codecs") or DVB_AUDIO) & DVB_AUDIO
+        bad_a = bool(codecs["audio"]) and not codecs["audio"] & allowed_a
         if bad_v:
             rec.encode = True
             rec.note = f"video {'/'.join(sorted(codecs['video']))} is not a DVB codec: encoded"
@@ -401,7 +402,7 @@ def build_command(inp, plan, pl_index=0):
             enc = o["encode"]
             rec.audio_only = ["-c:v", "copy", "-c:a", enc.get("audio_codec", "aac"), "-b:a",
                               str(enc.get("audio_bitrate", "128k")), "-ar", str(enc.get("audio_rate", 48000)), "-ac", "2"]
-            rec.note = f"audio {'/'.join(sorted(codecs['audio']))} is not a DVB codec: audio encoded"
+            rec.note = f"audio {'/'.join(sorted(codecs['audio']))} not in copy_audio_codecs: audio encoded"
     if rec.encode:
         ff += encode_args(o, rec, inp.service, ing) if inp.service is not None else _backup_encode(o)
     elif getattr(rec, "audio_only", None):
