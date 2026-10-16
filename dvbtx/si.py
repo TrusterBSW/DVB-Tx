@@ -108,21 +108,34 @@ def _iso6937(s):
     return bytes(out)
 
 
-def dvb_text(s, charset="iso6937", maxlen=255):
-    """Encodes a string as a DVB text field (EN 300 468 annex A), truncated to maxlen bytes."""
+_PREFIX = {  # EN 300 468 table A.3 / A.4
+    "iso8859-5": b"\x01", "iso8859-6": b"\x02", "iso8859-7": b"\x03", "iso8859-8": b"\x04", "iso8859-9": b"\x05",
+    "iso8859-10": b"\x06", "iso8859-11": b"\x07", "iso8859-13": b"\x09", "iso8859-14": b"\x0a", "iso8859-15": b"\x0b",
+    "iso8859-1": b"\x10\x00\x01", "iso8859-2": b"\x10\x00\x02", "iso8859-3": b"\x10\x00\x03", "iso8859-4": b"\x10\x00\x04",
+}
+_ALIASES = {"latin1": "iso8859-1", "latin9": "iso8859-15", "latin5": "iso8859-9", "tnt": "iso8859-9"}
+
+
+def dvb_text(s, charset="iso8859-9", maxlen=255):
+    """Encodes a string as a DVB text field (EN 300 468 annex A), truncated to maxlen bytes.
+    Default ISO 8859-9 with its 0x05 prefix, as the French DTT broadcasts it (ISO 6937, the
+    "default" table, showed broken accents on a TV); pure ASCII text is sent without prefix."""
     s = s or ""
-    if charset == "iso6937":
+    charset = _ALIASES.get(charset, charset)
+    if charset != "iso6937" and charset != "utf8" and all(ord(ch) < 0x80 for ch in s):
+        b, prefix = s.encode("ascii"), b""
+    elif charset == "iso6937":
         b = _iso6937(s)
         prefix = b""
-    elif charset in ("latin9", "iso8859-15"):
-        b = s.encode("iso8859-15", "replace")
-        prefix = b"\x0b"
-    elif charset in ("latin1", "iso8859-1"):
-        b = s.encode("iso8859-1", "replace")
-        prefix = b"\x10\x00\x01"
     elif charset == "utf8":
         b = s.encode("utf-8")
         prefix = b"\x15"
+    elif charset in _PREFIX:
+        # typographic characters missing from the 8859 tables
+        t = s.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"').replace("…", "...") \
+             .replace("–", "-").replace("—", "-").replace("œ", "oe").replace("Œ", "OE").replace("€", "EUR")
+        b = t.encode(charset.replace("iso", "iso_"), "replace")
+        prefix = _PREFIX[charset]
     else:
         raise ValueError(f"unknown charset {charset}")
     room = maxlen - len(prefix)
@@ -136,8 +149,10 @@ def dvb_text(s, charset="iso6937", maxlen=255):
 
 
 def lang_code(lang):
-    lang = (lang or "fra").lower()
-    two = {"fr": "fra", "en": "eng", "de": "deu", "es": "spa", "it": "ita", "nl": "nld", "pt": "por"}
+    # ISO 639-2/B codes, as broadcast by the French DTT ("fre", not "fra")
+    lang = (lang or "fre").lower()
+    two = {"fr": "fre", "fra": "fre", "en": "eng", "de": "ger", "deu": "ger", "es": "spa", "it": "ita",
+           "nl": "dut", "nld": "dut", "pt": "por"}
     lang = two.get(lang, lang)
     return lang[:3].ljust(3).encode("ascii", "replace")
 
@@ -233,7 +248,7 @@ def t2_delivery(t2_system_id, freq_hz, bandwidth, guard, fft, cell_id=0, plp_id=
 
 # ---------------------------------------------------------------- tables
 
-def nit_sections(network_id, network_name, transport_streams, version, charset="iso6937", lcn_pds=0x28,
+def nit_sections(network_id, network_name, transport_streams, version, charset="iso8859-9", lcn_pds=0x28,
                  actual=True):
     """transport_streams: list of dict(tsid, onid, delivery=bytes, services=[(sid, type, lcn, visible)])."""
     first_loop = loop([desc(0x40, dvb_text(network_name, charset))])
@@ -276,7 +291,7 @@ def nit_sections(network_id, network_name, transport_streams, version, charset="
     return [long_section(tid, network_id, version, i, len(sections) - 1, b) for i, b in enumerate(sections)]
 
 
-def sdt_sections(tsid, onid, services, version, charset="iso6937", actual=True):
+def sdt_sections(tsid, onid, services, version, charset="iso8859-9", actual=True):
     """services: list of dict(sid, type, name, provider, eit_schedule, eit_pf, running, free_ca)."""
     entries = []
     for s in services:
@@ -305,7 +320,7 @@ def sdt_sections(tsid, onid, services, version, charset="iso6937", actual=True):
     return out
 
 
-def event_descriptors(ev, charset="iso6937"):
+def event_descriptors(ev, charset="iso8859-9"):
     """Descriptors of one event: short_event, extended_event (long text), content, parental rating."""
     lang = lang_code(ev.get("lang"))
     out = []
@@ -317,7 +332,7 @@ def event_descriptors(ev, charset="iso6937"):
     out.append(desc(0x4D, lang + bytes([len(name)]) + name + bytes([len(text)]) + text))
     if long_text and (sub or len(dvb_text(long_text, charset, 4000)) > len(text)):
         full = dvb_text(long_text, charset, 4000)
-        prefix = full[:1] if full[:1] in (b"\x0b", b"\x15") else b""
+        prefix = full[:3] if full[:1] == b"\x10" else (full[:1] if full[:1] and full[0] < 0x20 else b"")
         body = full[len(prefix):]
         chunk = 240 - len(prefix)
         parts = [prefix + body[i:i + chunk] for i in range(0, len(body), chunk)][:16]
@@ -344,7 +359,7 @@ def _eit_body(tsid, onid, seg_last, last_tid, events):
     return struct.pack(">HHBB", tsid, onid, seg_last, last_tid) + b"".join(events)
 
 
-def eit_pf(sid, tsid, onid, present, following, version, charset="iso6937", actual=True):
+def eit_pf(sid, tsid, onid, present, following, version, charset="iso8859-9", actual=True):
     """Two sections: present (0) and following (1); each may be None (empty section)."""
     tid = 0x4E if actual else 0x4F
     out = []
@@ -358,7 +373,7 @@ def eit_pf(sid, tsid, onid, present, following, version, charset="iso6937", actu
     return out
 
 
-def eit_schedule(sid, tsid, onid, events, now_utc, days, versions, charset="iso6937", actual=True):
+def eit_schedule(sid, tsid, onid, events, now_utc, days, versions, charset="iso8859-9", actual=True):
     """EIT schedule sections of one service. events: sorted list with aware 'start'.
     versions(table_id) -> version number. Returns the list of sections."""
     base_tid = 0x50 if actual else 0x60

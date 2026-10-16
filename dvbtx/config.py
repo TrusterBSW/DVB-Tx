@@ -17,7 +17,7 @@ from . import capacity
 DEFAULTS = {
     "network": {
         "name": "dvbtx", "network_id": 0x20FA, "onid": 0x20FA, "provider": "dvbtx", "country": "FRA",
-        "timezone": "Europe/Paris", "charset": "iso6937", "lcn_pds": 0x28, "frequency_in_nit": True,
+        "timezone": "Europe/Paris", "charset": "iso8859-9", "lcn_pds": 0x28, "frequency_in_nit": True,
         "sdt_other": False, "nit_period_ms": 2000, "sdt_period_ms": 1000,
     },
     "epg": {"dir": "", "urls": [], "url_refresh_s": 3600, "days": 7, "pf_cycle_ms": 1000,

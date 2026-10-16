@@ -13,7 +13,8 @@ onid = 0x20FA                           # original_network_id: 0x20FA = France. 
 provider = "dvbtx"                      # default service provider name (SDT)
 country = "FRA"                         # TOT local time offset country (ISO 3166 alpha-3)
 timezone = "Europe/Paris"               # TOT and XMLTV times without offset
-charset = "iso6937"                     # DVB text: iso6937 (default table, like TSDuck), latin9, latin1, utf8
+charset = "iso8859-9"                   # DVB text: iso8859-9 (0x05 prefix, as the French DTT: accents shown by
+                                        # the TVs), iso8859-15, iso8859-1, iso6937 (no prefix), utf8
 lcn_pds = 0x28                          # private_data_specifier before the LCN descriptor (0x28 EACEM, like TNT); 0 = none
 frequency_in_nit = true                 # false: centre_frequency 0xFFFFFFFF in the NIT, as the French TNT does
 sdt_other = false                       # also send SDT other (services of the other multiplexes)
