@@ -433,7 +433,8 @@ def build(cfg):
                 addr = f"127.0.0.1:{port + len(inputs)}"
             bopts = dict(svc.opts, loop=True, encode_on=bool(svc.opts.get("backup_encode", False)),
                          ffmpeg_input=[], ffmpeg_output=[], readrate="auto")
-            inp = Input(len(inputs), f"backup:{os.path.basename(svc.backup)}", addr, svc.backup, kind, None,
+            bname = re.sub(r'["\\\x00-\x1f]', "_", os.path.basename(svc.backup))[:50]
+            inp = Input(len(inputs), f"backup:{bname}", addr, svc.backup, kind, None,
                         "backup", bopts)
             inputs.append(inp)
             backups[key] = inp

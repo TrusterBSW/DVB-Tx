@@ -16,6 +16,7 @@ int rf_start(void);
 void rf_stop(void);
 void rf_reload_tables(void);
 int rf_running(void);
+int rf_stalled(int64_t now, int64_t timeout_ns);
 /* appends "radios":[...],"carriers":[...] to buf */
 int rf_stats_json(char *buf, int len, double interval_s);
 

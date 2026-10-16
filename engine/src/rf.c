@@ -704,17 +704,40 @@ void rf_stop(void)
         pthread_cond_broadcast(&c->cond);
         pthread_mutex_unlock(&c->lock);
     }
+    /* the radio threads finish their current write (the radio keeps consuming), then the radios close */
+    for (int ri = 0; ri < g_nradios; ri++)
+        if (g_radios[ri]->started)
+            pthread_join(g_radios[ri]->th, NULL);
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
         if (r->dev)
-            r->drv->close(r->dev);     /* unblocks a pending write */
+            r->drv->close(r->dev);
         r->dev = NULL;
-        if (r->started)
-            pthread_join(r->th, NULL);
     }
     for (int i = 0; i < g_ncarriers; i++)
         if (g_carriers[i]->started)
             pthread_join(g_carriers[i]->th, NULL);
+}
+
+/* a radio whose sample counter has not moved for timeout_ns (unplugged, wedged USB): its index, or -1 */
+int rf_stalled(int64_t now, int64_t timeout_ns)
+{
+    static uint64_t last[MAX_RADIOS];
+    static int64_t since[MAX_RADIOS];
+    for (int ri = 0; ri < g_nradios; ri++) {
+        radio *r = g_radios[ri];
+        if (!r->dev)
+            continue;
+        sdr_stats st;
+        r->drv->get_stats(r->dev, &st);
+        if (st.samples != last[ri] || !since[ri]) {
+            last[ri] = st.samples;
+            since[ri] = now;
+        } else if (now - since[ri] > timeout_ns) {
+            return ri;
+        }
+    }
+    return -1;
 }
 
 int rf_running(void) { return g_running; }

@@ -137,6 +137,12 @@ int main(int argc, char **argv)
             LOGI("SI tables reload requested");
         }
         int64_t now = mono_ns();
+        int stalled = rf_stalled(now, 5000000000LL);
+        if (stalled >= 0 && now - t_start > 10000000000LL) {
+            LOGE("radio %d does not consume samples any more (unplugged?): exiting", stalled);
+            fflush(stderr);
+            _exit(3);                      /* the supervisor restarts the engine */
+        }
         if (now - t_prev >= (int64_t)stats_ms * 1000000 - 5000000) {
             double dt = (now - t_prev) / 1e9;
             t_prev = now;
