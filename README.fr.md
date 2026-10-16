@@ -399,6 +399,8 @@ Banc : Threadripper 2950X, Debian 12, sortie radio câblée vers une clé RTL283
 | HackRF, 2 multiplex (482 + 490 MHz) | les deux verrouillés, C/N ~29 dB, BER 0 ; CPU : radio 25 %, 26 % par multiplex (d'un cœur) |
 | B210, 6 multiplex (474-514 MHz) | les six verrouillés, C/N 26 à 34 dB, BER 0 ; CPU : radio 38 %, ~25 % par multiplex ; 0 sous-débit sur 70 s |
 | TS reçu par radio, analysé par TSDuck | 0 erreur de continuité, PCR conformes, noms, LCN, ONID, NIT, EIT, TOT corrects, vidéo décodée |
+| Téléviseur | les 5 chaînes trouvées avec leurs numéros et leurs noms, EPG avec accents (ISO 8859-9), son AAC et E-AC-3 5.1 |
+| HackRF, DVB-T2 32K 256-QAM + DVB-C 256-QAM (tuner Sony CXD2837ER) | T2 : C/N 25 dB, 0 erreur ; C : verrouillée, 64-QAM sans erreur, 256-QAM limite |
 
 ## Validation
 
@@ -415,9 +417,9 @@ Banc : Threadripper 2950X, Debian 12, sortie radio câblée vers une clé RTL283
 |---|---|
 | DVB-T (2k/8k, QPSK à 64-QAM, non hiérarchique) | ✅ validé par radio |
 | HackRF, USRP (UHD), SoapySDR | ✅ HackRF et B210 validés ; Soapy compilé, non essayé |
-| DVB-C (J.83 A, 16/64/256-QAM) | ✅ symboles identiques à l'encodeur mini-cmts (validé sur modem câble) ; démodulé en logiciel (MER 37 dB, 0 erreur RS) ; essai radio à faire avec un tuner DVB-C |
+| DVB-C (J.83 A, 16/64/256-QAM) | ✅ symboles identiques à l'encodeur mini-cmts (validé sur modem câble) ; par radio (HackRF) : 64-QAM sans erreur ; 256-QAM verrouillé mais limite (C/N ~32 dB, BER ~1e-3 : le DAC 8 bits du HackRF ne suffit pas pour un 256-QAM sans erreur, préférer 64-QAM ou un USRP) |
 | DVB-S (QPSK 1/2 à 7/8) | ✅ démodulé par leandvb (TS, noms, LCN, vidéo corrects) ; essai radio à faire |
-| DVB-T2 (PLP unique, 1K à 32K, normal/étendu, PP1-PP8, QPSK à 256-QAM tournée, trames normales/courtes) | ✅ échantillons identiques à gr-dtv sur 23 configurations (voir `docs/DVBT2_PORT.md`) ; essai radio à faire avec un tuner T2 |
+| DVB-T2 (PLP unique, 1K à 32K, normal/étendu, PP1-PP8, QPSK à 256-QAM tournée, trames normales/courtes) | ✅ échantillons identiques à gr-dtv sur 23 configurations (voir `docs/DVBT2_PORT.md`) ; par radio (HackRF, 32K 256-QAM 2/3, avec une DVB-C sur la même radio) : verrouillage C/N 25 dB, 0 erreur, 40,016 Mbit/s, noms et LCN corrects |
 | DVB-S2 (QPSK, 8PSK, 16APSK, 32APSK, trames normales/courtes, pilotes) | ✅ symboles identiques à gr-dtv sur 9 MODCOD ; essai radio à faire |
 | Modulation hiérarchique, MPE | non prévu |
 
