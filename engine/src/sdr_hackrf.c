@@ -1,0 +1,227 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * HackRF One back-end (libhackrf). libhackrf pulls 8-bit I/Q from a callback, fed here
+ * from a ring buffer: write() converts and blocks while the ring is full, the radio starts
+ * once the ring has been filled the first time. */
+#include <hackrf.h>
+#include <math.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "sdr.h"
+
+struct sdr_dev {
+    hackrf_device *dev;
+    int8_t *ring;
+    size_t size, rd, wr, used;      /* bytes */
+    int started, stopping;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    uint64_t consumed;              /* samples */
+    int64_t at_ns;
+    uint64_t underruns;
+};
+
+static int64_t now_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
+static int tx_cb(hackrf_transfer *t)
+{
+    sdr_dev *d = t->tx_ctx;
+    size_t want = (size_t)t->valid_length, got = 0;
+    pthread_mutex_lock(&d->lock);
+    while (got < want && d->used) {
+        size_t chunk = want - got;
+        if (chunk > d->used)
+            chunk = d->used;
+        if (chunk > d->size - d->rd)
+            chunk = d->size - d->rd;
+        memcpy(t->buffer + got, d->ring + d->rd, chunk);
+        d->rd = (d->rd + chunk) % d->size;
+        d->used -= chunk;
+        got += chunk;
+    }
+    if (got < want) {
+        memset(t->buffer + got, 0, want - got);
+        if (!d->stopping)
+            d->underruns++;
+    }
+    d->consumed += want / 2;
+    d->at_ns = now_ns();
+    pthread_cond_signal(&d->cond);
+    pthread_mutex_unlock(&d->lock);
+    return 0;
+}
+
+static void hk_close(sdr_dev *d)
+{
+    if (!d)
+        return;
+    pthread_mutex_lock(&d->lock);
+    d->stopping = 1;
+    pthread_cond_broadcast(&d->cond);
+    pthread_mutex_unlock(&d->lock);
+    if (d->dev) {
+        if (d->started)
+            hackrf_stop_tx(d->dev);
+        hackrf_close(d->dev);
+    }
+    hackrf_exit();
+    free(d->ring);
+    free(d);
+}
+
+static const char *arg_value(const char *args, const char *key, char *buf, size_t len)
+{
+    if (!args)
+        return NULL;
+    size_t kl = strlen(key);
+    for (const char *p = args; *p;) {
+        while (*p == ' ' || *p == ',')
+            p++;
+        if (!strncmp(p, key, kl) && p[kl] == '=') {
+            p += kl + 1;
+            size_t n = strcspn(p, ", ");
+            if (n >= len)
+                n = len - 1;
+            memcpy(buf, p, n);
+            buf[n] = 0;
+            return buf;
+        }
+        p += strcspn(p, ", ");
+    }
+    return NULL;
+}
+
+static sdr_dev *hk_open(const sdr_params *p, char *err, int errlen)
+{
+    int r = hackrf_init();
+    if (r != HACKRF_SUCCESS) {
+        snprintf(err, errlen, "hackrf_init: %s", hackrf_error_name(r));
+        return NULL;
+    }
+    sdr_dev *d = calloc(1, sizeof *d);
+    pthread_mutex_init(&d->lock, NULL);
+    pthread_cond_init(&d->cond, NULL);
+    char serial[64];
+    const char *s = arg_value(p->args, "serial", serial, sizeof serial);
+    r = hackrf_open_by_serial(s, &d->dev);
+    if (r != HACKRF_SUCCESS) {
+        snprintf(err, errlen, "no HackRF%s%s: %s", s ? " with serial " : "", s ? s : "",
+                 hackrf_error_name(r));
+        d->dev = NULL;
+        hk_close(d);
+        return NULL;
+    }
+    double corr = 1.0 / (1.0 + p->ppm * 1e-6);   /* crystal error moves rate and LO alike */
+    double bw = p->bandwidth > 0 ? p->bandwidth : p->rate * 0.9;  // carriers may sit near +-rate/2
+    if ((r = hackrf_set_sample_rate(d->dev, p->rate * corr)) != HACKRF_SUCCESS ||
+        (r = hackrf_set_baseband_filter_bandwidth(
+             d->dev, hackrf_compute_baseband_filter_bw((uint32_t)bw))) != HACKRF_SUCCESS ||
+        (r = hackrf_set_freq(d->dev, (uint64_t)llround(p->freq_hz * corr))) != HACKRF_SUCCESS ||
+        (r = hackrf_set_txvga_gain(d->dev, (uint32_t)(p->gain < 0 ? 0 : p->gain > 47 ? 47 : p->gain))) !=
+            HACKRF_SUCCESS ||
+        (r = hackrf_set_amp_enable(d->dev, p->amp ? 1 : 0)) != HACKRF_SUCCESS) {
+        snprintf(err, errlen, "HackRF setup: %s", hackrf_error_name(r));
+        hk_close(d);
+        return NULL;
+    }
+    int ms = p->buffer_ms > 0 ? p->buffer_ms : 40;
+    size_t bytes = (size_t)(p->rate * 2 * ms / 1000.0);
+    bytes = (bytes + 262143) / 262144 * 262144;
+    if (bytes < 4 * 262144)
+        bytes = 4 * 262144;
+    d->size = bytes;
+    d->ring = malloc(bytes);
+    if (!d->ring) {
+        snprintf(err, errlen, "out of memory");
+        hk_close(d);
+        return NULL;
+    }
+    return d;
+}
+
+static int hk_start(sdr_dev *d)
+{
+    (void)d;
+    return 0;   /* the radio starts on its own once the ring has been filled */
+}
+
+static int hk_write(sdr_dev *d, const float complex *const *bufs, int n, float scale)
+{
+    const float *in = (const float *)bufs[0];
+    float k = scale * 127.0f;
+    size_t bytes = (size_t)n * 2, done = 0;
+    while (done < bytes) {
+        pthread_mutex_lock(&d->lock);
+        while (d->used == d->size && !d->stopping) {
+            if (!d->started) {
+                /* libhackrf fills the first transfers by calling tx_cb from here: unlock */
+                d->started = 1;
+                pthread_mutex_unlock(&d->lock);
+                int r = hackrf_start_tx(d->dev, tx_cb, d);
+                if (r != HACKRF_SUCCESS) {
+                    fprintf(stderr, "hackrf_start_tx: %s\n", hackrf_error_name(r));
+                    return -1;
+                }
+                pthread_mutex_lock(&d->lock);
+                continue;
+            }
+            pthread_cond_wait(&d->cond, &d->lock);
+        }
+        if (d->stopping) {
+            pthread_mutex_unlock(&d->lock);
+            return -1;
+        }
+        size_t chunk = bytes - done, space = d->size - d->used;
+        if (chunk > space)
+            chunk = space;
+        if (chunk > d->size - d->wr)
+            chunk = d->size - d->wr;
+        size_t wr = d->wr;
+        pthread_mutex_unlock(&d->lock);
+
+        /* only this thread writes [wr, wr+chunk), the callback never reads past 'used' */
+        int8_t *o = d->ring + wr;
+        const float *src = in + done;
+        for (size_t i = 0; i < chunk; i++) {
+            float v = src[i] * k;
+            v = v > 127.0f ? 127.0f : v < -127.0f ? -127.0f : v;
+            o[i] = (int8_t)lrintf(v);
+        }
+
+        pthread_mutex_lock(&d->lock);
+        d->wr = (d->wr + chunk) % d->size;
+        d->used += chunk;
+        pthread_mutex_unlock(&d->lock);
+        done += chunk;
+    }
+    return 0;
+}
+
+static void hk_stats(sdr_dev *d, sdr_stats *s)
+{
+    pthread_mutex_lock(&d->lock);
+    s->samples = d->consumed;
+    s->at_ns = d->at_ns;
+    s->underruns = d->underruns;
+    s->late = 0;
+    s->fill = (double)d->used / (double)d->size;
+    pthread_mutex_unlock(&d->lock);
+}
+
+const sdr_driver dvbtx_sdr_driver = {
+    .abi = SDR_ABI,
+    .name = "hackrf",
+    .open = hk_open,
+    .start = hk_start,
+    .write = hk_write,
+    .get_stats = hk_stats,
+    .close = hk_close,
+};

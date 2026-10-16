@@ -1,0 +1,5 @@
+engine/build/
+__pycache__/
+*.pyc
+*.deb
+/work/

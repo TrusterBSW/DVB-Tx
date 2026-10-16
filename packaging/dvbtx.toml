@@ -1,0 +1,144 @@
+# dvbtx - reference configuration (every key shown with its default value, commented out when optional).
+# Units: frequencies and rates in Hz / bit/s (480_000_000, "482MHz" and 482e6 are all accepted).
+# Any key can also be overridden on the command line:  dvbtx -s radio.0.gain=40 -s carrier.0.frequency=490MHz
+# Check a file without transmitting:                    dvbtx check -c /etc/dvbtx/dvbtx.toml
+
+work_dir = "/run/dvbtx"                 # engine.ini and the SI tables (tmpfs)
+
+[network]
+name = "dvbtx"                          # network_name_descriptor (NIT), shown by some TVs
+network_id = 0x20FA                     # NIT network_id
+onid = 0x20FA                           # original_network_id: 0x20FA = France. Many TVs ignore the logical
+                                        # channel numbers (LCN) of an ONID that does not match their country.
+provider = "dvbtx"                      # default service provider name (SDT)
+country = "FRA"                         # TOT local time offset country (ISO 3166 alpha-3)
+timezone = "Europe/Paris"               # TOT and XMLTV times without offset
+charset = "iso6937"                     # DVB text: iso6937 (default table, like TSDuck), latin9, latin1, utf8
+lcn_pds = 0x28                          # private_data_specifier before the LCN descriptor (0x28 EACEM, like TNT); 0 = none
+frequency_in_nit = true                 # false: centre_frequency 0xFFFFFFFF in the NIT, as the French TNT does
+sdt_other = false                       # also send SDT other (services of the other multiplexes)
+nit_period_ms = 2000
+sdt_period_ms = 1000
+
+[epg]
+dir = "/var/lib/dvbtx/epg"              # every XMLTV (*.xml, *.xml.gz) or TSDuck EIT XML file dropped here is loaded,
+                                        # re-read when it changes (an external service can write it)
+urls = []                               # XMLTV URLs fetched every url_refresh_s, e.g. ["http://tunarr:8000/api/xmltv.xml"]
+url_refresh_s = 3600
+days = 7                                # EIT schedule depth
+schedule = true                         # EIT schedule (guide); p/f (now/next) is always sent
+pf_cycle_ms = 1000
+schedule_cycle_ms = 10000
+
+[web]
+enabled = true
+listen = "127.0.0.1:8080"               # monitoring page; "0.0.0.0:8080" for the LAN (no authentication!)
+
+[monitoring]
+tsduck = "auto"                         # run "tsp -P analyze" on each multiplex: true, false, auto (if tsp exists)
+interval = 5                            # seconds between TSDuck reports
+export = []                             # send each TSDuck JSON report to ["udp://10.0.0.5:5000", "tcp://host:port"]
+stats_export = []                       # send the engine statistics + active alerts (JSON, every second)
+tsp = "tsp"
+
+[alerts]
+margin_min_ms = 150                     # warn when the decoding margin of a service drops below this
+overload_percent = 98.0                 # warn when a multiplex is this full
+late_ms = 300                           # warn when packets leave this late (the margin usually absorbs it)
+webhook = ""                            # POST every alert (JSON) to this URL
+command = ""                            # or run this command (env DVBTX_ALERT_EVENT/LEVEL/KEY/MESSAGE)
+repeat_s = 300
+hold_s = 4                              # a condition must last this long to raise an alert
+
+[ingest]
+base_port = 20100                       # local UDP ports of the ingest processes: base_port + input number
+monitor_base_port = 20900               # copy of each multiplex: udp://127.0.0.1:(monitor_base_port + carrier)
+ffmpeg = "ffmpeg"
+streamlink = "streamlink"
+ytdlp = "yt-dlp"
+loglevel = "warning"
+restart_min_s = 1
+restart_max_s = 30
+
+[engine]
+binary = ""                             # default: /usr/lib/dvbtx/dvbtx-engine
+log_level = "info"
+stats_interval_ms = 1000
+
+# Defaults of every service (each key can be set per service too)
+[defaults]
+backup = "/var/lib/dvbtx/backup.ts"     # played when the source stops (false: none); dvbtx make-backup creates one
+buffer_ms = 1000                        # de-jitter buffer between arrival and transmission
+switch_timeout_ms = 3000                # silence before switching to the backup
+return_ms = 10000                       # primary stable for this long before switching back
+max_late_ms = 600                       # packets later than this are dropped
+early_ms = 100                          # packets may leave this much in advance to smooth the peaks
+pcr_max_ms = 35                         # a PCR is inserted if the source leaves a longer gap
+mux_delay = 0.7                         # ffmpeg -muxdelay: decoding margin given to the receiver (s)
+readrate = "auto"                       # pace the reading at real time (-re): auto = files, HTTP/HLS, playlists
+loop = true                             # loop files and folders
+map = ["0:v:0?", "0:a?"]                # streams kept: first video, every audio track
+# ffmpeg_input = ["-extension_picky", "0"]   # extra ffmpeg input options
+# ffmpeg_output = []                         # extra ffmpeg output options
+
+[defaults.encode]                       # used when a service has encode = true or a capture source
+video_codec = "libx264"                 # libx264, libx265, mpeg2video, h264_vaapi, h264_nvenc, ...
+preset = "veryfast"
+video_bitrate = "auto"                  # "auto": share of the multiplex left by the other services,
+max_auto_bitrate = "8M"                 #   at most this
+gop_s = 1.0
+audio_codec = "aac"                     # aac, mp2, ac3, eac3
+audio_bitrate = "128k"
+audio_rate = 48000
+pix_fmt = "yuv420p"
+size = ""                               # e.g. "1280x720" (scaled, black bars kept)
+fps = ""
+hwaccel = ""                            # "vaapi"
+deinterlace = false
+
+# --------------------------------------------------------------------------- radios
+# As many as wanted. Each radio carries the carriers that name it, placed on one OFDM synthesis:
+# their centre frequency and sample rate are computed (or forced with center / rate).
+[[radio]]
+name = "hackrf"
+driver = "hackrf"                       # hackrf, uhd (USRP B200/B210...), soapy (LimeSDR, Pluto...), null (no radio)
+args = ""                               # hackrf: "serial=..."; uhd: "serial=...,type=b200"; soapy: "driver=lime"
+gain = 30                               # hackrf: TX VGA 0-47 dB; uhd: 0-89.75 dB
+amp = false                             # hackrf +14 dB amplifier
+ppm = 0.0                               # oscillator correction
+# center = 0                            # LO frequency (0 = automatic: between the carriers, or below a single one)
+# rate = 0                              # sample rate (0 = automatic)
+# bandwidth = 0                         # analog filter (0 = automatic)
+backoff_db = 13.0                       # RMS level below full scale (OFDM peaks)
+buffer_ms = 50
+
+# --------------------------------------------------------------------------- multiplexes
+# As many as wanted, each with as many services as its capacity allows (dvbtx calc dvbt --table).
+[[carrier]]
+name = "Mux 1"
+radio = "hackrf"
+standard = "dvbt"                       # dvbt; ts (no radio: the multiplex goes to 'output' for an external modulator)
+frequency = 482_000_000                 # or channel = 22 (UHF 21-69, VHF 5-12)
+bandwidth = 8_000_000                   # 5, 6, 7, 8 MHz
+mode = "8k"                             # 2k, 8k
+constellation = "64qam"                 # qpsk, 16qam, 64qam
+code_rate = "7/8"                       # 1/2 2/3 3/4 5/6 7/8
+guard = "1/32"                          # 1/4 1/8 1/16 1/32  -> 31.67 Mbit/s with these values
+tsid = 1                                # transport_stream_id (default: carrier number + 1)
+cell_id = 0
+# monitor = ["udp://239.1.1.1:1234"]    # extra copies of the multiplex (watch it with VLC)
+
+  [[carrier.service]]
+  name = "Mire"                         # service name (SDT)
+  lcn = 1                               # logical channel number (default: next free one)
+  source = "lavfi:testsrc2=size=1280x720:rate=25"
+  # sid = 0x0101                        # service_id (default: tsid << 8 | number)
+  # provider = "..."
+  # type = "auto"                       # auto (from the streams), hd, sd, hevc, radio or a number
+  # epg_id = "TF1.fr"                   # XMLTV channel id (default: matched by name)
+  # backup = "/path/to/other.ts"        # or false
+  # encode = true                       # or a table of [defaults.encode] keys: { video_bitrate = "4M" }
+
+#  [[carrier.service]]
+#  name = "Film"
+#  source = "/srv/videos/film.mkv"      # see 'man dvbtx' / README for every kind of source

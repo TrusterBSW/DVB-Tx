@@ -1,0 +1,11 @@
+# No radio: the multiplex (with its SI tables, PCR restamped, at the exact rate) goes to UDP,
+# for an external modulator or for tests (watch it: vlc udp://@239.1.1.1:1234).
+[[carrier]]
+name = "Mux TS"
+standard = "ts"
+ts_rate = 31_668_449
+output = "udp://239.1.1.1:1234"
+  [[carrier.service]]
+  name = "Mire"
+  source = "lavfi:smptehdbars=size=1920x1080:rate=25"
+  encode = { video_bitrate = "5M" }

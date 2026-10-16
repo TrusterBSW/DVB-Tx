@@ -1,0 +1,30 @@
+[Unit]
+Description=dvbtx DVB transmitter (ingest, multiplexer, modulator, SDR)
+Documentation=file:///usr/share/doc/dvbtx/README.md http://127.0.0.1:8080/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/dvbtx run --config /etc/dvbtx/dvbtx.toml
+# reload = re-read the EPG folder and rebuild the SI tables (a configuration change needs a restart)
+ExecReload=/bin/kill -HUP $MAINPID
+# UHD reads ~/.config/uhd.conf (FPGA image of a B210 clone, ...) and needs $HOME
+Environment=HOME=/root PYTHONUNBUFFERED=1
+RuntimeDirectory=dvbtx
+StateDirectory=dvbtx
+WorkingDirectory=/var/lib/dvbtx
+KillMode=mixed
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+# real-time priority of the radio and carrier threads (taken by the engine itself)
+LimitRTPRIO=99
+LimitNICE=-20
+LimitMEMLOCK=infinity
+NoNewPrivileges=yes
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

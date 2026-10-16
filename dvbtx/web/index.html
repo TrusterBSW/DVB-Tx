@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dvbtx</title>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --ink: #1d2330; --muted: #667085; --line: #e3e6eb;
+  --ok: #1a7f4b; --warn: #b26a00; --crit: #c62828; --info: #2f5fd0;
+  --s0: #3b6fd8; --s1: #2a9d8f; --s2: #e07a2e; --s3: #8e5bd0; --s4: #d1495b; --s5: #5c946e;
+  --s6: #c9a227; --s7: #4f86a8; --si: #9aa3b2; --null: #e9ecf1;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #12151b; --card: #1b2029; --ink: #e6e9ef; --muted: #98a1b3; --line: #2c3340;
+    --null: #262c37; --si: #6b7486; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 20px; background: var(--card);
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 18px; margin: 0; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--line); color: var(--ink); white-space: nowrap; }
+.pill.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.pill.warning { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.pill.critical { background: color-mix(in srgb, var(--crit) 18%, transparent); color: var(--crit); }
+.pill.info { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+main { padding: 16px 20px 40px; max-width: 1500px; margin: 0 auto; }
+section { margin-bottom: 18px; }
+h2 { font-size: 15px; margin: 0 0 8px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: baseline; }
+.big { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.bar { display: flex; height: 18px; border-radius: 5px; overflow: hidden; background: var(--null); margin: 8px 0 4px; }
+.bar div { height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+svg.spark { width: 120px; height: 28px; display: block; }
+svg.chart { width: 100%; height: 120px; display: block; }
+.alert { padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border-left: 4px solid var(--warn); background: var(--card); }
+.alert.critical { border-color: var(--crit); }
+.alert.info { border-color: var(--info); }
+button { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--muted); }
+pre { white-space: pre-wrap; word-break: break-all; font-size: 11.5px; background: var(--bg); padding: 8px; border-radius: 6px; margin: 6px 0 0; max-height: 220px; overflow: auto; }
+details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.epg { font-size: 12px; color: var(--muted); max-width: 260px; }
+.err { color: var(--crit); }
+@media (max-width: 700px) { main { padding: 12px; } header { padding: 10px 12px; } .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">dvbtx</h1>
+  <span id="engine" class="pill">…</span>
+  <span id="alertcount" class="pill">…</span>
+  <span id="uptime" class="muted"></span>
+  <span style="flex:1"></span>
+  <button onclick="reloadSi()">Recharger EPG / SI</button>
+</header>
+<main>
+  <section id="alerts"></section>
+  <section><h2>Radios</h2><div id="radios" class="grid"></div></section>
+  <section><h2>Multiplex</h2><div id="carriers"></div></section>
+  <section><h2>Sources</h2><div class="card scroll"><table id="inputs"></table></div></section>
+  <section><h2>Historique des alertes</h2><div class="card scroll"><table id="ahist"></table></div></section>
+</main>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const mbps = (b) => b == null ? "–" : (b / 1e6).toFixed(2);
+const ms = (v) => v == null ? "–" : Math.round(v);
+const hex = (v, n = 4) => "0x" + Number(v).toString(16).toUpperCase().padStart(n, "0");
+const COLORS = ["--s0","--s1","--s2","--s3","--s4","--s5","--s6","--s7"].map((v) => `var(${v})`);
+let hist = { t: [], series: {} };
+let marginMin = 150;
+
+function dur(s) {
+  s = Math.max(0, Math.round(s));
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + " j " : "") + (h || d ? h + " h " : "") + m + " min";
+}
+
+function spark(values, opts = {}) {
+  const v = (values || []).filter((x) => x != null);
+  if (v.length < 2) return '<svg class="spark"></svg>';
+  const w = 120, h = 28, vals = values.slice(-300);
+  let lo = Math.min(opts.min ?? Infinity, ...v), hi = Math.max(opts.max ?? -Infinity, ...v);
+  if (hi - lo < 1e-9) { hi = lo + 1; }
+  const n = vals.length;
+  let d = "", pen = false;
+  vals.forEach((x, i) => {
+    if (x == null) { pen = false; return; }
+    const px = (i / (n - 1)) * w, py = h - 2 - ((x - lo) / (hi - lo)) * (h - 4);
+    d += (pen ? "L" : "M") + px.toFixed(1) + " " + py.toFixed(1);
+    pen = true;
+  });
+  let ref = "";
+  if (opts.ref != null && opts.ref >= lo && opts.ref <= hi) {
+    const ry = h - 2 - ((opts.ref - lo) / (hi - lo)) * (h - 4);
+    ref = `<line x1="0" x2="${w}" y1="${ry}" y2="${ry}" stroke="var(--crit)" stroke-dasharray="3 3" stroke-width="1"/>`;
+  }
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${ref}<path d="${d}" fill="none" stroke="${opts.color || "var(--s0)"}" stroke-width="1.5"/></svg>`;
+}
+
+function chart(carrier, capacity) {
+  const t = hist.t, used = hist.series[`c${carrier}.rate`] || [];
+  if (t.length < 2) return '<svg class="chart"></svg>';
+  const w = 600, h = 120, n = t.length, hi = capacity * 1.05;
+  let d = "";
+  used.forEach((x, i) => {
+    if (x == null) return;
+    d += (d ? "L" : "M") + ((i / (n - 1)) * w).toFixed(1) + " " + (h - (x / hi) * h).toFixed(1);
+  });
+  const cy = h - (capacity / hi) * h;
+  return `<svg class="chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <line x1="0" x2="${w}" y1="${cy}" y2="${cy}" stroke="var(--crit)" stroke-dasharray="4 4"/>
+    <path d="${d} L${w} ${h} L0 ${h} Z" fill="color-mix(in srgb, var(--s0) 18%, transparent)" stroke="none"/>
+    <path d="${d}" fill="none" stroke="var(--s0)" stroke-width="1.5"/></svg>`;
+}
+
+function marginPill(v) {
+  if (v == null) return '<span class="muted">–</span>';
+  const cls = v < 0 ? "critical" : v < marginMin ? "warning" : "ok";
+  return `<span class="pill ${cls}">${ms(v)} ms</span>`;
+}
+
+function render(s) {
+  if (s.thresholds) marginMin = s.thresholds.margin_min_ms;
+  $("#title").textContent = s.network.name || "dvbtx";
+  document.title = (s.network.name || "dvbtx") + " – dvbtx";
+  const eng = $("#engine");
+  eng.className = "pill " + (s.engine.running ? "ok" : "critical");
+  eng.textContent = s.engine.running ? `moteur actif` : "moteur arrêté";
+  const crit = s.alerts.filter((a) => a.level === "critical").length;
+  const ac = $("#alertcount");
+  ac.className = "pill " + (crit ? "critical" : s.alerts.length ? "warning" : "ok");
+  ac.textContent = s.alerts.length ? `${s.alerts.length} alerte(s)` : "aucune alerte";
+  $("#uptime").textContent = `v${s.version} · depuis ${dur(s.uptime)}` + (s.stats_age > 5 ? ` · stats vieilles de ${s.stats_age} s` : "");
+
+  $("#alerts").innerHTML = s.alerts.map((a) =>
+    `<div class="alert ${a.level}"><b>${a.level === "critical" ? "Critique" : a.level === "warning" ? "Attention" : "Info"}</b> · ${esc(a.message)} <span class="muted">depuis ${dur(Date.now() / 1000 - a.since)}</span></div>`).join("");
+
+  $("#radios").innerHTML = s.radios.map((r) => {
+    const l = r.live || {};
+    return `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="pill">${esc(r.driver)}</span>
+      ${l.underruns ? `<span class="pill critical">${l.underruns} sous-débits</span>` : '<span class="pill ok">0 sous-débit</span>'}</div>
+      <div class="kv" style="margin-top:8px"><span>LO</span><span>${(r.center / 1e6).toFixed(4)} MHz</span>
+      <span>Échantillonnage</span><span>${(r.rate / 1e6).toFixed(4)} MS/s</span>
+      <span>Gain</span><span>${r.gain} dB${r.amp ? " + ampli" : ""}</span>
+      <span>Tampon</span><span>${l.fill != null ? Math.round(l.fill * 100) + " %" : "–"}</span>
+      <span>CPU (synthèse + USB)</span><span>${l.cpu != null ? l.cpu.toFixed(1) + " %" : "–"}</span></div>
+      ${spark(hist.series[`r${r.index}.cpu`], { min: 0, color: "var(--s3)" })}</div>`;
+  }).join("") || '<div class="muted">aucune radio</div>';
+
+  $("#carriers").innerHTML = s.carriers.map((c) => {
+    const l = c.live, cap = c.capacity;
+    let bar = "", legend = "", used = 0;
+    if (l) {
+      l.services.forEach((sv, i) => {
+        const w = (sv.rate / cap) * 100; used += sv.rate;
+        bar += `<div style="width:${w}%;background:${COLORS[i % COLORS.length]}" title="${esc(sv.name)} ${mbps(sv.rate)} Mbit/s"></div>`;
+        legend += `<span><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(sv.name)} ${mbps(sv.rate)}</span>`;
+      });
+      bar += `<div style="width:${(l.si_rate / cap) * 100}%;background:var(--si)" title="PSI/SI"></div>`;
+      legend += `<span><i style="background:var(--si)"></i>PSI/SI ${mbps(l.si_rate)}</span><span><i style="background:var(--null)"></i>libre ${mbps(l.null_rate)}</span>`;
+    }
+    const occ = l ? ((l.rate - l.null_rate) / cap) * 100 : null;
+    const p = c.params;
+    const std = c.standard === "dvbt" ? `DVB-T ${p.mode} ${p.constellation} ${p.code_rate} GI ${p.guard} ${(p.bandwidth / 1e6)} MHz` : c.standard;
+    const ts = c.tsduck;
+    const rows = c.services.map((sv, i) => {
+      const lv = sv.live || {}, inp = sv.input || {};
+      const src = lv.source || "none";
+      const srcCls = src === "primary" ? "ok" : src === "backup" ? "warning" : "critical";
+      const k = `s${c.index}.${i}`;
+      return `<tr>
+        <td class="num">${sv.lcn}</td>
+        <td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${COLORS[i % COLORS.length]};margin-right:6px"></i><b>${esc(sv.name)}</b><div class="muted hide-sm" style="font-size:11px">${hex(sv.sid)} · type ${hex(sv.type, 2)}</div></td>
+        <td><span class="pill ${srcCls}">${src === "primary" ? "principale" : src === "backup" ? "secours" : "aucune"}</span></td>
+        <td class="num">${mbps(inp.rate)}</td>
+        <td class="num">${mbps(lv.rate)}</td>
+        <td class="num">${marginPill(lv.video_margin_min_ms)}<div class="muted" style="font-size:11px">moy ${ms(lv.video_margin_avg_ms)}</div></td>
+        <td class="hide-sm">${spark(hist.series[k + ".vmargin"], { min: 0, max: 1000, ref: marginMin, color: "var(--s1)" })}</td>
+        <td class="num">${marginPill(lv.audio_margin_min_ms)}</td>
+        <td class="num">${ms(lv.late_max_ms)}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
+        <td class="num hide-sm">${inp.cc_errors ?? "–"}</td>
+        <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
+      </tr>`;
+    }).join("");
+    return `<div class="card">
+      <div class="row"><b style="font-size:16px">${esc(c.name)}</b>
+        <span class="muted">${std} · ${c.frequency ? (c.frequency / 1e6).toFixed(3) + " MHz" : ""} · TSID ${c.tsid}${c.radio ? " · " + esc(c.radio) : ""}</span>
+        <span style="flex:1"></span>
+        <span class="muted">capacité</span><span class="big">${mbps(cap)}</span><span class="muted">Mbit/s</span>
+        <span class="muted">occupé</span><span class="big" style="color:${occ > 98 ? "var(--crit)" : occ > 90 ? "var(--warn)" : "inherit"}">${occ == null ? "–" : occ.toFixed(1) + " %"}</span>
+        ${l && l.cpu != null ? `<span class="muted">CPU ${l.cpu.toFixed(1)} %</span>` : ""}
+      </div>
+      <div class="bar">${bar}</div><div class="legend">${legend}</div>
+      ${chart(c.index, cap)}
+      <div class="muted" style="font-size:12px">débit utile sur 10 min, pointillés = capacité du canal · copie du TS : ${esc(c.monitor)}</div>
+      ${ts ? `<div class="row" style="margin-top:6px;font-size:12px"><span class="pill info">tsduck</span>
+        <span>débit ${mbps(ts.bitrate)} Mbit/s</span><span>erreurs transport ${ts.transport_errors ?? 0}</span>
+        <span>discontinuités ${ts.pids.reduce((a, p) => a + (p.discontinuities || 0), 0)}</span><span class="muted">il y a ${ts.age_s} s</span>
+        <a href="/api/analysis/${c.index}" target="_blank">rapport complet</a></div>` : ""}
+      <div class="scroll" style="margin-top:10px"><table>
+        <tr><th class="num">LCN</th><th>Chaîne</th><th>Source</th><th class="num">Entrée Mbit/s</th><th class="num">Sortie Mbit/s</th>
+        <th class="num" title="Temps entre l'émission d'une image et le moment où le récepteur doit la décoder (minimum sur 1 s)">Marge vidéo</th><th class="hide-sm">10 min</th>
+        <th class="num">Marge audio</th><th class="num" title="Retard maximal d'envoi par rapport à l'instant idéal">Retard ms</th><th class="num hide-sm">CC entrée</th><th class="hide-sm">En cours</th></tr>
+        ${rows}</table></div>
+    </div>`;
+  }).join("");
+
+  $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
+    s.inputs.map((p) => {
+      const live = p.live || {};
+      const cls = p.state === "running" ? "ok" : p.state === "error" ? "critical" : p.kind === "direct" ? "info" : "warning";
+      return `<tr><td>${p.index}</td><td><b>${esc(p.name)}</b> <span class="muted">${p.role === "backup" ? "(secours)" : ""}</span><div class="muted" style="font-size:11px;word-break:break-all">${esc(p.source)}</div></td>
+        <td><span class="pill ${cls}">${p.kind === "direct" ? "UDP direct" : esc(p.state)}</span>${p.error ? `<div class="err" style="font-size:11px">${esc(p.error)}</div>` : ""}</td>
+        <td class="num">${p.restarts}</td><td class="num">${mbps(live.rate)}</td><td class="num">${live.idle_ms != null && live.idle_ms >= 0 ? ms(live.idle_ms) + " ms" : "–"}</td>
+        <td><details><summary>${p.log.length} ligne(s)</summary><pre>${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td>
+        <td>${p.kind === "ffmpeg" ? `<button onclick="restartInput(${p.index})">Relancer</button>` : ""}</td></tr>`;
+    }).join("");
+
+  $("#ahist").innerHTML = `<tr><th>Heure</th><th>Événement</th><th>Niveau</th><th>Message</th></tr>` +
+    s.alert_history.map((a) => `<tr><td>${new Date(a.time * 1000).toLocaleTimeString()}</td><td>${a.event === "clear" ? "fin" : a.event === "raise" ? "début" : "rappel"}</td>
+      <td><span class="pill ${a.level}">${a.level}</span></td><td>${esc(a.message)}</td></tr>`).join("");
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/status");
+    render(await r.json());
+  } catch (e) {
+    $("#engine").className = "pill critical";
+    $("#engine").textContent = "dvbtx injoignable";
+  }
+}
+async function refreshHist() {
+  try { hist = await (await fetch("/api/history?last=600")).json(); } catch (e) { /* keep the previous */ }
+}
+async function restartInput(i) { await fetch(`/api/input/${i}/restart`, { method: "POST" }); refresh(); }
+async function reloadSi() { await fetch("/api/reload", { method: "POST" }); refresh(); }
+refreshHist().then(refresh);
+setInterval(refresh, 1000);
+setInterval(refreshHist, 5000);
+</script>
+</body>
+</html>

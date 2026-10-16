@@ -1,0 +1,62 @@
+# Every kind of source, one service each (a catalogue: adapt the paths, keep what you need).
+# Capture sources (webcam, HDMI, screen, test pattern) are encoded; the others are copied.
+[[radio]]
+name = "hackrf"
+driver = "hackrf"
+
+[[carrier]]
+name = "Mux 1"
+radio = "hackrf"
+channel = 22
+  [[carrier.service]]
+  name = "Fichier"
+  source = "/srv/videos/film.mkv"                       # looped
+  [[carrier.service]]
+  name = "Dossier"
+  source = "dir:/srv/videos/playlist"                   # every file of the folder, looped
+  [[carrier.service]]
+  name = "HLS"
+  source = "https://example.com/live/index.m3u8"
+  [[carrier.service]]
+  name = "M3U"
+  source = "m3u:/srv/iptv/france.m3u#France 24"         # entry by name, tvg-name, tvg-id or #index
+  [[carrier.service]]
+  name = "Twitch"
+  source = "twitch://joueur_du_grenier"                 # streamlink, or yt-dlp
+  [[carrier.service]]
+  name = "YouTube live"
+  source = "ytdlp:https://www.youtube.com/watch?v=..."
+  [[carrier.service]]
+  name = "Tvheadend"
+  source = "htsp://user:pass@tvh.lan:9982/France 2"     # channel name or number
+  [[carrier.service]]
+  name = "OBS"
+  source = "rtmp://0.0.0.0:1935/live/obs?listen"        # OBS streams to rtmp://this-host/live/obs
+  [[carrier.service]]
+  name = "Camera IP"
+  source = "rtsp://cam.lan:554/stream1"
+  [[carrier.service]]
+  name = "SRT"
+  source = "srt://0.0.0.0:9000?mode=listener"
+  [[carrier.service]]
+  name = "Multicast"
+  source = "udp+direct://239.0.0.1:2000"                # SPTS read by the engine itself, no ffmpeg
+  [[carrier.service]]
+  name = "Webcam"
+  source = "v4l2:/dev/video0?size=1280x720&fps=30&format=mjpeg&audio=pulse:default"
+  [[carrier.service]]
+  name = "HDMI"
+  source = "v4l2:/dev/video2?size=1920x1080&fps=25&audio=alsa:hw:2,0"
+  encode = { video_bitrate = "6M", deinterlace = true }
+  [[carrier.service]]
+  name = "Ecran"
+  source = "screen::0.0?size=1920x1080&fps=25"
+  [[carrier.service]]
+  name = "Pipe"
+  source = "pipe:/run/dvbtx/in.fifo"                    # mkfifo /run/dvbtx/in.fifo; any_program > /run/dvbtx/in.fifo
+  [[carrier.service]]
+  name = "Stdin"
+  source = "stdin:"                                     # some_program | dvbtx run -c ...
+  [[carrier.service]]
+  name = "Commande"
+  source = "exec:streamlink --stdout https://www.twitch.tv/zerator best"

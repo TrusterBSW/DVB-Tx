@@ -1,0 +1,4 @@
+#!/bin/sh
+# dvbtx installed by the Debian package (the Python supervisor; the engine is /usr/lib/dvbtx/dvbtx-engine)
+export PYTHONPATH=/usr/lib/dvbtx/python${PYTHONPATH:+:$PYTHONPATH}
+exec python3 -m dvbtx "$@"
