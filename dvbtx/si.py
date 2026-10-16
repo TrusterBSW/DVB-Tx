@@ -216,6 +216,21 @@ def satellite_delivery(freq_hz, symbol_rate, code_rate, polarization="h", s2=Fal
     return desc(0x43, f + pos + bytes([b]) + sr)
 
 
+_T2_BW = {8_000_000: 0, 7_000_000: 1, 6_000_000: 2, 5_000_000: 3, 10_000_000: 4, 1_712_000: 5}
+_T2_GI = {"1/32": 0, "1/16": 1, "1/8": 2, "1/4": 3, "1/128": 4, "19/128": 5, "19/256": 6}
+_T2_MODE = {"2k": 0, "8k": 1, "4k": 2, "1k": 3, "16k": 4, "32k": 5}
+
+
+def t2_delivery(t2_system_id, freq_hz, bandwidth, guard, fft, cell_id=0, plp_id=0, unspecified=False):
+    """T2_delivery_system_descriptor (extension 0x04) with one cell, SISO, no TFS."""
+    f = 0xFFFFFFFF if unspecified else int(round(freq_hz / 10))
+    bw = _T2_BW.get(int(bandwidth), 0)
+    flags = (0 << 14) | (bw << 10) | (0 << 8) | (_T2_GI[guard] << 5) | (_T2_MODE[fft] << 2) | (0 << 1) | 0
+    body = bytes([0x04, plp_id & 0xFF]) + struct.pack(">HH", t2_system_id & 0xFFFF, flags)
+    body += struct.pack(">HI", cell_id & 0xFFFF, f) + bytes([0])         # cell, centre frequency, no subcell
+    return desc(0x7F, body)
+
+
 # ---------------------------------------------------------------- tables
 
 def nit_sections(network_id, network_name, transport_streams, version, charset="iso6937", lcn_pds=0x28,
