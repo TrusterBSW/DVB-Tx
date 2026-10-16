@@ -72,6 +72,14 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   <section><h2>Radios</h2><div id="radios" class="grid"></div></section>
   <section><h2>Multiplex</h2><div id="carriers"></div></section>
   <section><h2>Sources</h2><div class="card scroll"><table id="inputs"></table></div></section>
+  <section><h2>Calculateur de débit utile</h2><div class="card">
+    <div class="row" style="gap:8px 14px">
+      <label>Norme <select id="k_std" onchange="calcForm()"><option value="dvbt">DVB-T</option><option value="dvbc">DVB-C</option>
+        <option value="dvbs">DVB-S</option><option value="dvbs2">DVB-S2</option></select></label>
+      <span id="k_fields" class="row" style="gap:8px 14px"></span>
+      <label>Chaînes <input id="k_n" type="number" min="1" value="1" style="width:4em" oninput="calc()"></label>
+      <span class="big" id="k_rate">–</span><span class="muted" id="k_per"></span>
+    </div></div></section>
   <section><h2>Historique des alertes</h2><div class="card scroll"><table id="ahist"></table></div></section>
 </main>
 <script>
@@ -197,7 +205,7 @@ function render(s) {
         <td class="num">${marginPill(lv.video_margin_min_ms)}<div class="muted" style="font-size:11px">moy ${ms(lv.video_margin_avg_ms)}</div></td>
         <td class="hide-sm">${spark(hist.series[k + ".vmargin"], { min: 0, max: 1000, ref: marginMin, color: "var(--s1)" })}</td>
         <td class="num">${marginPill(lv.audio_margin_min_ms)}</td>
-        <td class="num">${ms(lv.late_max_ms)}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
+        <td class="num">${lv.late_max_ms != null && lv.late_max_ms < 0 ? `<span class="muted">${ms(-lv.late_max_ms)} d'avance</span>` : ms(lv.late_max_ms)}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
         <td class="num hide-sm">${inp.cc_errors ?? "–"}</td>
         <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
       </tr>`;
@@ -253,6 +261,29 @@ async function refresh() {
 async function refreshHist() {
   try { hist = await (await fetch("/api/history?last=600")).json(); } catch (e) { /* keep the previous */ }
 }
+const KFIELDS = {
+  dvbt: { bandwidth: ["8000000", "7000000", "6000000", "5000000"], mode: ["8k", "2k"], constellation: ["64qam", "16qam", "qpsk"],
+          code_rate: ["7/8", "5/6", "3/4", "2/3", "1/2"], guard: ["1/32", "1/16", "1/8", "1/4"] },
+  dvbc: { constellation: ["256qam", "64qam", "16qam"], symbol_rate: "6900000" },
+  dvbs: { code_rate: ["3/4", "1/2", "2/3", "5/6", "7/8"], symbol_rate: "27500000" },
+  dvbs2: { modulation: ["8psk", "qpsk", "16apsk", "32apsk"], code_rate: ["3/4", "2/3", "3/5", "4/5", "5/6", "8/9", "9/10", "1/2"],
+           symbol_rate: "27500000", frame: ["normal", "short"] },
+};
+function calcForm() {
+  const std = $("#k_std").value, f = KFIELDS[std];
+  $("#k_fields").innerHTML = Object.entries(f).map(([k, v]) => Array.isArray(v)
+    ? `<label>${k} <select data-k="${k}" onchange="calc()">${v.map((o) => `<option>${o}</option>`).join("")}</select></label>`
+    : `<label>${k} <input data-k="${k}" value="${v}" style="width:7em" oninput="calc()"></label>`).join("");
+  calc();
+}
+async function calc() {
+  const q = new URLSearchParams({ standard: $("#k_std").value, services: $("#k_n").value });
+  document.querySelectorAll("#k_fields [data-k]").forEach((e) => q.set(e.dataset.k, e.value));
+  const r = await (await fetch("/api/calc?" + q)).json();
+  $("#k_rate").textContent = r.error ? "–" : (r.rate / 1e6).toFixed(3) + " Mbit/s";
+  $("#k_per").textContent = r.error ? r.error : `soit ${(r.per_service / 1e6).toFixed(2)} Mbit/s par chaîne (3 % gardés pour les tables)`;
+}
+calcForm();
 async function restartInput(i) { await fetch(`/api/input/${i}/restart`, { method: "POST" }); refresh(); }
 async function reloadSi() { await fetch("/api/reload", { method: "POST" }); refresh(); }
 refreshHist().then(refresh);

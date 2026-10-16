@@ -5,6 +5,7 @@ GET  /api/status             everything (plan + live statistics + alerts)
 GET  /api/history?last=600   time series of the last seconds
 GET  /api/analysis/<n>       last full TSDuck report of carrier n
 GET  /api/epg/<sid>          events of a service
+GET  /api/calc?standard=dvbt&constellation=64qam&...   useful bit rate of a channel
 GET  /metrics                Prometheus exposition
 POST /api/input/<n>/restart  restart one ingest process
 POST /api/reload             re-read the EPG and rebuild the SI tables
@@ -119,6 +120,22 @@ class Handler(BaseHTTPRequestHandler):
                 evs = sup.store.events(sid) if sup.store else []
                 return self._send(200, [{"event_id": e["event_id"], "start": e["start"], "duration": e["duration"],
                                          "title": e.get("title"), "subtitle": e.get("subtitle")} for e in evs[:200]])
+            if path == "/api/calc":
+                from urllib.parse import unquote_plus
+                from . import capacity
+                p = {k: unquote_plus(v) for k, v in q.items()}
+                std = p.pop("standard", "dvbt")
+                for k in ("bandwidth", "symbol_rate"):
+                    if k in p:
+                        p[k] = float(p[k])
+                if "pilots" in p:
+                    p["pilots"] = p["pilots"] in ("1", "true", "on")
+                n = int(p.pop("services", "1") or 1)
+                try:
+                    r = capacity.rate(std, **p)
+                except (capacity.CapacityError, TypeError, ValueError, KeyError) as e:
+                    return self._send(400, {"error": str(e)})
+                return self._send(200, {"rate": r, "per_service": r * 0.97 / max(1, n)})
             if path == "/metrics":
                 return self._send(200, metrics(sup).encode(), "text/plain; version=0.0.4")
             return self._send(404, {"error": "not found"})

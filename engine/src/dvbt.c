@@ -22,6 +22,10 @@ static const int tps_2k[17] = {
 
 enum { C_DATA = 0, C_PILOT = 1, C_TPS = 2 };
 
+/* inner code, mother rate 1/2, K=7: X = 171o, Y = 133o; bit 0 of sr is the current input */
+#define MASK_X_ 0x4Fu
+#define MASK_Y_ 0x6Du
+
 struct dvbt {
     dvbt_cfg c;
     ts_pull_fn pull;
@@ -43,6 +47,12 @@ struct dvbt {
     uint16_t H[MAX_DATA];          /* symbol interleaver permutation */
     float complex constel[64];
 
+    /* fast paths, precomputed */
+    uint16_t *dest[2][4];          /* [symbol parity][l mod 4]: carrier of the j-th bit-interleaver output */
+    float complex *pilots[4];      /* carrier template (pilots, zeros elsewhere) for l mod 4 */
+    uint16_t bsrc[126][6];         /* bit interleaver: source bit (within a 126*v block) of output w, bit e */
+    uint16_t cc_tab[64][256];      /* convolutional coder: (state, byte) -> 8 X bits << 8 | 8 Y bits */
+
     /* inner coder input: outer coded bytes */
     uint8_t ib[16384];
     int ib_len;                    /* bytes present */
@@ -50,7 +60,7 @@ struct dvbt {
     unsigned sr;                   /* convolutional encoder shift register */
 
     uint8_t coded[MAX_DATA * 6];   /* punctured bits of one symbol, one per byte */
-    uint8_t ysym[MAX_DATA], ysym2[MAX_DATA];
+    uint8_t ysym[MAX_DATA];
 };
 
 const char *dvbt_cfg_check(const dvbt_cfg *c)
@@ -227,10 +237,59 @@ dvbt *dvbt_new(const dvbt_cfg *c, ts_pull_fn pull, void *ctx)
     build_tps(t);
     build_interleaver(t);
     build_constellation(t);
+
+    /* symbol interleaver + carrier placement as one permutation per symbol parity */
+    for (int l = 0; l < 4; l++) {
+        for (int par = 0; par < 2; par++) {
+            uint16_t *d = t->dest[par][l] = xcalloc(MAX_DATA, sizeof(uint16_t));
+            for (int q = 0; q < t->ndata; q++) {
+                if (par == 0)
+                    d[q] = t->data_k[l][t->H[q]];      /* even: y[H(q)] = y'[q] */
+                else
+                    d[t->H[q]] = t->data_k[l][q];      /* odd:  y[q] = y'[H(q)] */
+            }
+        }
+        float complex *p = t->pilots[l] = xcalloc(t->kmax + 1, sizeof(float complex));
+        for (int k = 0; k <= t->kmax; k++)
+            p[k] = t->ctype[l][k] == C_PILOT ? (4.0f / 3.0f) * (1 - 2 * (int)t->wk[k]) : 0.0f;
+    }
+    /* bit interleaver: a[e][w] = b[e][(w + h_e) mod 126], b[dmx[i]][w] = x[w*v + i] */
+    {
+        static const int h[6] = { 0, 63, 105, 42, 21, 84 };
+        static const int dmx2[2] = { 0, 1 }, dmx4[4] = { 0, 2, 1, 3 }, dmx6[6] = { 0, 2, 4, 1, 3, 5 };
+        int v = t->v, inv[6];
+        const int *dmx = v == 2 ? dmx2 : v == 4 ? dmx4 : dmx6;
+        for (int i = 0; i < v; i++)
+            inv[dmx[i]] = i;
+        for (int w = 0; w < 126; w++)
+            for (int e = 0; e < v; e++)
+                t->bsrc[w][e] = (uint16_t)(((w + h[e]) % 126) * v + inv[e]);
+    }
+    /* convolutional coder, 8 input bits at a time */
+    for (unsigned st = 0; st < 64; st++)
+        for (unsigned byte = 0; byte < 256; byte++) {
+            unsigned sr = st, x = 0, y = 0;
+            for (int b = 7; b >= 0; b--) {
+                sr = ((sr << 1) | ((byte >> b) & 1)) & 0x7F;
+                x = (x << 1) | (unsigned)__builtin_parity(sr & MASK_X_);
+                y = (y << 1) | (unsigned)__builtin_parity(sr & MASK_Y_);
+            }
+            t->cc_tab[st][byte] = (uint16_t)(x << 8 | y);
+        }
     return t;
 }
 
-void dvbt_free(dvbt *t) { free(t); }
+void dvbt_free(dvbt *t)
+{
+    if (!t)
+        return;
+    for (int l = 0; l < 4; l++) {
+        free(t->dest[0][l]);
+        free(t->dest[1][l]);
+        free(t->pilots[l]);
+    }
+    free(t);
+}
 
 static void refill(dvbt *t, long need_bits)
 {
@@ -249,72 +308,68 @@ static void refill(dvbt *t, long need_bits)
     }
 }
 
-/* inner code, mother rate 1/2, K=7: X = 171o, Y = 133o; bit 0 of sr is the current input */
-#define MASK_X 0x4Fu
-#define MASK_Y 0x6Du
-
 static void inner_code(dvbt *t)
 {
     static const char *punct[9] = { 0, 0, "XY", "XYY", "XYYX", 0, "XYYXYX", 0, "XYYYYXYX" };
-    /* info bit (within the period) feeding each transmitted bit */
     static const int pidx[9][8] = { { 0 }, { 0 }, { 0, 0 }, { 0, 0, 1 }, { 0, 0, 1, 2 }, { 0 },
                                     { 0, 0, 1, 2, 3, 4 }, { 0 }, { 0, 0, 1, 2, 3, 4, 5, 6 } };
     int k = t->c.cr_k, n = t->c.cr_n;
     int ncoded = t->ndata * t->v, periods = ncoded / n;
-    refill(t, (long)periods * k);
-    const char *pat = punct[n];
-    const int *pi = pidx[n];
+    long nbits = (long)periods * k;
+    refill(t, nbits);
+    /* X and Y bits of all the info bits of this symbol, one per byte, then punctured */
+    static __thread uint8_t xs[MAX_DATA * 6], ys[MAX_DATA * 6];
     unsigned sr = t->sr;
-    long bit = t->ib_bit;
+    long bit = t->ib_bit, i = 0;
     const uint8_t *ib = t->ib;
-    uint8_t *out = t->coded;
-    uint8_t xs[8], ys[8];
-    for (int p = 0; p < periods; p++) {
-        for (int i = 0; i < k; i++, bit++) {
-            unsigned b = (ib[bit >> 3] >> (7 - (bit & 7))) & 1;
-            sr = ((sr << 1) | b) & 0x7F;
-            xs[i] = (uint8_t)__builtin_parity(sr & MASK_X);
-            ys[i] = (uint8_t)__builtin_parity(sr & MASK_Y);
+    while (i < nbits && (bit & 7)) {           /* up to a byte boundary */
+        sr = ((sr << 1) | ((ib[bit >> 3] >> (7 - (bit & 7))) & 1)) & 0x7F;
+        xs[i] = (uint8_t)__builtin_parity(sr & MASK_X_);
+        ys[i] = (uint8_t)__builtin_parity(sr & MASK_Y_);
+        i++, bit++;
+    }
+    while (i + 8 <= nbits) {                   /* whole bytes through the table */
+        uint8_t byte = ib[bit >> 3];
+        unsigned xy = t->cc_tab[sr & 0x3F][byte];
+        sr = ((sr << 8) | byte) & 0x7F;
+        for (int b = 0; b < 8; b++) {
+            xs[i + b] = (uint8_t)((xy >> (15 - b)) & 1);
+            ys[i + b] = (uint8_t)((xy >> (7 - b)) & 1);
         }
-        for (int j = 0; j < n; j++)
-            *out++ = pat[j] == 'X' ? xs[pi[j]] : ys[pi[j]];
+        i += 8, bit += 8;
+    }
+    while (i < nbits) {
+        sr = ((sr << 1) | ((ib[bit >> 3] >> (7 - (bit & 7))) & 1)) & 0x7F;
+        xs[i] = (uint8_t)__builtin_parity(sr & MASK_X_);
+        ys[i] = (uint8_t)__builtin_parity(sr & MASK_Y_);
+        i++, bit++;
     }
     t->sr = sr;
     t->ib_bit = bit;
+    const char *pat = punct[n];
+    const int *pi = pidx[n];
+    uint8_t *out = t->coded;
+    for (int p = 0; p < periods; p++) {
+        const uint8_t *xp = xs + (long)p * k, *yp = ys + (long)p * k;
+        for (int j = 0; j < n; j++)
+            *out++ = pat[j] == 'X' ? xp[pi[j]] : yp[pi[j]];
+    }
 }
 
-/* demux + 126-bit block interleavers (4.3.4.1) then symbol interleaver (4.3.4.2) */
+/* demux + 126-bit block interleavers (4.3.4.1): one v-bit word per data cell */
 static void interleave(dvbt *t)
 {
-    static const int h[6] = { 0, 63, 105, 42, 21, 84 };
-    static const int dmx2[2] = { 0, 1 }, dmx4[4] = { 0, 2, 1, 3 }, dmx6[6] = { 0, 2, 4, 1, 3, 5 };
-    int v = t->v;
-    const int *dmx = v == 2 ? dmx2 : v == 4 ? dmx4 : dmx6;
-    int nblk = t->ndata / 126;
-    uint8_t b[6][126];
+    int v = t->v, nblk = t->ndata / 126;
     for (int blk = 0; blk < nblk; blk++) {
         const uint8_t *x = t->coded + blk * 126 * v;
-        for (int w = 0; w < 126; w++)
-            for (int i = 0; i < v; i++)
-                b[dmx[i]][w] = x[w * v + i];
         uint8_t *y = t->ysym + blk * 126;
         for (int w = 0; w < 126; w++) {
+            const uint16_t *src = t->bsrc[w];
             unsigned s = 0;
-            for (int e = 0; e < v; e++) {
-                int src = w + h[e];
-                if (src >= 126)
-                    src -= 126;
-                s = (s << 1) | b[e][src];
-            }
+            for (int e = 0; e < v; e++)
+                s = (s << 1) | x[src[e]];
             y[w] = (uint8_t)s;
         }
-    }
-    if ((t->sym & 1) == 0) {
-        for (int q = 0; q < t->ndata; q++)
-            t->ysym2[t->H[q]] = t->ysym[q];
-    } else {
-        for (int q = 0; q < t->ndata; q++)
-            t->ysym2[q] = t->ysym[t->H[q]];
     }
 }
 
@@ -324,13 +379,13 @@ int dvbt_symbol(dvbt *t, float complex *car)
     interleave(t);
 
     int l = t->sym, lm = l & 3;
-    const uint8_t *ct = t->ctype[lm];
-    const float boost = 4.0f / 3.0f;
-    for (int k = 0; k <= t->kmax; k++)
-        car[k] = ct[k] == C_PILOT ? boost * (1 - 2 * (int)t->wk[k]) : 0.0f;
-    const uint16_t *dk = t->data_k[lm];
-    for (int q = 0; q < t->ndata; q++)
-        car[dk[q]] = t->constel[t->ysym2[q]];
+    /* pilots, then the data cells through symbol interleaver + carrier map in one permutation */
+    memcpy(car, t->pilots[lm], sizeof(float complex) * (t->kmax + 1));
+    const uint16_t *dst = t->dest[l & 1][lm];
+    const float complex *cst = t->constel;
+    const uint8_t *ys = t->ysym;
+    for (int j = 0; j < t->ndata; j++)
+        car[dst[j]] = cst[ys[j]];
     const uint8_t *tb = t->tps_bits[t->frame];
     for (int i = 0; i < t->ntps; i++) {
         float vv;

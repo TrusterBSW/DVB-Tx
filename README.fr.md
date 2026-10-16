@@ -303,6 +303,32 @@ sudo systemctl enable --now dvbtx@salon   # autre instance : /etc/dvbtx/salon.to
 Le service donne la priorité temps réel aux threads radio (`LimitRTPRIO`) et définit `HOME` pour UHD
 (qui lit `~/.config/uhd.conf`, par exemple l'image FPGA d'un clone de B210).
 
+## DVB-C et DVB-S
+
+```toml
+[[carrier]]
+name = "Câble 1"
+radio = "hackrf"
+standard = "dvbc"
+frequency = 306_000_000
+symbol_rate = 6_900_000         # 6,9 Msym/s en 256-QAM = 50,87 Mbit/s
+constellation = "256qam"        # 16qam, 64qam, 256qam
+# rolloff = 0.15
+
+[[carrier]]
+name = "Sat 1"
+radio = "b210"
+standard = "dvbs"
+frequency = 1_200_000_000       # fréquence intermédiaire (bande L) vue par le démodulateur satellite
+symbol_rate = 27_500_000
+code_rate = "3/4"
+# rolloff = 0.35, lnb_lo = 9_750_000_000 (pour la fréquence annoncée dans la NIT), polarization = "h"
+```
+
+Ces porteuses passent par un filtre polyphase (mise en forme RRC + rééchantillonnage vers la
+fréquence de la radio en une passe) puis un oscillateur numérique : elles se placent à n'importe
+quelle fréquence et se mélangent librement avec des porteuses DVB-T sur la même radio.
+
 ## Plusieurs porteuses, plusieurs radios
 
 Toutes les porteuses d'une radio partagent une seule IFFT à la fréquence de la radio : chacune est
@@ -341,9 +367,10 @@ Banc : Threadripper 2950X, Debian 12, sortie radio câblée vers une clé RTL283
 |---|---|
 | DVB-T (2k/8k, QPSK à 64-QAM, non hiérarchique) | ✅ validé par radio |
 | HackRF, USRP (UHD), SoapySDR | ✅ HackRF et B210 validés ; Soapy compilé, non essayé |
-| DVB-C (J.83 A) | en cours |
-| DVB-T2 | en cours (validation prévue contre gr-dtv) |
-| DVB-S / DVB-S2 | prévu |
+| DVB-C (J.83 A, 16/64/256-QAM) | ✅ symboles identiques à l'encodeur mini-cmts (validé sur modem câble) ; démodulé en logiciel (MER 37 dB, 0 erreur RS) ; essai radio à faire avec un tuner DVB-C |
+| DVB-S (QPSK 1/2 à 7/8) | ✅ démodulé par leandvb (TS, noms, LCN, vidéo corrects) ; essai radio à faire |
+| DVB-T2 | en cours (portage de gr-dtv, validation contre gr-dtv) |
+| DVB-S2 | prévu (même FEC que DVB-T2) |
 | Modulation hiérarchique, MPE | non prévu |
 
 ## Licence
