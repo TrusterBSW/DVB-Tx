@@ -143,6 +143,35 @@ def cmd_make_backup(a):
     print(a.output)
 
 
+def cmd_devices(a):
+    """radios seen by their own tools (serial numbers to put in args)"""
+    import re as _re
+    import shutil
+    import subprocess
+    found = False
+    tools = [("hackrf", ["hackrf_info"], r"Serial number: (\w+)", "serial={}"),
+             ("uhd", ["uhd_find_devices"], r"serial: (\w+)", "serial={}"),
+             ("soapy", ["SoapySDRUtil", "--find"], r"driver = (\w+)", "driver={}")]
+    for driver, cmd, rx, fmt in tools:
+        if not shutil.which(cmd[0]):
+            continue
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        seen = set()
+        for m in _re.finditer(rx, out):
+            v = m.group(1)
+            if driver == "soapy" and (v in ("audio", "rtlsdr", "airspy", "airspyhf", "sdrplay", "remote", "hackrf", "uhd")
+                                      or v in seen):
+                continue              # receive-only, or better driven by the native plugins
+            seen.add(v)
+            found = True
+            print(f"driver = \"{driver}\"   args = \"{fmt.format(v)}\"")
+    if not found:
+        print("no radio found (hackrf_info, uhd_find_devices, SoapySDRUtil not installed or nothing plugged)")
+
+
 def cmd_calc(a):
     std = a.standard
     try:
@@ -184,6 +213,7 @@ def main(argv=None):
     e.add_argument("-o", "--output")
     g = sub.add_parser("epg", help="show what the EPG folder gives for each service")
     _add_config_args(g)
+    sub.add_parser("devices", help="list the radios that are plugged in")
     b = sub.add_parser("make-backup", help="create the clip played when a source fails")
     b.add_argument("-o", "--output", default="/var/lib/dvbtx/backup.ts")
     b.add_argument("--text", default="Incident technique - nous revenons dans un instant")
@@ -214,7 +244,7 @@ def main(argv=None):
                         format="%(asctime)s %(levelname).1s %(name)s: %(message)s", datefmt="%H:%M:%S")
     try:
         {"run": cmd_run, "check": cmd_check, "calc": cmd_calc, "epg": cmd_epg, "engine-ini": cmd_engine_ini,
-         "make-backup": cmd_make_backup}[a.cmd](a)
+         "make-backup": cmd_make_backup, "devices": cmd_devices}[a.cmd](a)
     except cfgmod.ConfigError as e:
         sys.exit(f"configuration error: {e}")
     except FileNotFoundError as e:

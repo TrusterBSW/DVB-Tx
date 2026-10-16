@@ -72,6 +72,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   <section><h2>Radios</h2><div id="radios" class="grid"></div></section>
   <section><h2>Multiplex</h2><div id="carriers"></div></section>
   <section><h2>Sources</h2><div class="card scroll"><table id="inputs"></table></div></section>
+  <section><h2>Journal du moteur</h2><div class="card"><details><summary>dernières lignes</summary><pre id="englog"></pre></details></div></section>
   <section><h2>Calculateur de débit utile</h2><div class="card">
     <div class="row" style="gap:8px 14px">
       <label>Norme <select id="k_std" onchange="calcForm()"><option value="dvbt">DVB-T</option><option value="dvbc">DVB-C</option>
@@ -244,6 +245,7 @@ function render(s) {
         <td>${p.kind === "ffmpeg" ? `<button onclick="restartInput(${p.index})">Relancer</button>` : ""}</td></tr>`;
     }).join("");
 
+  $("#englog").textContent = (s.engine.log || []).join("\n");
   $("#ahist").innerHTML = `<tr><th>Heure</th><th>Événement</th><th>Niveau</th><th>Message</th></tr>` +
     s.alert_history.map((a) => `<tr><td>${new Date(a.time * 1000).toLocaleTimeString()}</td><td>${a.event === "clear" ? "fin" : a.event === "raise" ? "début" : "rappel"}</td>
       <td><span class="pill ${a.level}">${a.level}</span></td><td>${esc(a.message)}</td></tr>`).join("");
