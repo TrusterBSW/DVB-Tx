@@ -311,7 +311,7 @@ sudo systemctl enable --now dvbtx@salon   # autre instance : /etc/dvbtx/salon.to
 Le service donne la priorité temps réel aux threads radio (`LimitRTPRIO`) et définit `HOME` pour UHD
 (qui lit `~/.config/uhd.conf`, par exemple l'image FPGA d'un clone de B210).
 
-## DVB-C et DVB-S
+## DVB-C, DVB-S et DVB-S2
 
 ```toml
 [[carrier]]
@@ -331,9 +331,22 @@ frequency = 1_200_000_000       # fréquence intermédiaire (bande L) vue par le
 symbol_rate = 27_500_000
 code_rate = "3/4"
 # rolloff = 0.35, lnb_lo = 9_750_000_000 (pour la fréquence annoncée dans la NIT), polarization = "h"
+
+[[carrier]]
+name = "Sat 2"
+radio = "b210"
+standard = "dvbs2"
+frequency = 1_400_000_000
+symbol_rate = 10_000_000
+modulation = "8psk"             # qpsk, 8psk, 16apsk, 32apsk
+code_rate = "3/4"               # selon la modulation (QPSK 1/4-9/10, 8PSK 3/5-9/10, ...)
+# rolloff = 0.35 (0.25, 0.20), pilots = true, frame = "normal" (ou "short"), gold_code = 0
 ```
 
-Ces porteuses passent par un filtre polyphase (mise en forme RRC + rééchantillonnage vers la
+Coût CPU mesuré sur le Threadripper : une porteuse DVB-S2 8PSK à 10 Msym/s, rééchantillonnée à
+24,9 MS/s, prend environ la moitié d'un cœur (filtre de mise en forme ~44 %, codage ~12 %).
+
+Ces porteuses (DVB-C, DVB-S, DVB-S2) passent par un filtre polyphase (mise en forme RRC + rééchantillonnage vers la
 fréquence de la radio en une passe) puis un oscillateur numérique : elles se placent à n'importe
 quelle fréquence et se mélangent librement avec des porteuses DVB-T sur la même radio.
 
@@ -378,7 +391,7 @@ Banc : Threadripper 2950X, Debian 12, sortie radio câblée vers une clé RTL283
 | DVB-C (J.83 A, 16/64/256-QAM) | ✅ symboles identiques à l'encodeur mini-cmts (validé sur modem câble) ; démodulé en logiciel (MER 37 dB, 0 erreur RS) ; essai radio à faire avec un tuner DVB-C |
 | DVB-S (QPSK 1/2 à 7/8) | ✅ démodulé par leandvb (TS, noms, LCN, vidéo corrects) ; essai radio à faire |
 | DVB-T2 | en cours (portage de gr-dtv, validation contre gr-dtv) |
-| DVB-S2 | prévu (même FEC que DVB-T2) |
+| DVB-S2 (QPSK, 8PSK, 16APSK, 32APSK, trames normales/courtes, pilotes) | ✅ symboles identiques à gr-dtv sur 9 MODCOD ; essai radio à faire |
 | Modulation hiérarchique, MPE | non prévu |
 
 ## Licence
