@@ -3,6 +3,7 @@
  * Derived from GNU Radio gr-dtv (Copyright Free Software Foundation, Inc. / Ron Economos). */
 #include "dvb_fec.h"
 
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -138,29 +139,23 @@ void dvb_bbframer_frame(dvb_bbframer *b, uint8_t *out)
 }
 
 static uint8_t bb_prbs[8100];
-static int bb_prbs_done;
+static pthread_once_t bb_prbs_once = PTHREAD_ONCE_INIT;
 
 static void bb_prbs_init(void)
 {
-    if (__atomic_load_n(&bb_prbs_done, __ATOMIC_ACQUIRE))
-        return;
-    uint8_t tmp[8100];
     int sr = 0x4A80;
-    memset(tmp, 0, sizeof tmp);
     for (int i = 0; i < 64800; i++) {
         int b = (sr ^ (sr >> 1)) & 1;
-        tmp[i >> 3] |= (uint8_t)(b << (7 - (i & 7)));
+        bb_prbs[i >> 3] |= (uint8_t)(b << (7 - (i & 7)));
         sr >>= 1;
         if (b)
             sr |= 0x4000;
     }
-    memcpy(bb_prbs, tmp, sizeof tmp);   /* every thread writes identical bytes */
-    __atomic_store_n(&bb_prbs_done, 1, __ATOMIC_RELEASE);
 }
 
 void dvb_bbscramble(uint8_t *buf, int nbytes)
 {
-    bb_prbs_init();
+    pthread_once(&bb_prbs_once, bb_prbs_init);
     int i = 0;
     for (; i + 8 <= nbytes; i += 8) {
         uint64_t a, p;
@@ -353,15 +348,12 @@ void dvb_ldpc_free(dvb_ldpc *l)
 }
 
 static uint8_t rev_tab[256];
-static int rev_done;
+static pthread_once_t rev_once = PTHREAD_ONCE_INIT;
 
 static void rev_init(void)
 {
-    if (__atomic_load_n(&rev_done, __ATOMIC_ACQUIRE))
-        return;
     for (int i = 0; i < 256; i++)
         rev_tab[i] = bitrev8((uint8_t)i);
-    __atomic_store_n(&rev_done, 1, __ATOMIC_RELEASE);
 }
 
 /* 45 MSB-first bytes -> 360 bits LSB-first in 6 words */
@@ -389,7 +381,7 @@ void dvb_ldpc_encode(const dvb_ldpc *l, const uint8_t *in, uint8_t *parity, int 
     int q = l->q;
     uint64_t P[180][W6];   /* q <= 135 */
     uint64_t dd[13];
-    rev_init();
+    pthread_once(&rev_once, rev_init);
     memset(P, 0, sizeof(uint64_t) * W6 * q);
     uint32_t e0 = 0;
     for (int r = 0; r < l->rows; r++) {

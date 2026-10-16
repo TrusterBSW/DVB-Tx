@@ -66,7 +66,8 @@ static double bessel_i0(double x)
 
 static double lowpass(double t, double occupied, double span)
 {
-    double fc = (occupied / 2 + 0.5) / 2;            /* cycles per input sample */
+    double fc = 0.5;     /* cycles per input sample: half way between the band edge and its first image */
+    (void)occupied;
     double sinc = fabs(t) < 1e-12 ? 2 * fc : sin(2 * M_PI * fc * t) / (M_PI * t);
     double half = span / 2, beta = 7.0, r = t / half;
     if (fabs(r) >= 1)

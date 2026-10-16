@@ -52,6 +52,9 @@ DRIVER_RATES = {"hackrf": (8e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6,
 
 def occupied_half(car):
     """half of the occupied bandwidth of a carrier"""
+    if car.standard == "dvbt2":
+        from . import t2
+        return t2.occupied_bandwidth(**car.params) / 2
     if car.standard == "dvbt":
         bw = int(car.params.get("bandwidth", 8_000_000))
         fft = capacity.DVBT_MODES[car.params.get("mode", "8k")]
@@ -316,9 +319,16 @@ def build(cfg):
         keys = {"dvbt": ("bandwidth", "mode", "constellation", "code_rate", "guard"),
                 "dvbc": ("constellation", "symbol_rate", "rolloff"),
                 "dvbs": ("code_rate", "symbol_rate", "rolloff", "polarization", "orbital"),
+                "dvbt2": ("bandwidth", "fft", "extended", "guard", "pilot", "constellation", "rotation", "code_rate",
+                          "frame", "fec_blocks", "data_symbols", "ti_blocks", "l1_constellation", "cell_id",
+                          "network_id", "t2_system_id", "t2_frames"),
                 "dvbs2": ("modulation", "code_rate", "symbol_rate", "rolloff", "pilots", "frame", "gold_code",
                           "polarization", "orbital", "lnb_lo"),
                 "ts": ("ts_rate", "bandwidth", "mode", "constellation", "code_rate", "guard")}.get(std, ())
+        if std == "dvbt2":                       # DVB-T defaults do not apply
+            for k, v in (("constellation", "256qam"), ("code_rate", "2/3"), ("guard", "1/128")):
+                if k not in c:
+                    cc[k] = v
         if std == "dvbc" and "constellation" not in c:
             cc["constellation"] = "256qam"
         if std in ("dvbs", "dvbs2") and "code_rate" not in c:
@@ -336,9 +346,8 @@ def build(cfg):
             radio = by_name.get(rsel) if isinstance(rsel, str) else (radios[rsel] if isinstance(rsel, int) and rsel < len(radios) else None)
             if radio is None:
                 raise ConfigError(f"carrier {ci}: radio {rsel!r} is not defined ([[radio]])")
-            if std not in ("dvbt", "dvbc", "dvbs", "dvbs2"):
-                raise ConfigError(f"carrier {ci}: standard {std} is not implemented yet in this version "
-                                  "(dvbt, dvbc, dvbs, dvbs2, ts)")
+            if std not in ("dvbt", "dvbt2", "dvbc", "dvbs", "dvbs2"):
+                raise ConfigError(f"carrier {ci}: unknown standard {std} (dvbt, dvbt2, dvbc, dvbs, dvbs2, ts)")
             if std == "dvbs2":
                 params.setdefault("symbol_rate", 27_500_000)
                 params["symbol_rate"] = float(_num(params["symbol_rate"], "symbol_rate"))
@@ -591,7 +600,12 @@ def write_engine_ini(plan, path, si_dir):
     for car in plan.carriers:
         p = car.params
         L += [f"[carrier {car.index}]", f"standard = {car.standard}", f"tsid = {car.tsid}"]
-        if car.standard == "dvbs2":
+        if car.standard == "dvbt2":
+            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"frequency = {car.frequency:.0f}",
+                  f"gain_db = {car.gain_db}"]
+            for k, v in car.params.items():
+                L.append(f"{k} = {int(v) if isinstance(v, bool) else v}")
+        elif car.standard == "dvbs2":
             L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
                   f"modulation = {p['modulation']}", f"code_rate = {p['code_rate']}", f"frame = {p['frame']}",
                   f"pilots = {int(bool(p['pilots']))}", f"rolloff = {p['rolloff']}",
@@ -650,6 +664,10 @@ def describe(plan):
                      f"{int(p.get('bandwidth', 0)) // 1000000} MHz")
         elif c.standard == "dvbc":
             desc_ = f"DVB-C {p['constellation']} {p['symbol_rate'] / 1e6:g} Msym/s rolloff {p.get('rolloff', 0.15)}"
+        elif c.standard == "dvbt2":
+            desc_ = (f"DVB-T2 {p.get('fft', '32k')}{' ext' if p.get('extended', True) else ''} {p.get('constellation')} "
+                     f"{p.get('code_rate')} GI {p.get('guard')} {p.get('pilot', 'PP7')} "
+                     f"{float(p.get('bandwidth', 8e6)) / 1e6:g} MHz")
         elif c.standard == "dvbs2":
             desc_ = (f"DVB-S2 {p['modulation']} {p['code_rate']} {p['symbol_rate'] / 1e6:g} Msym/s rolloff {p['rolloff']} "
                      f"{p['frame']} frames, pilots {'on' if p['pilots'] else 'off'}")

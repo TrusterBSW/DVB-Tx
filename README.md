@@ -168,7 +168,10 @@ The C DVB-T coder is **sample-exact against GNU Radio gr-dtv** (`tests/`) on 2k/
 DVB-T ✅ (validated over the air) · HackRF ✅ · USRP/UHD ✅ · SoapySDR (built, untested) ·
 DVB-C (16/64/256-QAM) ✅ symbol-exact against the mini-cmts J.83A encoder, demodulated in software (MER 37 dB,
 no RS error) · DVB-S (QPSK 1/2-7/8) ✅ demodulated by leandvb · DVB-S2 (QPSK/8PSK/16APSK/32APSK) ✅ symbol-exact against gr-dtv ·
-DVB-T2: in progress.
+DVB-T2 (single PLP, 1K-32K, normal/extended, PP1-PP8, QPSK-256QAM rotated, normal/short frames) ✅ sample-exact
+against gr-dtv on 23 configurations (`docs/DVBT2_PORT.md`), resampled to the radio rate (77.9 dB in-band SNR) and
+mixable with the other carriers: `standard = "dvbt2"` with `fft`, `extended`, `guard`, `pilot`, `constellation`,
+`rotation`, `code_rate`, `frame`.
 
 DVB-C, DVB-S and DVB-S2 carriers (`standard = "dvbc"` with `symbol_rate`, `constellation`; `"dvbs"` with
 `symbol_rate`, `code_rate`; `"dvbs2"` with `symbol_rate`, `modulation`, `code_rate`, `rolloff`, `pilots`, `frame`) go through a polyphase RRC resampler and an NCO: any frequency, freely mixed with

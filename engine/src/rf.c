@@ -23,6 +23,7 @@
 #include "dvbs.h"
 #include "dvbs2.h"
 #include "dvbt.h"
+#include "dvbt2.h"
 #include "ofdm.h"
 #include "scgen.h"
 #include "sdr.h"
@@ -58,6 +59,11 @@ typedef struct carrier {
     double symbol_rate, rolloff;
     int bits, cr_k, cr_n;
     dvbs2_cfg s2;
+    /* dvbt2: native-rate samples resampled like a single carrier */
+    dvbt2_cfg t2c;
+    dvbt2 *t2;
+    float complex *t2buf;
+    int t2n, t2pos;
     int ncar;                     /* elements per ring slot: OFDM carriers, or samples of a block */
     float complex *ring;
     uint64_t wr, rd;
@@ -199,6 +205,18 @@ static void radio_track(radio *r)
     atomic_store(&r->t0, t0);
     r->win_start = st.at_ns;
     r->win_min = raw;
+}
+
+/* DVB-T2 samples at the elementary rate, one at a time for scgen (PULSE_LOWPASS) */
+#define T2BUF 40000
+static void t2_sample(void *ctx, float complex *v)
+{
+    carrier *c = ctx;
+    if (c->t2pos == c->t2n) {
+        c->t2n = dvbt2_samples(c->t2, c->t2buf, T2BUF);
+        c->t2pos = 0;
+    }
+    *v = c->t2buf[c->t2pos++];
 }
 
 /* ---- carrier threads ---- */
@@ -512,6 +530,53 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             }
             c->radio = g_radios[ri];
             clk = radio_clock;
+        } else if (!strcmp(c->standard, "dvbt2")) {
+            dvbt2_cfg t = { 0 };
+            t.bw_hz = conf_num(s, "bandwidth", 8e6);
+            const char *f = conf_str(s, "fft", "32k");
+            t.fft = !strcmp(f, "1k") ? 1024 : !strcmp(f, "2k") ? 2048 : !strcmp(f, "4k") ? 4096 : !strcmp(f, "8k") ? 8192 :
+                    !strcmp(f, "16k") ? 16384 : 32768;
+            t.extended = (int)conf_int(s, "extended", 1);
+            if (sscanf(conf_str(s, "guard", "1/128"), "%d/%d", &t.gi_num, &t.gi_den) != 2) {
+                snprintf(err, errlen, "carrier %d: bad guard", c->idx);
+                return -1;
+            }
+            const char *pp = conf_str(s, "pilot", "PP7");
+            t.pilot = atoi(pp + ((pp[0] == 'P' || pp[0] == 'p') ? 2 : 0));
+            const char *cons = conf_str(s, "constellation", "256qam");
+            t.bits = !strcmp(cons, "qpsk") ? 2 : !strcmp(cons, "16qam") ? 4 : !strcmp(cons, "64qam") ? 6 : 8;
+            t.rotation = (int)conf_int(s, "rotation", 1);
+            if (parse_code_rate(conf_str(s, "code_rate", "2/3"), &t.cr_num, &t.cr_den)) {
+                snprintf(err, errlen, "carrier %d: bad code_rate", c->idx);
+                return -1;
+            }
+            t.short_frame = !strcmp(conf_str(s, "frame", "normal"), "short");
+            t.fec_blocks = (int)conf_int(s, "fec_blocks", 0);
+            t.data_symbols = (int)conf_int(s, "data_symbols", 0);
+            t.ti_blocks = (int)conf_int(s, "ti_blocks", 0);
+            const char *l1 = conf_str(s, "l1_constellation", "64qam");
+            t.l1_bits = !strcmp(l1, "bpsk") ? 1 : !strcmp(l1, "qpsk") ? 2 : !strcmp(l1, "16qam") ? 4 : 6;
+            t.cell_id = (int)conf_int(s, "cell_id", 0);
+            t.network_id = (int)conf_int(s, "network_id", 0x3085);
+            t.t2_system_id = (int)conf_int(s, "t2_system_id", 0x8001);
+            t.t2_frames = (int)conf_int(s, "t2_frames", 0);
+            t.frequency = (uint32_t)conf_num(s, "frequency", 0);
+            const char *e = dvbt2_cfg_check(&t);
+            if (e) {
+                snprintf(err, errlen, "carrier %d: %s", c->idx, e);
+                return -1;
+            }
+            c->t2c = t;
+            ts_rate = dvbt2_ts_rate(&t);
+            c->symbol_rate = dvbt2_sample_rate(&t);
+            c->rolloff = dvbt2_occupied_bw(&t) / c->symbol_rate;     /* occupied fraction */
+            int ri = (int)conf_int(s, "radio", 0);
+            if (ri < 0 || ri >= g_nradios) {
+                snprintf(err, errlen, "carrier %d: radio %d does not exist", c->idx, ri);
+                return -1;
+            }
+            c->radio = g_radios[ri];
+            clk = radio_clock;
         } else if (!strcmp(c->standard, "ts")) {
             ts_rate = conf_num(s, "ts_rate", 0);
             if (ts_rate <= 0) {
@@ -663,13 +728,19 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
         }
         for (int i = 0; i < r->nsc; i++) {
             carrier *c = r->sc[i];
-            double half = c->symbol_rate * (1 + c->rolloff) / 2;
+            int is_t2 = !strcmp(c->standard, "dvbt2");
+            double half = is_t2 ? c->symbol_rate * c->rolloff / 2 : c->symbol_rate * (1 + c->rolloff) / 2;
             if (fabs(c->offset_hz) + half > r->p.rate / 2) {
                 snprintf(err, errlen, "carrier %d: outside the radio bandwidth", c->idx);
                 return -1;
             }
             float g = (float)sqrt(pow(10.0, c->gain_db / 10.0) / wtot);
-            if (!strcmp(c->standard, "dvbs2")) {
+            if (is_t2) {
+                c->t2 = dvbt2_new(&c->t2c, mux_pull, c->mux);
+                c->t2buf = xcalloc(T2BUF, sizeof(float complex));
+                c->src = c->t2;
+                c->symf = t2_sample;
+            } else if (!strcmp(c->standard, "dvbs2")) {
                 c->src = dvbs2_new(&c->s2, mux_pull, c->mux);
                 c->symf = dvbs2_symbol;
             } else if (!strcmp(c->standard, "dvbs")) {
@@ -683,7 +754,10 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
                 snprintf(err, errlen, "carrier %d: invalid modulation parameters", c->idx);
                 return -1;
             }
-            c->sg = scgen_new(c->symbol_rate, r->p.rate, c->offset_hz, c->rolloff, 16, g, c->symf, c->src);
+            if (is_t2)
+                c->sg = scgen_new2(c->symbol_rate, r->p.rate, c->offset_hz, PULSE_LOWPASS, c->rolloff, 32, g, t2_sample, c);
+            else
+                c->sg = scgen_new(c->symbol_rate, r->p.rate, c->offset_hz, c->rolloff, 16, g, c->symf, c->src);
             c->ncar = r->blklen;
             c->ring = xcalloc((size_t)RING_SYMS * c->ncar, sizeof(float complex));
         }

@@ -91,6 +91,10 @@ class SiManager:
         p = car.params
         if car.standard == "dvbc":
             return si.cable_delivery(car.frequency, p["symbol_rate"], p["constellation"])
+        if car.standard == "dvbt2":
+            return si.t2_delivery(int(p.get("t2_system_id", 0x8001)), car.frequency, float(p.get("bandwidth", 8e6)),
+                                  p.get("guard", "1/128"), p.get("fft", "32k"), car.cell_id,
+                                  unspecified=not self.net["frequency_in_nit"])
         if car.standard == "dvbs2":
             return si.satellite_delivery(car.frequency + float(p.get("lnb_lo", 9_750_000_000)), p["symbol_rate"],
                                          p["code_rate"], p.get("polarization", "h"), True,

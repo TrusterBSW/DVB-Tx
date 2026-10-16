@@ -311,6 +311,33 @@ sudo systemctl enable --now dvbtx@salon   # autre instance : /etc/dvbtx/salon.to
 Le service donne la priorité temps réel aux threads radio (`LimitRTPRIO`) et définit `HOME` pour UHD
 (qui lit `~/.config/uhd.conf`, par exemple l'image FPGA d'un clone de B210).
 
+## DVB-T2
+
+```toml
+[[carrier]]
+name = "Mux T2"
+radio = "hackrf"
+standard = "dvbt2"
+frequency = 482_000_000
+bandwidth = 8_000_000
+fft = "32k"                     # 1k 2k 4k 8k 16k 32k
+extended = true                 # porteuses étendues (8k, 16k, 32k)
+guard = "1/128"                 # 1/128 1/32 1/16 19/256 1/8 19/128 1/4
+pilot = "PP7"                   # PP1 à PP8 (selon FFT et garde)
+constellation = "256qam"        # qpsk 16qam 64qam 256qam
+rotation = true
+code_rate = "2/3"               # 1/2 3/5 2/3 3/4 4/5 5/6   -> 40,02 Mbit/s avec ces valeurs
+# frame = "normal" (ou "short"), fec_blocks, data_symbols, ti_blocks = 0 (automatique),
+# l1_constellation = "64qam", t2_system_id = 0x8001
+```
+
+Le modulateur T2 (porté de gr-dtv, identique à lui) produit le signal à son débit élémentaire ;
+un filtre polyphase passe-bas (77,9 dB de rapport signal/erreur dans la bande) le ramène à la
+fréquence de la radio, où il se mélange avec les autres porteuses. Coût mesuré : ~70 % d'un cœur
+pour un 32K 256-QAM sur un HackRF à 18,3 MS/s (modulateur ~16 %, rééchantillonnage ~50 %).
+`dvbtx calc` et la page web calculent son débit utile ; la NIT contient le
+`T2_delivery_system_descriptor`.
+
 ## DVB-C, DVB-S et DVB-S2
 
 ```toml
@@ -390,7 +417,7 @@ Banc : Threadripper 2950X, Debian 12, sortie radio câblée vers une clé RTL283
 | HackRF, USRP (UHD), SoapySDR | ✅ HackRF et B210 validés ; Soapy compilé, non essayé |
 | DVB-C (J.83 A, 16/64/256-QAM) | ✅ symboles identiques à l'encodeur mini-cmts (validé sur modem câble) ; démodulé en logiciel (MER 37 dB, 0 erreur RS) ; essai radio à faire avec un tuner DVB-C |
 | DVB-S (QPSK 1/2 à 7/8) | ✅ démodulé par leandvb (TS, noms, LCN, vidéo corrects) ; essai radio à faire |
-| DVB-T2 | en cours (portage de gr-dtv, validation contre gr-dtv) |
+| DVB-T2 (PLP unique, 1K à 32K, normal/étendu, PP1-PP8, QPSK à 256-QAM tournée, trames normales/courtes) | ✅ échantillons identiques à gr-dtv sur 23 configurations (voir `docs/DVBT2_PORT.md`) ; essai radio à faire avec un tuner T2 |
 | DVB-S2 (QPSK, 8PSK, 16APSK, 32APSK, trames normales/courtes, pilotes) | ✅ symboles identiques à gr-dtv sur 9 MODCOD ; essai radio à faire |
 | Modulation hiérarchique, MPE | non prévu |
 
