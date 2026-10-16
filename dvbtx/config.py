@@ -219,6 +219,7 @@ class Carrier:
     services: list = field(default_factory=list)
     monitor: list = field(default_factory=list)
     output: str = ""
+    synth: str = "auto"
 
 
 @dataclass
@@ -272,6 +273,65 @@ def _num(v, what):
         if isinstance(p, (int, float)):
             return p
     raise ConfigError(f"{what}: expected a number, got {v!r}")
+
+
+SC_PRIMES = (2, 3, 5, 7, 11, 13, 17, 19, 23)       # FFT factors the engine's filter banks accept
+
+
+def _is_smooth(n, primes=(2, 3, 5, 7)):
+    for p in primes:
+        while n % p == 0:
+            n //= p
+    return n == 1
+
+
+def _sc_rate(car):
+    """rate at which a single-carrier modulation (or DVB-T2, resampled) produces its samples"""
+    if car.standard == "dvbt2":
+        from . import t2
+        return t2.sample_rate(**car.params)
+    return float(car.params["symbol_rate"])
+
+
+def _simple_fraction(x, maxden=4096):
+    from fractions import Fraction
+    f = Fraction(x).limit_denominator(maxden)
+    return f if abs(float(f) - x) <= 1e-10 * x else None
+
+
+def _fft_rate(rates, lo, hi):
+    """see _fft_rate_p: FFT sizes with factors up to 7 when possible, else up to 23 (6.9 Msym/s = 3 x 23 x 10^5
+    with DVB-T2 64/7 MHz needs the 23)"""
+    return _fft_rate_p(rates, lo, hi, SC_PRIMES[:4]) or _fft_rate_p(rates, lo, hi, SC_PRIMES)
+
+
+def _fft_rate_p(rates, lo, hi, primes):
+    """Radio rate in [lo, hi] of which every symbol rate is a simple fraction a/b (a, b <= 4096 with
+    small prime factors: fast FFT sizes): the engine then shapes the carriers exactly in the frequency
+    domain, several carriers sharing one IFFT. The lowest such rate (CPU, USB); it is also a whole
+    number of Hz times a small divider (HackRF clock)."""
+    cands = []
+    rs0 = rates[0]
+    top = min(hi, lo * 1.08)
+    for a in range(1, 400):
+        if not _is_smooth(a, primes):
+            continue
+        for b in range(max(a + 1, math.ceil(lo * a / rs0)), 4097):
+            r = rs0 * b / a
+            if r > top:
+                break
+            if math.gcd(a, b) != 1 or not _is_smooth(b, primes):
+                continue
+            if not any(abs(r * d - round(r * d)) < 1e-6 for d in range(1, 32)):
+                continue
+            fr = [_simple_fraction(rs / r) for rs in rates]
+            if any(f is None or not (_is_smooth(f.numerator, primes) and _is_smooth(f.denominator, primes))
+                   for f in fr):
+                continue
+            cands.append(r)
+    if not cands:
+        return None if top >= hi else _fft_rate_p(rates, top, hi, primes)
+    return min(cands)
 
 
 def _smooth_size(n, multiple):
@@ -385,6 +445,9 @@ def build(cfg):
                       int(cc.get("onid", net["onid"])), ts_rate)
         car.cell_id = int(cc["cell_id"])
         car.gain_db = float(cc["gain_db"])
+        car.synth = str(cc.get("synth", "auto")).lower()
+        if car.synth not in ("auto", "fft", "fir"):
+            raise ConfigError(f"carrier {car.name}: synth must be auto, fft or fir")
         car.si_reserve = float(cc["si_reserve"])
         mon = cc["monitor"]
         car.monitor = [mon] if isinstance(mon, str) else list(mon)
@@ -584,6 +647,11 @@ def _plan_radio(r):
         r.nfft = nfft
     elif r.rate <= 0:
         r.rate = max(lo_rate, math.ceil(need / 100e3) * 100e3)
+        sc = [c for c in cars if c.standard in ("dvbc", "dvbs", "dvbs2", "dvbt2") and c.synth != "fir"]
+        if sc:
+            fr = _fft_rate(sorted({_sc_rate(c) for c in sc}), max(need, lo_rate), hi_rate)
+            if fr:
+                r.rate = fr
     if r.rate < need:
         raise ConfigError(f"radio {r.name}: rate {r.rate / 1e6:.3f} MS/s too low for the carriers (needs {need / 1e6:.3f})")
     if r.rate > hi_rate * 1.0001:
@@ -637,6 +705,8 @@ def write_engine_ini(plan, path, si_dir):
                   f"cell_id = {car.cell_id}", f"gain_db = {car.gain_db}"]
         else:
             L += [f"ts_rate = {car.ts_rate:.1f}", f"output = {car.output}"]
+        if car.radio and car.standard != "dvbt":
+            L.append(f"synth = {car.synth}")
         mons = [f"udp://127.0.0.1:{mon_base + car.index}"] + car.monitor
         L.append(f"monitor = {','.join(mons)}")
         sd = si_dir

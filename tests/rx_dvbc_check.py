@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Demodulate a DVB-C I/Q capture with the J.83A receiver of mini-cmts and check the TS.
-usage: rx_dvbc_check.py DOCSIS_DIR capture.cs16 sample_rate offset_hz qam out.ts"""
+usage: rx_dvbc_check.py DOCSIS_DIR capture.cs16 sample_rate offset_hz qam out.ts [symbol_rate]"""
 import sys
 import numpy as np
 sys.path.insert(0, sys.argv[1])
 from cmts import rx_j83a as rx
 path, fs, off, qam, out = sys.argv[2], float(sys.argv[3]), float(sys.argv[4]), int(sys.argv[5]), sys.argv[6]
+if len(sys.argv) > 7:
+    rx.SYMRATE = float(sys.argv[7])
 x = rx.load_hackrf(path, skip=int(fs), count=int(2 * fs * 1.2), fmt="sc16")
 y = rx.channelize(x, fs, off, sps=4)
 s, _ = rx.timing_recover(y, 4)

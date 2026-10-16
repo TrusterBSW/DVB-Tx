@@ -25,6 +25,7 @@
 #include "dvbt.h"
 #include "dvbt2.h"
 #include "ofdm.h"
+#include "fcbank.h"
 #include "scgen.h"
 #include "sdr.h"
 #include "ts.h"
@@ -37,6 +38,8 @@
 #define MAX_RADIOS 16
 #define MAX_CARRIERS 128
 #define RING_SYMS 32
+#define SYMBLK 4096               /* symbols per ring slot of a filter-bank member */
+#define MAX_BANKS 64
 
 typedef struct radio radio;
 
@@ -56,6 +59,10 @@ typedef struct carrier {
     void *src;                    /* dvbc / dvbs symbol source */
     sym_fn symf;
     scgen *sg;
+    fcbank *fb;                   /* this pseudo-carrier runs a filter bank (members in other carriers) */
+    int in_bank, held, sym_pos;   /* member of a filter bank: the ring holds symbols */
+    void *symctx;
+    char synth[8];                /* auto, fft, fir */
     double symbol_rate, rolloff;
     int bits, cr_k, cr_n;
     dvbs2_cfg s2;
@@ -94,8 +101,9 @@ struct radio {
     int nfft, ncp, symlen;
     carrier *mem[64];             /* DVB-T carriers sharing the OFDM synthesis */
     int nmem;
-    carrier *sc[64];              /* single-carrier modulations added after it */
+    carrier *sc[64];              /* single-carrier modulations added after it (and filter banks) */
     int nsc;
+    int ncarriers;
     int blklen;                   /* samples per output block */
 
     _Atomic int64_t t0;           /* CLOCK_MONOTONIC ns at which sample 0 is (virtually) on air */
@@ -113,6 +121,8 @@ static radio *g_radios[MAX_RADIOS];
 static int g_nradios;
 static carrier *g_carriers[MAX_CARRIERS];
 static int g_ncarriers;
+static carrier *g_banks[MAX_BANKS];   /* pseudo-carriers synthesising filter banks */
+static int g_nbanks;
 static volatile int g_running;
 
 /* ---- plugins ---- */
@@ -219,6 +229,25 @@ static void t2_sample(void *ctx, float complex *v)
     *v = c->t2buf[c->t2pos++];
 }
 
+/* symbols of a filter-bank member, from its ring (called by the bank thread) */
+static void bank_sym(void *ctx, float complex *v)
+{
+    carrier *c = ctx;
+    if (c->sym_pos == SYMBLK) {
+        pthread_mutex_lock(&c->lock);
+        if (c->held) {
+            c->rd++;
+            pthread_cond_broadcast(&c->cond);
+        }
+        while (g_running && c->wr == c->rd)
+            pthread_cond_wait(&c->cond, &c->lock);
+        c->held = 1;
+        pthread_mutex_unlock(&c->lock);
+        c->sym_pos = 0;
+    }
+    *v = c->ring[(size_t)(c->rd % RING_SYMS) * SYMBLK + c->sym_pos++];
+}
+
 /* ---- carrier threads ---- */
 
 static void rt_priority(int prio, const char *what)
@@ -236,7 +265,7 @@ static void *dvbt_thread(void *arg)
 {
     carrier *c = arg;
     rt_priority(40, "the carrier threads");
-    if (!c->mod) {                 /* single carrier: blocks of radio samples */
+    if (!c->mod) {                 /* single carrier: blocks of radio samples, or of symbols for a bank */
         while (g_running) {
             pthread_mutex_lock(&c->lock);
             while (g_running && c->wr - c->rd >= RING_SYMS)
@@ -244,7 +273,14 @@ static void *dvbt_thread(void *arg)
             pthread_mutex_unlock(&c->lock);
             if (!g_running)
                 break;
-            scgen_block(c->sg, c->ring + (size_t)(c->wr % RING_SYMS) * c->ncar, c->ncar);
+            float complex *slot = c->ring + (size_t)(c->wr % RING_SYMS) * c->ncar;
+            if (c->fb)
+                fcbank_block(c->fb, slot, c->ncar);
+            else if (c->in_bank)
+                for (int k = 0; k < c->ncar; k++)
+                    c->symf(c->symctx, &slot[k]);
+            else
+                scgen_block(c->sg, slot, c->ncar);
             pthread_mutex_lock(&c->lock);
             c->wr++;
             pthread_cond_broadcast(&c->cond);
@@ -441,6 +477,7 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
         pthread_mutex_init(&c->lock, NULL);
         pthread_cond_init(&c->cond, NULL);
         snprintf(c->standard, sizeof c->standard, "%s", conf_str(s, "standard", "dvbt"));
+        snprintf(c->synth, sizeof c->synth, "%s", conf_str(s, "synth", "auto"));
         c->offset_hz = conf_num(s, "offset", 0);
         c->gain_db = conf_num(s, "gain_db", 0);
         double ts_rate;
@@ -727,7 +764,23 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
         } else {
             r->blklen = 16384;
         }
+        /* single carriers: frequency-domain filter banks at the radio rate when the symbol rate is a
+         * simple fraction of it (exact shaping, one IFFT for several carriers), else scgen */
+        long df = 0;                       /* gcd of the offsets (Hz): exact bins when possible */
         for (int i = 0; i < r->nsc; i++) {
+            long o = labs(lround(r->sc[i]->offset_hz)), a = df;
+            while (o) {
+                long t = a % o;
+                a = o;
+                o = t;
+            }
+            df = a;
+        }
+        carrier *banks[64];
+        int nbanks = 0, nsc = r->nsc;
+        r->nsc = 0;
+        r->ncarriers = r->nmem;
+        for (int i = 0; i < nsc; i++) {
             carrier *c = r->sc[i];
             int is_t2 = !strcmp(c->standard, "dvbt2");
             double half = is_t2 ? c->symbol_rate * c->rolloff / 2 : c->symbol_rate * (1 + c->rolloff) / 2;
@@ -755,13 +808,63 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
                 snprintf(err, errlen, "carrier %d: invalid modulation parameters", c->idx);
                 return -1;
             }
+            c->symctx = is_t2 ? (void *)c : c->src;
+            r->ncarriers++;
+            int pulse = is_t2 ? FC_FLAT : FC_RRC;
+            if (strcmp(c->synth, "fir")) {
+                int ok = -1;
+                for (int b = 0; b < nbanks && ok < 0; b++)
+                    ok = fcbank_add(banks[b]->fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym, c);
+                if (ok < 0 && nbanks < 64 && g_nbanks < MAX_BANKS) {
+                    fcbank *fb = fcbank_new(r->p.rate, c->symbol_rate, (double)df);
+                    if (fb && fcbank_add(fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym, c) >= 0) {
+                        carrier *bc = xcalloc(1, sizeof *bc);
+                        bc->idx = -1;
+                        bc->radio = r;
+                        snprintf(bc->standard, sizeof bc->standard, "bank");
+                        pthread_mutex_init(&bc->lock, NULL);
+                        pthread_cond_init(&bc->cond, NULL);
+                        bc->fb = fb;
+                        bc->ncar = r->blklen;
+                        bc->ring = xcalloc((size_t)RING_SYMS * bc->ncar, sizeof(float complex));
+                        banks[nbanks++] = bc;
+                        g_banks[g_nbanks++] = bc;
+                        r->sc[r->nsc++] = bc;
+                        ok = 0;
+                    } else {
+                        fcbank_free(fb);
+                    }
+                }
+                if (ok >= 0) {
+                    c->in_bank = 1;
+                    c->sym_pos = SYMBLK;
+                    c->ncar = SYMBLK;
+                    c->ring = xcalloc((size_t)RING_SYMS * c->ncar, sizeof(float complex));
+                    continue;
+                }
+                if (!strcmp(c->synth, "fft")) {
+                    snprintf(err, errlen, "carrier %d: symbol rate %.3f is not a simple fraction of the radio rate "
+                             "%.3f (synth = fft)", c->idx, c->symbol_rate, r->p.rate);
+                    return -1;
+                }
+                LOGI("carrier %d: rate %.3f / %.3f not a simple fraction, time-domain filter", c->idx,
+                     c->symbol_rate, r->p.rate);
+            }
             if (is_t2)
                 c->sg = scgen_new2(c->symbol_rate, r->p.rate, c->offset_hz, PULSE_LOWPASS, c->rolloff, 32, g, t2_sample, c);
             else
                 c->sg = scgen_new(c->symbol_rate, r->p.rate, c->offset_hz, c->rolloff, 16, g, c->symf, c->src);
             c->ncar = r->blklen;
             c->ring = xcalloc((size_t)RING_SYMS * c->ncar, sizeof(float complex));
+            r->sc[r->nsc++] = c;
         }
+        for (int b = 0; b < nbanks; b++)
+            for (int i = 0; i < fcbank_members(banks[b]->fb); i++) {
+                int N, H, L, h;
+                fcbank_sizes(banks[b]->fb, i, &N, &H, &L, &h);
+                LOGD("radio %d: filter bank %d (FFT %d, %d new samples) member %d at %.3f Hz (FFT %d, %d new symbols)",
+                     ri, b, N, H, i, fcbank_offset(banks[b]->fb, i), L, h);
+            }
         r->scale = (float)pow(10.0, -r->backoff_db / 20.0);
         r->drv = sdr_load(r->driver, err, errlen);
         if (!r->drv)
@@ -786,7 +889,7 @@ int rf_start(void)
         int64_t lead = (int64_t)r->p.buffer_ms * 1000000 + (int64_t)(RING_SYMS * r->blklen / r->p.rate * 1e9);
         atomic_store(&r->t0, mono_ns() + lead);
         LOGI("radio %d: %s at %.3f MHz, %.6f MS/s, %d carrier(s), FFT %d", ri, r->driver, r->p.freq_hz / 1e6,
-             r->p.rate / 1e6, r->nmem + r->nsc, r->nfft);
+             r->p.rate / 1e6, r->ncarriers, r->nfft);
     }
     for (int i = 0; i < g_ncarriers; i++) {
         carrier *c = g_carriers[i];
@@ -794,6 +897,11 @@ int rf_start(void)
         if (pthread_create(&c->th, NULL, fn, c))
             return -1;
         c->started = 1;
+    }
+    for (int i = 0; i < g_nbanks; i++) {
+        if (pthread_create(&g_banks[i]->th, NULL, dvbt_thread, g_banks[i]))
+            return -1;
+        g_banks[i]->started = 1;
     }
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
@@ -807,8 +915,8 @@ int rf_start(void)
 void rf_stop(void)
 {
     g_running = 0;
-    for (int i = 0; i < g_ncarriers; i++) {
-        carrier *c = g_carriers[i];
+    for (int i = 0; i < g_ncarriers + g_nbanks; i++) {
+        carrier *c = i < g_ncarriers ? g_carriers[i] : g_banks[i - g_ncarriers];
         pthread_mutex_lock(&c->lock);
         pthread_cond_broadcast(&c->cond);
         pthread_mutex_unlock(&c->lock);
@@ -826,6 +934,9 @@ void rf_stop(void)
     for (int i = 0; i < g_ncarriers; i++)
         if (g_carriers[i]->started)
             pthread_join(g_carriers[i]->th, NULL);
+    for (int i = 0; i < g_nbanks; i++)
+        if (g_banks[i]->started)
+            pthread_join(g_banks[i]->th, NULL);
 }
 
 /* a radio whose sample counter has not moved for timeout_ns (unplugged, wedged USB): its index, or -1 */
@@ -868,19 +979,30 @@ static double thread_cpu(pthread_t th)
 
 int rf_stats_json(char *buf, int len, double dt)
 {
-    static double prev_cpu[MAX_RADIOS + MAX_CARRIERS];
+    static double prev_cpu[MAX_RADIOS + MAX_CARRIERS], prev_bank[MAX_BANKS];
     int n = snprintf(buf, len, "\"radios\":[");
     for (int ri = 0; ri < g_nradios && n < len - 512; ri++) {
         radio *r = g_radios[ri];
         double cpu = r->started ? thread_cpu(r->th) : 0;
         double load = dt > 0 ? (cpu - prev_cpu[ri]) / dt * 100 : 0;
         prev_cpu[ri] = cpu;
+        double bload = 0;                  /* filter-bank threads of this radio */
+        int nb = 0;
+        for (int i = 0; i < g_nbanks; i++) {
+            if (g_banks[i]->radio != r)
+                continue;
+            double bc = g_banks[i]->started ? thread_cpu(g_banks[i]->th) : 0;
+            bload += dt > 0 ? (bc - prev_bank[i]) / dt * 100 : 0;
+            prev_bank[i] = bc;
+            nb++;
+        }
         n += snprintf(buf + n, len - n,
                       "%s{\"index\":%d,\"driver\":\"%s\",\"freq\":%.0f,\"rate\":%.3f,\"carriers\":%d,"
-                      "\"underruns\":%llu,\"late\":%llu,\"fill\":%.3f,\"cpu\":%.1f,\"samples\":%llu}",
-                      ri ? "," : "", ri, r->driver, r->p.freq_hz, r->p.rate, r->nmem + r->nsc,
+                      "\"underruns\":%llu,\"late\":%llu,\"fill\":%.3f,\"cpu\":%.1f,\"samples\":%llu,"
+                      "\"banks\":%d,\"bank_cpu\":%.1f}",
+                      ri ? "," : "", ri, r->driver, r->p.freq_hz, r->p.rate, r->ncarriers,
                       (unsigned long long)r->last.underruns, (unsigned long long)r->last.late, r->last.fill, load,
-                      (unsigned long long)r->last.samples);
+                      (unsigned long long)r->last.samples, nb, bload);
     }
     n += snprintf(buf + n, len - n, "],\"carriers\":[");
     for (int i = 0; i < g_ncarriers && n < len - 4096; i++) {
