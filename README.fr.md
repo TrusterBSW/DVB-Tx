@@ -347,7 +347,8 @@ radio = "hackrf"
 standard = "dvbc"
 frequency = 306_000_000
 symbol_rate = 6_900_000         # 6,9 Msym/s en 256-QAM = 50,87 Mbit/s
-constellation = "256qam"        # 16qam, 64qam, 256qam
+constellation = "256qam"        # 16qam, 32qam, 64qam, 128qam, 256qam (seul le 64-QAM est obligatoire
+                                # dans les récepteurs ; 256 est universel ; 128 : HackRF, voir les mesures)
 # rolloff = 0.15
 
 [[carrier]]
@@ -401,6 +402,7 @@ Banc : Threadripper 2950X, Debian 12, sortie radio câblée vers une clé RTL283
 | TS reçu par radio, analysé par TSDuck | 0 erreur de continuité, PCR conformes, noms, LCN, ONID, NIT, EIT, TOT corrects, vidéo décodée |
 | Téléviseur | les 5 chaînes trouvées avec leurs numéros et leurs noms, EPG avec accents (ISO 8859-9), son AAC et E-AC-3 5.1 |
 | DVB-T2 32K étendu 256-QAM **5/6** GI 1/128 PP7 (50,08 Mbit/s), tuner Sony CXD2837ER | HackRF : C/N 31,7 dB, 0 erreur ; B210 : C/N 40 dB, 0 erreur |
+| DVB-C 128-QAM 6,9 Msym/s (44,51 Mbit/s), même tuner | B210 : C/N 40 dB, BER 0 ; HackRF : C/N 31 dB, BER 2e-5, 0 erreur après Reed-Solomon |
 | DVB-C 256-QAM 6,9 Msym/s (50,87 Mbit/s), même tuner | B210 : C/N 41,5 dB, BER 0, 0 erreur ; HackRF : C/N 33 dB, BER ~6e-4, une vingtaine de paquets perdus par 15 s (le HackRF plafonne vers 32-34 dB, assez pour la T2 grâce à son LDPC, pas pour le 256-QAM du câble qui n'a qu'un Reed-Solomon) ; HackRF en 64-QAM : 0 erreur |
 
 ## Validation
@@ -418,7 +420,7 @@ Banc : Threadripper 2950X, Debian 12, sortie radio câblée vers une clé RTL283
 |---|---|
 | DVB-T (2k/8k, QPSK à 64-QAM, non hiérarchique) | ✅ validé par radio |
 | HackRF, USRP (UHD), SoapySDR | ✅ HackRF et B210 validés ; Soapy compilé, non essayé |
-| DVB-C (J.83 A, 16/64/256-QAM) | ✅ symboles identiques à l'encodeur mini-cmts ; par radio : 256-QAM sans erreur sur B210 (C/N 41,5 dB), 64-QAM sans erreur sur HackRF ; le 256-QAM sur HackRF reste limite (voir les mesures) |
+| DVB-C (J.83 A, 16/32/64/128/256-QAM) | ✅ symboles identiques à l'encodeur mini-cmts (carrées) et constellations en croix relevées sur EN 300 429 ; par radio : 256-QAM et 128-QAM sans erreur sur B210, 128-QAM (44,5 Mbit/s) et 64-QAM sans erreur sur HackRF ; le 256-QAM sur HackRF reste limite (voir les mesures) |
 | DVB-S (QPSK 1/2 à 7/8) | ✅ démodulé par leandvb (TS, noms, LCN, vidéo corrects) ; essai radio à faire |
 | DVB-T2 (PLP unique, 1K à 32K, normal/étendu, PP1-PP8, QPSK à 256-QAM tournée, trames normales/courtes) | ✅ échantillons identiques à gr-dtv sur 23 configurations (voir `docs/DVBT2_PORT.md`) ; par radio en 32K étendu 256-QAM 5/6 GI 1/128 (50,08 Mbit/s) : 0 erreur sur HackRF et sur B210, noms et LCN corrects |
 | DVB-S2 (QPSK, 8PSK, 16APSK, 32APSK, trames normales/courtes, pilotes) | ✅ symboles identiques à gr-dtv sur 9 MODCOD ; essai radio à faire |

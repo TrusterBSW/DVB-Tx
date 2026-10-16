@@ -474,9 +474,10 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             clk = radio_clock;
         } else if (!strcmp(c->standard, "dvbc")) {
             const char *cons = conf_str(s, "constellation", "256qam");
-            c->bits = !strcmp(cons, "16qam") ? 4 : !strcmp(cons, "64qam") ? 6 : !strcmp(cons, "256qam") ? 8 : 0;
+            c->bits = !strcmp(cons, "16qam") ? 4 : !strcmp(cons, "32qam") ? 5 : !strcmp(cons, "64qam") ? 6 :
+                      !strcmp(cons, "128qam") ? 7 : !strcmp(cons, "256qam") ? 8 : 0;
             if (!c->bits) {
-                snprintf(err, errlen, "carrier %d: DVB-C constellation must be 16qam, 64qam or 256qam", c->idx);
+                snprintf(err, errlen, "carrier %d: DVB-C constellation must be 16qam, 32qam, 64qam, 128qam or 256qam", c->idx);
                 return -1;
             }
             c->symbol_rate = conf_num(s, "symbol_rate", 6.9e6);

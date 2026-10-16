@@ -371,8 +371,8 @@ def build(cfg):
                 params.setdefault("symbol_rate", 6_900_000)
                 params["symbol_rate"] = float(_num(params["symbol_rate"], "symbol_rate"))
                 params.setdefault("rolloff", 0.15)
-                if params.get("constellation") not in ("16qam", "64qam", "256qam"):
-                    raise ConfigError(f"carrier {ci}: DVB-C constellation must be 16qam, 64qam or 256qam")
+                if params.get("constellation") not in ("16qam", "32qam", "64qam", "128qam", "256qam"):
+                    raise ConfigError(f"carrier {ci}: DVB-C constellation must be 16qam, 32qam, 64qam, 128qam or 256qam")
                 ts_rate = capacity.rate(std, **params)
             if freq <= 0:
                 raise ConfigError(f"carrier {ci}: frequency (or channel) is required")
