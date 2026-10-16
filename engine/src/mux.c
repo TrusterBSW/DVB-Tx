@@ -203,12 +203,30 @@ static void svc_build_pmt(mux *m, svc *s)
     psi_es es[IN_MAX_ES];
     int nes = 0, len;
     if (s->prog.valid) {
+        static __thread uint8_t dvbdesc[IN_MAX_ES][256];
         for (int i = 0; i < s->prog.nes; i++) {
             const es_info *e = &s->prog.es[i];
             es[nes].pid = s->map[e->pid];
             es[nes].type = e->type;
             es[nes].desc_len = e->desc_len;
             es[nes].desc = e->desc;
+            /* ATSC AC-3 (0x81) / E-AC-3 (0x87) signalling -> DVB: private PES + AC-3 / enhanced AC-3
+             * descriptor, otherwise European TVs play no sound */
+            if ((e->type == 0x81 || e->type == 0x87) && e->desc_len + 3 <= 250) {
+                uint8_t *d = dvbdesc[i];
+                int n = 0;
+                d[n++] = e->type == 0x81 ? 0x6A : 0x7A;
+                d[n++] = 1;
+                d[n++] = 0x00;
+                for (int k = 0; k + 2 <= e->desc_len; k += 2 + e->desc[k + 1])   /* keep language etc. */
+                    if (e->desc[k] != 0x05 && e->desc[k] != 0x81 && e->desc[k] != 0xCC && k + 2 + e->desc[k + 1] <= e->desc_len) {
+                        memcpy(d + n, e->desc + k, 2 + e->desc[k + 1]);
+                        n += 2 + e->desc[k + 1];
+                    }
+                es[nes].type = 0x06;
+                es[nes].desc = d;
+                es[nes].desc_len = n;
+            }
             nes++;
         }
         len = psi_pmt(sec, s->c.sid, s->pmt_version, s->out_pcr_pid, s->prog.pinfo, s->prog.pinfo_len, es, nes);

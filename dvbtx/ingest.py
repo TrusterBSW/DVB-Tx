@@ -412,7 +412,7 @@ def build_command(inp, plan, pl_index=0):
         log.info("input %s: %s", inp.name, rec.note)
     ff += list(o.get("ffmpeg_output", []))
     ff += ["-f", "mpegts", "-muxdelay", str(o.get("mux_delay", 0.7)), "-pcr_period", "20",
-           "-mpegts_flags", "+resend_headers", "-max_interleave_delta", "0",
+           "-mpegts_flags", "+resend_headers+system_b", "-max_interleave_delta", "0",
            f"udp://{inp.addr}?pkt_size=1316&buffer_size=4194304"]
     prod = None
     if rec.producer:
