@@ -75,7 +75,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   <section><h2>Journal du moteur</h2><div class="card"><details><summary>dernières lignes</summary><pre id="englog"></pre></details></div></section>
   <section><h2>Calculateur de débit utile</h2><div class="card">
     <div class="row" style="gap:8px 14px">
-      <label>Norme <select id="k_std" onchange="calcForm()"><option value="dvbt">DVB-T</option><option value="dvbc">DVB-C</option>
+      <label>Norme <select id="k_std" onchange="calcForm()"><option value="dvbt">DVB-T</option><option value="dvbt2">DVB-T2</option><option value="dvbc">DVB-C</option>
         <option value="dvbs">DVB-S</option><option value="dvbs2">DVB-S2</option></select></label>
       <span id="k_fields" class="row" style="gap:8px 14px"></span>
       <label>Chaînes <input id="k_n" type="number" min="1" value="1" style="width:4em" oninput="calc()"></label>
@@ -267,6 +267,10 @@ async function refreshHist() {
 const KFIELDS = {
   dvbt: { bandwidth: ["8000000", "7000000", "6000000", "5000000"], mode: ["8k", "2k"], constellation: ["64qam", "16qam", "qpsk"],
           code_rate: ["7/8", "5/6", "3/4", "2/3", "1/2"], guard: ["1/32", "1/16", "1/8", "1/4"] },
+  dvbt2: { bandwidth: ["8000000", "7000000", "6000000", "5000000", "10000000"], fft: ["32k", "16k", "8k", "4k", "2k", "1k"],
+           extended: ["true", "false"], guard: ["1/128", "1/32", "1/16", "19/256", "1/8", "19/128", "1/4"],
+           pilot: ["PP7", "PP4", "PP2", "PP1", "PP3", "PP5", "PP6", "PP8"], constellation: ["256qam", "64qam", "16qam", "qpsk"],
+           code_rate: ["2/3", "3/5", "3/4", "4/5", "5/6", "1/2"] },
   dvbc: { constellation: ["256qam", "64qam", "16qam"], symbol_rate: "6900000" },
   dvbs: { code_rate: ["3/4", "1/2", "2/3", "5/6", "7/8"], symbol_rate: "27500000" },
   dvbs2: { modulation: ["8psk", "qpsk", "16apsk", "32apsk"], code_rate: ["3/4", "2/3", "3/5", "4/5", "5/6", "8/9", "9/10", "1/2"],

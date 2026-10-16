@@ -184,6 +184,21 @@ def cmd_calc(a):
                     print(f"{c:8} {cr:5} " + "".join(f"{r / 1e6:8.2f}" for r in rates))
                 return
             r = capacity.dvbt_rate(bw, a.mode or "8k", a.constellation or "64qam", a.code_rate or "7/8", a.guard or "1/32")
+        elif std == "dvbt2":
+            from . import t2
+            p = {k: v for k, v in (("bandwidth", cfgmod.parse_value(a.bandwidth) if a.bandwidth else None),
+                                   ("fft", a.fft), ("guard", a.guard), ("pilot", a.pilot),
+                                   ("constellation", a.constellation), ("code_rate", a.code_rate),
+                                   ("frame", a.frame)) if v is not None}
+            if a.extended:
+                p["extended"] = a.extended == "yes"
+            try:
+                info = t2.resolve(**p)
+            except ValueError as e:
+                sys.exit(f"error: {e}")
+            r = float(info["ts_rate"])
+            print(f"L_data {info['data_symbols']}, {info['fec_blocks']} FEC blocks, frame {float(info['frame_seconds']) * 1000:.1f} ms, "
+                  f"occupied {float(info['occupied_bandwidth']) / 1e6:.3f} MHz")
         elif std == "dvbc":
             r = capacity.dvbc_rate(cfgmod.parse_value(a.symbol_rate or "6.9M"), a.constellation or "256qam")
         elif std == "dvbs":
@@ -221,7 +236,10 @@ def main(argv=None):
     b.add_argument("--duration", type=int, default=10)
     b.add_argument("--tone", action="store_true", help="1 kHz tone instead of silence")
     k = sub.add_parser("calc", help="useful MPEG-TS bit rate of a channel")
-    k.add_argument("standard", choices=["dvbt", "dvbc", "dvbs", "dvbs2"])
+    k.add_argument("standard", choices=["dvbt", "dvbt2", "dvbc", "dvbs", "dvbs2"])
+    k.add_argument("--fft", help="DVB-T2: 1k 2k 4k 8k 16k 32k")
+    k.add_argument("--extended", choices=["yes", "no"], help="DVB-T2 extended carriers")
+    k.add_argument("--pilot", help="DVB-T2: PP1..PP8")
     k.add_argument("--bandwidth")
     k.add_argument("--mode", choices=["2k", "8k"])
     k.add_argument("--constellation")

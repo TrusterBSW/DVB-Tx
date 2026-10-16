@@ -128,8 +128,9 @@ class Handler(BaseHTTPRequestHandler):
                 for k in ("bandwidth", "symbol_rate"):
                     if k in p:
                         p[k] = float(p[k])
-                if "pilots" in p:
-                    p["pilots"] = p["pilots"] in ("1", "true", "on")
+                for b in ("pilots", "extended", "rotation"):
+                    if b in p:
+                        p[b] = p[b] in ("1", "true", "on")
                 n = int(p.pop("services", "1") or 1)
                 try:
                     r = capacity.rate(std, **p)
