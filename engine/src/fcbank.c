@@ -81,7 +81,8 @@ static int smooth_to(long n, int pmax)
 
 static int smooth(long n) { return smooth_to(n, 23); }     /* FFT sizes accepted (dvbtx.config.SC_PRIMES) */
 
-/* FFTW_MEASURE is quick for 7-smooth sizes, can take minutes with larger factors */
+/* FFTW_MEASURE is quick for 7-smooth sizes, can take minutes with larger factors (and, time-limited,
+ * finds nothing better than FFTW_ESTIMATE for them) */
 static unsigned plan_flags(long n) { return smooth_to(n, 7) ? FFTW_MEASURE : FFTW_ESTIMATE; }
 
 fcbank *fcbank_new(double fs, double rs, double df)
@@ -132,12 +133,12 @@ double fcbank_offset(const fcbank *k, int i)
     return (double)k->m[i].binoff * k->fs / k->N + k->m[i].dfph * k->m[i].rs;
 }
 
-static double response(int pulse, double f, double rs, double alpha)   /* unit in the pass band */
+static double response(int pulse, double f, double rs, double alpha, double top)   /* unit in the pass band */
 {
     double x = fabs(f) / rs, lo = (1 - alpha) / 2, hi = (1 + alpha) / 2;
     if (pulse == FC_FLAT) {
         lo = alpha / 2;
-        hi = 0.5;
+        hi = top;
         if (x <= lo)
             return 1;
         if (x >= hi)
@@ -171,8 +172,16 @@ int fcbank_add(fcbank *k, double rs, int pulse, double alpha, double offset_hz, 
     double edge = (double)m->binoff / k->N * k->fs;
     m->dfph = (offset_hz - edge) / rs;       /* the rest of the offset: |.| < Fs / 2N, rotates the symbols */
     double ext = pulse == FC_FLAT ? 0.5 : (1 + alpha) / 2;           /* extent, in Rs */
-    if (fabs(edge) + rs * ext >= k->fs / 2)
+    if (pulse == FC_FLAT) {
+        /* the taper above the occupied band may end before Rs / 2 when the radio band is short */
+        double room = (k->fs / 2 - fabs(edge)) / rs - 1.0 / m->L;
+        if (room < ext)
+            ext = room;
+        if (ext <= alpha / 2 + 0.01)
+            return -1;
+    } else if (fabs(edge) + rs * ext >= k->fs / 2) {
         return -1;
+    }
     /* bins of the member: f = k' Rs / L for |f| < ext Rs, weighted by the exact response (a time-domain
      * window to the overlap was tried: 76 dB of MER instead of 114, the wrap-around of the RRC tails is
      * negligible) */
@@ -182,7 +191,7 @@ int fcbank_add(fcbank *k, double rs, int pulse, double alpha, double offset_hz, 
     m->w = xcalloc(2 * half + 1, sizeof(float));
     double sumw2 = 0;
     for (int kk = -half; kk <= half; kk++) {
-        double w = response(pulse, (double)kk * rs / m->L, rs, alpha);
+        double w = response(pulse, (double)kk * rs / m->L, rs, alpha, ext);
         if (w <= 0)
             continue;
         m->src[m->nbins] = (kk % m->L + m->L) % m->L;

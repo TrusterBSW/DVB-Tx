@@ -847,8 +847,8 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
                              "%.3f (synth = fft)", c->idx, c->symbol_rate, r->p.rate);
                     return -1;
                 }
-                LOGI("carrier %d: rate %.3f / %.3f not a simple fraction, time-domain filter", c->idx,
-                     c->symbol_rate, r->p.rate);
+                LOGI("carrier %d: no frequency-domain synthesis (rate %.3f / %.3f, offset %.0f), time-domain filter",
+                     c->idx, c->symbol_rate, r->p.rate, c->offset_hz);
             }
             if (is_t2)
                 c->sg = scgen_new2(c->symbol_rate, r->p.rate, c->offset_hz, PULSE_LOWPASS, c->rolloff, 32, g, t2_sample, c);
