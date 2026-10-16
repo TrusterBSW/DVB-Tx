@@ -316,11 +316,12 @@ def build(cfg):
         keys = {"dvbt": ("bandwidth", "mode", "constellation", "code_rate", "guard"),
                 "dvbc": ("constellation", "symbol_rate", "rolloff"),
                 "dvbs": ("code_rate", "symbol_rate", "rolloff", "polarization", "orbital"),
-                "dvbs2": ("modulation", "code_rate", "symbol_rate", "rolloff", "pilots", "frame"),
+                "dvbs2": ("modulation", "code_rate", "symbol_rate", "rolloff", "pilots", "frame", "gold_code",
+                          "polarization", "orbital", "lnb_lo"),
                 "ts": ("ts_rate", "bandwidth", "mode", "constellation", "code_rate", "guard")}.get(std, ())
         if std == "dvbc" and "constellation" not in c:
             cc["constellation"] = "256qam"
-        if std == "dvbs" and "code_rate" not in c:
+        if std in ("dvbs", "dvbs2") and "code_rate" not in c:
             cc["code_rate"] = "3/4"
         params = {k: cc[k] for k in keys if k in cc}
         if "bandwidth" in params:
@@ -335,9 +336,20 @@ def build(cfg):
             radio = by_name.get(rsel) if isinstance(rsel, str) else (radios[rsel] if isinstance(rsel, int) and rsel < len(radios) else None)
             if radio is None:
                 raise ConfigError(f"carrier {ci}: radio {rsel!r} is not defined ([[radio]])")
-            if std not in ("dvbt", "dvbc", "dvbs"):
+            if std not in ("dvbt", "dvbc", "dvbs", "dvbs2"):
                 raise ConfigError(f"carrier {ci}: standard {std} is not implemented yet in this version "
-                                  "(dvbt, dvbc, dvbs, ts)")
+                                  "(dvbt, dvbc, dvbs, dvbs2, ts)")
+            if std == "dvbs2":
+                params.setdefault("symbol_rate", 27_500_000)
+                params["symbol_rate"] = float(_num(params["symbol_rate"], "symbol_rate"))
+                params.setdefault("rolloff", 0.35)
+                params.setdefault("modulation", "8psk")
+                params.setdefault("code_rate", "3/4")
+                params.setdefault("pilots", True)
+                params.setdefault("frame", "normal")
+                if float(params["rolloff"]) not in (0.35, 0.25, 0.2):
+                    raise ConfigError(f"carrier {ci}: DVB-S2 rolloff must be 0.35, 0.25 or 0.20")
+                ts_rate = capacity.rate(std, **params)
             if std == "dvbs":
                 params.setdefault("symbol_rate", 27_500_000)
                 params["symbol_rate"] = float(_num(params["symbol_rate"], "symbol_rate"))
@@ -579,7 +591,12 @@ def write_engine_ini(plan, path, si_dir):
     for car in plan.carriers:
         p = car.params
         L += [f"[carrier {car.index}]", f"standard = {car.standard}", f"tsid = {car.tsid}"]
-        if car.standard == "dvbs":
+        if car.standard == "dvbs2":
+            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
+                  f"modulation = {p['modulation']}", f"code_rate = {p['code_rate']}", f"frame = {p['frame']}",
+                  f"pilots = {int(bool(p['pilots']))}", f"rolloff = {p['rolloff']}",
+                  f"gold_code = {int(car.params.get('gold_code', 0))}", f"gain_db = {car.gain_db}"]
+        elif car.standard == "dvbs":
             L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
                   f"code_rate = {p['code_rate']}", f"rolloff = {p.get('rolloff', 0.35)}", f"gain_db = {car.gain_db}"]
         elif car.standard == "dvbc":
@@ -633,6 +650,9 @@ def describe(plan):
                      f"{int(p.get('bandwidth', 0)) // 1000000} MHz")
         elif c.standard == "dvbc":
             desc_ = f"DVB-C {p['constellation']} {p['symbol_rate'] / 1e6:g} Msym/s rolloff {p.get('rolloff', 0.15)}"
+        elif c.standard == "dvbs2":
+            desc_ = (f"DVB-S2 {p['modulation']} {p['code_rate']} {p['symbol_rate'] / 1e6:g} Msym/s rolloff {p['rolloff']} "
+                     f"{p['frame']} frames, pilots {'on' if p['pilots'] else 'off'}")
         elif c.standard == "dvbs":
             desc_ = f"DVB-S QPSK {p['code_rate']} {p['symbol_rate'] / 1e6:g} Msym/s rolloff {p.get('rolloff', 0.35)}"
         else:

@@ -21,6 +21,7 @@
 
 #include "dvbc.h"
 #include "dvbs.h"
+#include "dvbs2.h"
 #include "dvbt.h"
 #include "ofdm.h"
 #include "scgen.h"
@@ -56,6 +57,7 @@ typedef struct carrier {
     scgen *sg;
     double symbol_rate, rolloff;
     int bits, cr_k, cr_n;
+    dvbs2_cfg s2;
     int ncar;                     /* elements per ring slot: OFDM carriers, or samples of a block */
     float complex *ring;
     uint64_t wr, rd;
@@ -484,6 +486,32 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             }
             c->radio = g_radios[ri];
             clk = radio_clock;
+        } else if (!strcmp(c->standard, "dvbs2")) {
+            const char *mod = conf_str(s, "modulation", "8psk");
+            c->s2.bits = !strcmp(mod, "qpsk") ? 2 : !strcmp(mod, "8psk") ? 3 : !strcmp(mod, "16apsk") ? 4 :
+                         !strcmp(mod, "32apsk") ? 5 : 0;
+            if (parse_code_rate(conf_str(s, "code_rate", "3/4"), &c->s2.cr_num, &c->s2.cr_den)) {
+                snprintf(err, errlen, "carrier %d: bad code_rate", c->idx);
+                return -1;
+            }
+            c->s2.short_frame = !strcmp(conf_str(s, "frame", "normal"), "short");
+            c->s2.pilots = (int)conf_int(s, "pilots", 1);
+            c->rolloff = c->s2.rolloff = conf_num(s, "rolloff", 0.35);
+            c->s2.gold_code = (int)conf_int(s, "gold_code", 0);
+            const char *e = dvbs2_cfg_check(&c->s2);
+            if (e) {
+                snprintf(err, errlen, "carrier %d: %s", c->idx, e);
+                return -1;
+            }
+            c->symbol_rate = conf_num(s, "symbol_rate", 27.5e6);
+            ts_rate = dvbs2_ts_rate(&c->s2, c->symbol_rate);
+            int ri = (int)conf_int(s, "radio", 0);
+            if (ri < 0 || ri >= g_nradios) {
+                snprintf(err, errlen, "carrier %d: radio %d does not exist", c->idx, ri);
+                return -1;
+            }
+            c->radio = g_radios[ri];
+            clk = radio_clock;
         } else if (!strcmp(c->standard, "ts")) {
             ts_rate = conf_num(s, "ts_rate", 0);
             if (ts_rate <= 0) {
@@ -641,7 +669,10 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
                 return -1;
             }
             float g = (float)sqrt(pow(10.0, c->gain_db / 10.0) / wtot);
-            if (!strcmp(c->standard, "dvbs")) {
+            if (!strcmp(c->standard, "dvbs2")) {
+                c->src = dvbs2_new(&c->s2, mux_pull, c->mux);
+                c->symf = dvbs2_symbol;
+            } else if (!strcmp(c->standard, "dvbs")) {
                 c->src = dvbs_new(c->cr_k, c->cr_n, mux_pull, c->mux);
                 c->symf = dvbs_symbol;
             } else {

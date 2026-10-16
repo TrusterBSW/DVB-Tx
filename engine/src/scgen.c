@@ -44,11 +44,12 @@ static inline float complex filt(const scgen *g)
     int p = (int)(g->frac * NPHASE);
     const float *h = g->h + (size_t)p * 2 * g->span;
     const float *x = (const float *)g->win;
-    float re = 0, im = 0;
-    for (int i = 0; i < 2 * g->span; i += 2) {
-        re += x[i] * h[i];
-        im += x[i + 1] * h[i + 1];
-    }
+    float acc[16] = { 0 };                 /* 8 independent (re, im) lanes */
+    for (int i = 0; i < 2 * g->span; i += 16)
+        for (int l = 0; l < 16; l++)
+            acc[l] += x[i + l] * h[i + l];
+    float re = ((acc[0] + acc[2]) + (acc[4] + acc[6])) + ((acc[8] + acc[10]) + (acc[12] + acc[14]));
+    float im = ((acc[1] + acc[3]) + (acc[5] + acc[7])) + ((acc[9] + acc[11]) + (acc[13] + acc[15]));
     return re + im * I;
 }
 
@@ -81,10 +82,11 @@ scgen *scgen_new(double rs, double fs, double off, double rolloff, int span, flo
 scgen *scgen_new2(double rs, double fs, double off, int pulse, double rolloff, int span, float gain, sym_fn get,
                   void *ctx)
 {
+    span = (span + 7) / 8 * 8;          /* multiple of 8: see filt() */
     if (span > MAX_SPAN)
         span = MAX_SPAN;
-    if (span < 4)
-        span = 4;
+    if (span < 8)
+        span = 8;
     scgen *g = xcalloc(1, sizeof *g);
     g->step = rs / fs;
     g->span = span;
