@@ -4,3 +4,4 @@ __pycache__/
 *.deb
 /work/
 /run24/
+/.wt/
