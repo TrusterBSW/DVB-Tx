@@ -27,7 +27,8 @@ DEFAULTS = {
     "alerts": {"margin_min_ms": 150, "overload_percent": 98.0, "input_down_s": 10, "late_ms": 300, "hold_s": 4,
                "webhook": "", "command": "", "repeat_s": 300},
     "ingest": {"base_port": 20100, "monitor_base_port": 20900, "ffmpeg": "ffmpeg", "streamlink": "streamlink",
-               "ytdlp": "yt-dlp", "restart_min_s": 1, "restart_max_s": 30, "loglevel": "warning"},
+               "ytdlp": "yt-dlp", "restart_min_s": 1, "restart_max_s": 30, "stall_restart_s": 20,
+               "loglevel": "warning"},
     "engine": {"binary": "", "log_level": "info", "stats_interval_ms": 1000},
     "defaults": {
         "backup": "", "buffer_ms": 1000, "switch_timeout_ms": 3000, "return_ms": 10000, "max_late_ms": 600,

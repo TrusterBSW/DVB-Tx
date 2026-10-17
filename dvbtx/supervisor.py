@@ -526,6 +526,24 @@ class Supervisor:
             except OSError:
                 pass
 
+    def restart_stalled(self):
+        """an ffmpeg still running but sending nothing (frozen HLS playlist, half-open connection): restarted,
+        so that the source comes back as soon as it is available again (its service is on its backup meanwhile)"""
+        lim = float(self.cfg["ingest"].get("stall_restart_s", 0) or 0)
+        if lim <= 0 or not self.stats or time.time() - self.stats_at > 5:
+            return
+        idle = {i["index"]: i.get("idle_ms", -1) for i in self.stats.get("inputs", [])}
+        now = time.monotonic()
+        for p in self.ingest:
+            if p.state != "running" or p.proc is None or now - p.started_at < lim or p.inp.index not in idle:
+                continue
+            ms = idle[p.inp.index]
+            if ms < 0 or ms > lim * 1000:
+                log.warning("input %s: nothing received for %.0f s, restarting it", p.inp.name,
+                            (now - p.started_at) if ms < 0 else ms / 1000)
+                p.restarts += 1
+                p.restart()
+
     # ---------------------------------------------------------------- alerts
 
     def check_alerts(self):
@@ -616,6 +634,7 @@ class Supervisor:
             self.engine_poll()
             for p in self.ingest:
                 p.poll()
+            self.restart_stalled()
             for an in self.analyzers:
                 an.poll()
             try:
