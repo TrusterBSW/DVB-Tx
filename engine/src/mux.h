@@ -47,6 +47,16 @@ int mux_add_table(mux *m, const mux_table_cfg *t);
 void mux_start(mux *m);          /* builds PAT, call after adding services */
 void mux_pull(void *ctx, uint8_t *pkt);   /* ts_pull_fn */
 void mux_reload_tables(mux *m);  /* re-read section files whose mtime changed */
+
+/* Changes while running, applied by the thread that pulls the multiplex (a few ms); they wait for it
+ * up to timeout_ms. The inputs given must have been referenced (refs + 1) by the caller: the
+ * multiplexer drops these references itself if the change fails. 0 ok, -1 error (err). */
+int mux_service_add(mux *m, const mux_svc_cfg *c, int timeout_ms, char *err, int errlen);
+int mux_service_del(mux *m, int sid, int timeout_ms, char *err, int errlen);
+/* primary: NULL = unchanged, else used as soon as it delivers (the current one plays until then, 15 s
+ * at most); backup: NULL = unchanged unless no_backup; name: NULL = unchanged */
+int mux_service_set(mux *m, int sid, input *primary, input *backup, int no_backup, const char *name,
+                    int timeout_ms, char *err, int errlen);
 /* JSON object with the carrier and service statistics since the previous call */
 int mux_stats_json(mux *m, char *buf, int len, double interval_s);
 double mux_ts_rate(const mux *m);

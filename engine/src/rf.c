@@ -752,7 +752,7 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
         sc.sid = (int)conf_int(s, "sid", 0);
         sc.pid_base = (int)conf_int(s, "pid_base", 0x100 + s->index * 0x20);
         int pi = (int)conf_int(s, "primary", -1), bi = (int)conf_int(s, "backup", -1);
-        if (pi < 0 || pi >= ninputs || bi >= ninputs) {
+        if (pi < 0 || pi >= ninputs || bi >= ninputs || !inputs[pi] || (bi >= 0 && !inputs[bi])) {
             snprintf(err, errlen, "service %d: bad input index", s->index);
             return -1;
         }
@@ -1041,6 +1041,8 @@ int rf_stalled(int64_t now, int64_t timeout_ns)
 }
 
 int rf_running(void) { return g_running; }
+
+mux *rf_carrier_mux(int ci) { return ci >= 0 && ci < g_ncarriers ? g_carriers[ci]->mux : NULL; }
 
 void rf_reload_tables(void)
 {

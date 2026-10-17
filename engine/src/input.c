@@ -46,6 +46,7 @@ struct in_priv {
     int64_t anchor;            /* t_ideal = anchor + pcr * 1e9 / 27e6 */
     pend *pending;
     int npend;
+    int video_pid;
 
     int64_t win_start, win_min;
     int late_windows;
@@ -137,6 +138,7 @@ input *input_new(int id, const char *name, const char *addr, int program, int bu
     in->priv = xcalloc(1, sizeof *in->priv);
     in->priv->pending = xcalloc(MAX_PENDING, sizeof(pend));
     in->priv->pmt_pid = -1;
+    in->priv->video_pid = -1;
     in->priv->pat_version = -1;
     in->priv->pmt_version = -1;
     atomic_store(&in->slack_min_ns, INT64_MAX);
@@ -158,6 +160,27 @@ int input_read(input *in, uint64_t pos, in_entry *out)
     return 0;
 }
 
+int64_t input_key_between(input *in, int64_t from, int64_t to)
+{
+    uint32_t n = atomic_load_explicit(&in->nkeys, memory_order_acquire);
+    for (uint32_t i = 0; i < IN_KEYS && i < n; i++) {
+        int64_t t = atomic_load_explicit(&in->key_ideal[(n - 1 - i) % IN_KEYS], memory_order_relaxed);
+        if (t >= from && t < to)
+            return t;
+    }
+    return -1;
+}
+
+int64_t input_oldest(input *in)
+{
+    uint64_t h = input_head(in);
+    if (!h)
+        return -1;
+    in_entry e;
+    uint64_t pos = h > in->mask - 64 ? h - (in->mask - 64) : 0;
+    return input_read(in, pos, &e) == 0 ? e.t_ideal : -1;
+}
+
 void input_get_prog(input *in, prog_info *out, int *gen)
 {
     pthread_mutex_lock(&in->lock);
@@ -168,6 +191,11 @@ void input_get_prog(input *in, prog_info *out, int *gen)
 
 static void publish(input *in, const uint8_t *pkt, int64_t t_ideal, int64_t pcr, uint8_t flags)
 {
+    if (ts_pid(pkt) == in->priv->video_pid && ts_pusi(pkt) && ts_rai(pkt)) {
+        uint32_t k = atomic_load_explicit(&in->nkeys, memory_order_relaxed);
+        atomic_store_explicit(&in->key_ideal[k % IN_KEYS], t_ideal, memory_order_relaxed);
+        atomic_store_explicit(&in->nkeys, k + 1, memory_order_release);
+    }
     uint64_t h = atomic_load_explicit(&in->head, memory_order_relaxed);
     in_entry *e = &in->ring[h & in->mask];
     e->t_ideal = t_ideal;
@@ -270,6 +298,13 @@ static void parse_pmt(input *in, const uint8_t *s, int len)
     }
     pi.valid = 1;
     pv->pmt_version = version;
+    pv->video_pid = -1;
+    for (int i = 0; i < pi.nes && pv->video_pid < 0; i++)
+        switch (pi.es[i].type) {
+        case 0x01: case 0x02: case 0x10: case 0x1B: case 0x24: case 0x42: case 0xD1: case 0xEA:
+            pv->video_pid = pi.es[i].pid;
+        }
+    atomic_store(&in->has_video, pv->video_pid >= 0);
     memset(pv->keep, 0, sizeof pv->keep);
     for (int i = 0; i < pi.nes; i++)
         pv->keep[pi.es[i].pid] = 1;
@@ -449,10 +484,10 @@ static void on_datagram(input *in, const uint8_t *buf, int len, int64_t arrival)
 
 /* ---- receive thread ---- */
 
-static input **g_inputs;
-static int g_ninputs;
 static pthread_t g_thread;
+static int g_started, g_ep = -1;
 static volatile int g_stop;
+static _Atomic uint64_t g_epoch;      /* loops of the receive thread: tells when it left a detached input */
 
 #define BATCH 16
 #define DGRAM 65536
@@ -460,17 +495,13 @@ static volatile int g_stop;
 static void *rx_thread(void *arg)
 {
     (void)arg;
-    int ep = epoll_create1(EPOLL_CLOEXEC);
-    for (int i = 0; i < g_ninputs; i++) {
-        struct epoll_event ev = { .events = EPOLLIN, .data.ptr = g_inputs[i] };
-        epoll_ctl(ep, EPOLL_CTL_ADD, g_inputs[i]->fd, &ev);
-    }
     static uint8_t bufs[BATCH][DGRAM];
     struct mmsghdr msgs[BATCH];
     struct iovec iov[BATCH];
     while (!g_stop) {
+        atomic_fetch_add(&g_epoch, 1);
         struct epoll_event evs[64];
-        int n = epoll_wait(ep, evs, 64, 200);
+        int n = epoll_wait(g_ep, evs, 64, 200);
         for (int e = 0; e < n; e++) {
             input *in = evs[e].data.ptr;
             for (;;) {
@@ -492,32 +523,70 @@ static void *rx_thread(void *arg)
             }
         }
     }
-    close(ep);
     return NULL;
+}
+
+/* what arrived before (while the radios were being prepared: seconds of FFT plans) is dropped: read
+ * at once, it would look like a source running ahead of real time */
+static void drain(input *in)
+{
+    char tmp[2048];
+    long dropped = 0;
+    while (recv(in->fd, tmp, sizeof tmp, MSG_DONTWAIT) > 0)
+        dropped++;
+    if (dropped)
+        LOGD("input %s: %ld datagrams received before the start dropped", in->name, dropped);
+}
+
+int input_attach(input *in)
+{
+    drain(in);
+    struct epoll_event ev = { .events = EPOLLIN, .data.ptr = in };
+    return epoll_ctl(g_ep, EPOLL_CTL_ADD, in->fd, &ev);
+}
+
+void input_detach(input *in)
+{
+    if (in->detached)
+        return;
+    epoll_ctl(g_ep, EPOLL_CTL_DEL, in->fd, NULL);
+    in->detached = 1;
+    in->detach_epoch = atomic_load(&g_epoch);
+}
+
+/* the receive thread has started a new loop since the input left its poll set, and no service reads it */
+int input_can_free(const input *in)
+{
+    return in->detached && atomic_load(&g_epoch) >= in->detach_epoch + 2 && atomic_load(&in->refs) == 0;
+}
+
+void input_free(input *in)
+{
+    close(in->fd);
+    free(in->ring);
+    free(in->priv->pending);
+    free(in->priv);
+    pthread_mutex_destroy(&in->lock);
+    free(in);
 }
 
 int inputs_start(input **in, int n)
 {
-    g_inputs = in;
-    g_ninputs = n;
-    if (n == 0)
-        return 0;
-    /* what arrived while the radios were being prepared (FFT plans: seconds) is dropped: read at once,
-     * it would look like a source running ahead of real time */
-    char tmp[2048];
-    for (int i = 0; i < n; i++) {
-        long dropped = 0;
-        while (recv(in[i]->fd, tmp, sizeof tmp, MSG_DONTWAIT) > 0)
-            dropped++;
-        if (dropped)
-            LOGD("input %s: %ld datagrams received before the start dropped", in[i]->name, dropped);
-    }
-    return pthread_create(&g_thread, NULL, rx_thread, NULL);
+    g_ep = epoll_create1(EPOLL_CLOEXEC);
+    if (g_ep < 0)
+        return -1;
+    for (int i = 0; i < n; i++)
+        if (in[i] && input_attach(in[i]))
+            return -1;
+    if (pthread_create(&g_thread, NULL, rx_thread, NULL))
+        return -1;
+    g_started = 1;
+    return 0;
 }
 
 void inputs_stop(void)
 {
     g_stop = 1;
-    if (g_ninputs)
+    if (g_started)
         pthread_join(g_thread, NULL);
 }

@@ -22,7 +22,9 @@
 #define MAX_CAR (MAX_SVC + MAX_TAB + 4)
 #define PCR_ONLY_PID_OFF 31
 
-enum { CK_FILE, CK_PAT, CK_PMT, CK_TDT, CK_TOT };
+enum { CK_FILE, CK_PAT, CK_PMT, CK_TDT, CK_TOT, CK_FREE };
+enum { OP_ADD, OP_DEL, OP_SET };
+#define PRIMARY_SWAP_NS 15000000000LL   /* a new primary source that does not come is used anyway */
 
 typedef struct carousel {
     int kind, svc;               /* svc: index for CK_PMT */
@@ -52,6 +54,8 @@ typedef struct svc {
     mux_svc_cfg c;
     int pmt_pid;
     input *in[2];
+    input *next_primary;         /* replacing in[0] as soon as it delivers */
+    int64_t next_since;
     uint64_t pos[2];
     int cur;                     /* 0 primary, 1 backup, -1 none */
     int64_t up_since[2];
@@ -79,8 +83,21 @@ typedef struct svc {
 
     win_stats w, pubw;           /* local window, published window */
     int cur_pub, nes_pub, vtype_pub, natypes_pub;
+    int in_pub[3];               /* ids of the primary, backup and pending primary inputs, -1 none */
     int atypes_pub[8];
 } svc;
+
+typedef struct mux_op {
+    int kind, sid;
+    svc *s;                      /* OP_ADD */
+    input *primary, *backup;     /* OP_SET */
+    int no_backup, set_name;
+    char name[64];
+    int result;
+    char err[160];
+    _Atomic int state;           /* 0 queued, 1 done, 2 abandoned by the caller (the multiplexer frees it) */
+    struct mux_op *next;
+} mux_op;
 
 struct mux {
     mux_cfg c;
@@ -112,6 +129,11 @@ struct mux {
     struct sockaddr_in mon_sa[8];
     uint8_t mon_buf[7 * TS_PKT];
     int mon_n;
+
+    int pat_version;
+    pthread_mutex_t op_lock;
+    mux_op *ops, **ops_tail;
+    _Atomic int nops;
 };
 
 /* ---- carousels ---- */
@@ -145,10 +167,21 @@ static void car_set_sections(carousel *k, const uint8_t *secs, int len)
 
 static carousel *car_add(mux *m, int kind, int pid, int period_ms)
 {
-    if (m->ncar >= MAX_CAR)
-        return NULL;
-    carousel *k = &m->car[m->ncar++];
+    carousel *k = NULL;
+    for (int i = 0; i < m->ncar && !k; i++)        /* slot of a removed service */
+        if (m->car[i].kind == CK_FREE)
+            k = &m->car[i];
+    if (!k) {
+        if (m->ncar >= MAX_CAR)
+            return NULL;
+        k = &m->car[m->ncar++];
+    }
+    uint8_t *pkts = k->pkts;
+    int *sec_first = k->sec_first, cap = k->cap;
     memset(k, 0, sizeof *k);
+    k->pkts = pkts;                                 /* buffers of a reused slot */
+    k->sec_first = sec_first;
+    k->cap = cap;
     k->kind = kind;
     k->pid = pid;
     k->period_ns = (int64_t)period_ms * 1000000;
@@ -293,7 +326,9 @@ static uint64_t seek_time(input *in, int64_t t)
 
 static void svc_switch(mux *m, svc *s, int to, int64_t slot_now)
 {
-    if (s->cur >= 0)
+    if (s->cur == 0 && to == 0)
+        LOGI("service %s: new primary source", s->c.name);
+    else if (s->cur >= 0)
         LOGI("service %s: %s -> %s", s->c.name, s->cur ? "backup" : "primary", to ? "backup" : "primary");
     else
         LOGI("service %s: on %s", s->c.name, to ? "backup" : "primary");
@@ -313,8 +348,33 @@ static void svc_check(mux *m, svc *s, int64_t slot_now)
     int64_t now = mono_ns();
     if (now < s->next_check)
         return;
-    s->next_check = now + 10000000;
+    s->next_check = now + (s->next_primary ? 2000000 : 10000000);
     int64_t to = (int64_t)s->c.switch_timeout_ms * 1000000;
+    if (s->next_primary) {
+        /* make before break: the old source plays until the new one has a video key frame due now (or,
+         * without video, data due now); after PRIMARY_SWAP_NS, or off the primary, at once */
+        input *n = s->next_primary;
+        int64_t key = -1;
+        int ready = s->cur != 0 || now - s->next_since > PRIMARY_SWAP_NS;
+        if (!ready && input_up(n, now, to)) {
+            if (atomic_load(&n->has_video))
+                ready = (key = input_key_between(n, slot_now, slot_now + 40000000)) >= 0;
+            else {
+                int64_t old = input_oldest(n);
+                ready = old >= 0 && old <= slot_now;
+            }
+        }
+        if (ready) {
+            atomic_fetch_sub(&s->in[0]->refs, 1);
+            s->in[0] = n;
+            s->next_primary = NULL;
+            s->up_since[0] = 0;
+            if (s->cur == 0) {
+                svc_switch(m, s, 0, key >= 0 ? key : slot_now);
+                return;
+            }
+        }
+    }
     int up0 = input_up(s->in[0], now, to), up1 = input_up(s->in[1], now, to);
     for (int i = 0; i < 2; i++) {
         int up = i ? up1 : up0;
@@ -455,6 +515,8 @@ mux *mux_new(const mux_cfg *c, mux_clock_fn clock, void *clock_ctx)
     m->clock_ctx = clock_ctx;
     m->pkt_ns = TS_PKT * 8 * 1e9 / c->ts_rate;
     pthread_mutex_init(&m->lock, NULL);
+    pthread_mutex_init(&m->op_lock, NULL);
+    m->ops_tail = &m->ops;
     m->mon_fd = -1;
     char list[sizeof c->monitor];
     snprintf(list, sizeof list, "%s", c->monitor);
@@ -492,10 +554,8 @@ mux *mux_new(const mux_cfg *c, mux_clock_fn clock, void *clock_ctx)
 
 double mux_ts_rate(const mux *m) { return m->c.ts_rate; }
 
-int mux_add_service(mux *m, const mux_svc_cfg *c)
+static svc *svc_new(const mux_svc_cfg *c)
 {
-    if (m->nsvc >= MAX_SVC)
-        return -1;
     svc *s = xcalloc(1, sizeof *s);
     s->c = *c;
     s->pmt_pid = c->pid_base;
@@ -504,9 +564,18 @@ int mux_add_service(mux *m, const mux_svc_cfg *c)
     s->cur = -1;
     s->created = mono_ns();
     s->out_pcr_pid = PID_NULL;
+    s->w.late_max = INT64_MIN;
+    s->in_pub[0] = s->in_pub[1] = s->in_pub[2] = -1;
     /* a different version at every start: a TV that cached the PMT of the previous run reads it again */
     s->pmt_version = (int)((real_ns() / 1000000000LL + c->sid) & 31);
-    carousel *k = car_add(m, CK_PMT, s->pmt_pid, c->pmt_period_ms);
+    return s;
+}
+
+static int svc_insert(mux *m, svc *s)
+{
+    if (m->nsvc >= MAX_SVC)
+        return -1;
+    carousel *k = car_add(m, CK_PMT, s->pmt_pid, s->c.pmt_period_ms);
     if (!k)
         return -1;
     k->svc = m->nsvc;
@@ -514,6 +583,21 @@ int mux_add_service(mux *m, const mux_svc_cfg *c)
     svc_build_pmt(m, s);
     m->svc[m->nsvc] = s;
     return m->nsvc++;
+}
+
+int mux_add_service(mux *m, const mux_svc_cfg *c)
+{
+    svc *s = svc_new(c);
+    int r = svc_insert(m, s);
+    if (r < 0) {
+        free(s);
+        return -1;
+    }
+    if (c->primary)
+        atomic_fetch_add(&c->primary->refs, 1);
+    if (c->backup)
+        atomic_fetch_add(&c->backup->refs, 1);
+    return r;
 }
 
 int mux_add_table(mux *m, const mux_table_cfg *t)
@@ -527,7 +611,7 @@ int mux_add_table(mux *m, const mux_table_cfg *t)
     return 0;
 }
 
-void mux_start(mux *m)
+static void pat_build(mux *m)
 {
     psi_svc ps[MAX_SVC];
     for (int i = 0; i < m->nsvc; i++) {
@@ -535,10 +619,16 @@ void mux_start(mux *m)
         ps[i].pmt_pid = m->svc[i]->pmt_pid;
     }
     uint8_t sec[SEC_MAX];
-    int len = psi_pat(sec, m->c.tsid, 0, ps, m->nsvc, m->c.nit_pid);
+    int len = psi_pat(sec, m->c.tsid, m->pat_version, ps, m->nsvc, m->c.nit_pid);
+    car_set_sections(&m->car[m->pat_car], sec, len);
+}
+
+void mux_start(mux *m)
+{
     carousel *k = car_add(m, CK_PAT, 0, m->c.pat_period_ms);
-    car_set_sections(k, sec, len);
     m->pat_car = (int)(k - m->car);
+    m->pat_version = (int)((real_ns() / 1000000000LL + m->c.tsid) & 31);   /* see svc_new */
+    pat_build(m);
     car_add(m, CK_TDT, 0x14, m->c.tdt_period_ms);
     if (m->tot_desc_len > 0 || m->c.tot_desc_path[0])
         car_add(m, CK_TOT, 0x14, m->c.tot_period_ms);
@@ -615,6 +705,9 @@ static void publish_stats(mux *m, int64_t now)
         memset(b, 0, sizeof *b);
         b->late_max = INT64_MIN;
         s->cur_pub = s->cur;
+        s->in_pub[0] = s->in[0] ? s->in[0]->id : -1;
+        s->in_pub[1] = s->in[1] ? s->in[1]->id : -1;
+        s->in_pub[2] = s->next_primary ? s->next_primary->id : -1;
         s->nes_pub = s->prog.valid ? s->prog.nes : 0;
         s->vtype_pub = -1;
         s->natypes_pub = 0;
@@ -647,10 +740,202 @@ static void monitor_out(mux *m, const uint8_t *pkt)
     }
 }
 
+/* ---- changes while running ---- */
+
+static svc *svc_by_sid(mux *m, int sid, int *idx)
+{
+    for (int i = 0; i < m->nsvc; i++)
+        if (m->svc[i]->c.sid == sid) {
+            if (idx)
+                *idx = i;
+            return m->svc[i];
+        }
+    return NULL;
+}
+
+static void unref(input *in)
+{
+    if (in)
+        atomic_fetch_sub(&in->refs, 1);
+}
+
+static int op_apply(mux *m, mux_op *op, int64_t now)
+{
+    int idx;
+    svc *s = svc_by_sid(m, op->sid, &idx);
+    switch (op->kind) {
+    case OP_ADD:
+        if (s) {
+            snprintf(op->err, sizeof op->err, "service_id %d already on this carrier", op->sid);
+            break;
+        }
+        for (int i = 0; i < m->nsvc; i++) {
+            int b = m->svc[i]->c.pid_base;
+            if (op->s->c.pid_base < b + 32 && b < op->s->c.pid_base + 32) {
+                snprintf(op->err, sizeof op->err, "PIDs %d-%d overlap those of %s", op->s->c.pid_base,
+                         op->s->c.pid_base + 31, m->svc[i]->c.name);
+                break;
+            }
+        }
+        if (op->err[0])
+            break;
+        op->s->created = mono_ns();
+        pthread_mutex_lock(&m->lock);
+        int r = svc_insert(m, op->s);
+        if (r >= 0) {
+            m->pat_version = (m->pat_version + 1) & 31;
+            pat_build(m);
+        }
+        pthread_mutex_unlock(&m->lock);
+        if (r < 0) {
+            snprintf(op->err, sizeof op->err, "too many services on this carrier");
+            break;
+        }
+        LOGI("service %s (0x%04X) added", op->s->c.name, op->sid);
+        op->s = NULL;
+        return 0;
+    case OP_DEL:
+        if (!s) {
+            snprintf(op->err, sizeof op->err, "no service_id %d on this carrier", op->sid);
+            break;
+        }
+        pthread_mutex_lock(&m->lock);
+        carousel *k = &m->car[s->car_pmt];
+        k->kind = CK_FREE;
+        k->nsec = k->npkts = 0;
+        k->cur_pkt = -1;
+        memmove(&m->svc[idx], &m->svc[idx + 1], sizeof m->svc[0] * (m->nsvc - idx - 1));
+        m->nsvc--;
+        m->pat_version = (m->pat_version + 1) & 31;
+        pat_build(m);
+        pthread_mutex_unlock(&m->lock);
+        LOGI("service %s (0x%04X) removed", s->c.name, s->c.sid);
+        unref(s->in[0]);
+        unref(s->in[1]);
+        unref(s->next_primary);
+        free(s);
+        return 0;
+    case OP_SET:
+        if (!s) {
+            snprintf(op->err, sizeof op->err, "no service_id %d on this carrier", op->sid);
+            break;
+        }
+        if (op->set_name) {
+            pthread_mutex_lock(&m->lock);
+            snprintf(s->c.name, sizeof s->c.name, "%s", op->name);
+            pthread_mutex_unlock(&m->lock);
+        }
+        if (op->backup || op->no_backup) {
+            unref(s->in[1]);
+            s->in[1] = op->backup;
+            s->up_since[1] = 0;
+            if (s->cur == 1) {
+                if (op->backup)
+                    svc_switch(m, s, 1, now);
+                else
+                    s->cur = -1;
+            }
+        }
+        if (op->primary) {
+            unref(s->next_primary);       /* a change not yet in use is replaced */
+            s->next_primary = op->primary;
+            s->next_since = mono_ns();
+            s->next_check = 0;
+        }
+        return 0;
+    }
+    /* failed: the references the caller took for this change are dropped here */
+    unref(op->primary);
+    unref(op->backup);
+    if (op->s) {
+        unref(op->s->c.primary);
+        unref(op->s->c.backup);
+        free(op->s);
+        op->s = NULL;
+    }
+    return -1;
+}
+
+static void ops_run(mux *m, int64_t now)
+{
+    pthread_mutex_lock(&m->op_lock);
+    mux_op *list = m->ops;
+    m->ops = NULL;
+    m->ops_tail = &m->ops;
+    atomic_store(&m->nops, 0);
+    pthread_mutex_unlock(&m->op_lock);
+    while (list) {
+        mux_op *op = list;
+        list = op->next;
+        op->result = op_apply(m, op, now);
+        if (atomic_exchange(&op->state, 1) == 2)
+            free(op);
+    }
+}
+
+static int op_submit(mux *m, mux_op *op, int timeout_ms, char *err, int errlen)
+{
+    pthread_mutex_lock(&m->op_lock);
+    op->next = NULL;
+    *m->ops_tail = op;
+    m->ops_tail = &op->next;
+    atomic_store(&m->nops, 1);
+    pthread_mutex_unlock(&m->op_lock);
+    int64_t until = mono_ns() + (int64_t)timeout_ms * 1000000;
+    while (atomic_load(&op->state) == 0 && mono_ns() < until) {
+        struct timespec ts = { 0, 2000000 };
+        nanosleep(&ts, NULL);
+    }
+    if (atomic_exchange(&op->state, 2) == 0) {
+        snprintf(err, errlen, "accepted, not applied yet (carrier not running?)");
+        return 1;                 /* applied later by the multiplexer, which then frees op */
+    }
+    int r = op->result;
+    if (r)
+        snprintf(err, errlen, "%s", op->err);
+    free(op);
+    return r;
+}
+
+int mux_service_add(mux *m, const mux_svc_cfg *c, int timeout_ms, char *err, int errlen)
+{
+    mux_op *op = xcalloc(1, sizeof *op);
+    op->kind = OP_ADD;
+    op->sid = c->sid;
+    op->s = svc_new(c);
+    return op_submit(m, op, timeout_ms, err, errlen);
+}
+
+int mux_service_del(mux *m, int sid, int timeout_ms, char *err, int errlen)
+{
+    mux_op *op = xcalloc(1, sizeof *op);
+    op->kind = OP_DEL;
+    op->sid = sid;
+    return op_submit(m, op, timeout_ms, err, errlen);
+}
+
+int mux_service_set(mux *m, int sid, input *primary, input *backup, int no_backup, const char *name,
+                    int timeout_ms, char *err, int errlen)
+{
+    mux_op *op = xcalloc(1, sizeof *op);
+    op->kind = OP_SET;
+    op->sid = sid;
+    op->primary = primary;
+    op->backup = backup;
+    op->no_backup = no_backup && !backup;
+    if (name) {
+        op->set_name = 1;
+        snprintf(op->name, sizeof op->name, "%s", name);
+    }
+    return op_submit(m, op, timeout_ms, err, errlen);
+}
+
 void mux_pull(void *ctx, uint8_t *out)
 {
     mux *m = ctx;
     int64_t now = m->clock(m->clock_ctx, m->slot);
+    if (atomic_load_explicit(&m->nops, memory_order_relaxed))
+        ops_run(m, now);
     m->slot++;
     m->total_pkts++;
 
@@ -768,7 +1053,8 @@ int mux_stats_json(mux *m, char *buf, int len, double dt)
         n += snprintf(buf + n, len - n, "\"video_type\":%d,\"audio_types\":[", s->vtype_pub);
         for (int j = 0; j < s->natypes_pub; j++)
             n += snprintf(buf + n, len - n, "%s%d", j ? "," : "", s->atypes_pub[j]);
-        n += snprintf(buf + n, len - n, "],\"disc\":%llu}", (unsigned long long)w->disc);
+        n += snprintf(buf + n, len - n, "],\"disc\":%llu,\"inputs\":[%d,%d,%d]}", (unsigned long long)w->disc,
+                      s->in_pub[0], s->in_pub[1], s->in_pub[2]);
         memset(w, 0, sizeof *w);
         w->late_max = INT64_MIN;
     }

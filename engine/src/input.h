@@ -65,13 +65,32 @@ typedef struct input {
     _Atomic int faster_than_realtime;
 
     struct in_priv *priv;    /* receive-thread state */
+
+    /* ideal times of the last video key frames (PES start + random access), for a change of source
+     * that cuts on a key frame */
+#define IN_KEYS 16
+    _Atomic int64_t key_ideal[IN_KEYS];
+    _Atomic uint32_t nkeys;
+    _Atomic int has_video;
+
+    /* life cycle of an input added or removed while running */
+    _Atomic int refs;        /* services using it (primary, backup or pending primary) */
+    int deleting;            /* removal asked: freed once no service uses it any more */
+    int detached;            /* out of the receive thread's poll set */
+    uint64_t detach_epoch;
 } input;
 
 input *input_new(int id, const char *name, const char *addr, int program, int buffer_ms,
                  int ring_pkts, char *err, int errlen);
-/* starts the receive thread for all inputs */
+/* starts the receive thread for all inputs (NULL entries skipped) */
 int inputs_start(input **in, int n);
 void inputs_stop(void);
+/* inputs created after inputs_start: received from now on */
+int input_attach(input *in);
+/* stops receiving: the receive thread may still be inside it until input_can_free() */
+void input_detach(input *in);
+int input_can_free(const input *in);
+void input_free(input *in);
 
 /* consumer side */
 static inline uint64_t input_head(input *in)
@@ -81,5 +100,9 @@ static inline uint64_t input_head(input *in)
 /* copies entry pos; returns 0 ok, 1 not yet available, -1 overwritten (consumer too slow) */
 int input_read(input *in, uint64_t pos, in_entry *out);
 void input_get_prog(input *in, prog_info *out, int *gen);
+/* ideal time of a video key frame in [from, to), or -1 */
+int64_t input_key_between(input *in, int64_t from, int64_t to);
+/* ideal time of the oldest packet still in the ring, -1 if empty */
+int64_t input_oldest(input *in);
 
 #endif
