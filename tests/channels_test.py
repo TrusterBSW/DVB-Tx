@@ -140,7 +140,8 @@ def main():
     # validation by the configuration builder
     for bad, what in (({"name": 'a"b', "source": "x.ts"}, "quote in a name"),
                       ({"name": "X", "source": "x.ts", "lcn": 9, "sid": 0x201}, "sid already used"),
-                      ({"name": "X", "source": "exec:rm -rf /"}, "exec: source from the API")):
+                      ({"name": "X", "source": "exec:rm -rf /"}, "exec: source from the API"),
+                      ({"name": "X", "source": "x.ts", "ffmpeg_output": ["-y", "/etc/x"]}, "raw ffmpeg arguments from the API")):
         try:
             ch.add(cfg, plan, dict(bad, carrier=0), allow_exec=False)
             check(False, f"{what} refused")

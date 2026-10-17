@@ -34,6 +34,15 @@ ENGINE_KEYS = {"sid", "pid_base", "switch_timeout_ms", "return_ms", "max_late_ms
 # sources that run a command or read the transmitter's own input: refused from the web API unless
 # web.allow_exec_sources (the configuration file and the offline CLI may use them)
 EXEC_RE = re.compile(r"^(exec:|pipe:|stdin:?$|-$)")
+# options that hand raw arguments to ffmpeg (an output file is one of them): same rule
+RAW_KEYS = {"ffmpeg_input", "ffmpeg_output"}
+
+
+def _check_options(keys, allow_exec):
+    bad = sorted(set(keys) & RAW_KEYS)
+    if bad and not allow_exec:
+        raise ChannelError(f"{', '.join(bad)}: raw ffmpeg arguments, allowed in the configuration file only "
+                           "(or set web.allow_exec_sources = true)")
 
 
 # ------------------------------------------------------------------ designating a channel
@@ -153,6 +162,7 @@ def add(cfg, plan, spec, allow_exec=True):
     """New configuration with one more service. spec: name, source, and optionally carrier, lcn, sid,
     backup, and any service option. Returns (cfg, plan, sid)."""
     spec = dict(spec)
+    _check_options(spec, allow_exec)
     car = find_carrier(plan, spec.pop("carrier", None))
     raw = {"name": _check_name(spec.pop("name", "")), "source": _check_source(spec.pop("source", ""), allow_exec)}
     for k, v in spec.items():
@@ -186,6 +196,7 @@ def update(cfg, plan, ref, changes, allow_exec=True):
     ("" or false: none), and service options (None removes one). Returns (cfg, plan, sid)."""
     s = find(plan, ref)
     changes = dict(changes)
+    _check_options(changes, allow_exec)
     swap = bool(changes.pop("swap", False))
     new = copy.deepcopy(cfg)
     raw = _raw(new, s)

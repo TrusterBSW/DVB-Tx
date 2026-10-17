@@ -725,9 +725,10 @@ class Supervisor:
             c.ev.set()
 
     def engine_request(self, text, timeout=5):
-        """command to the engine; its answer (dict), or None if the engine is not running"""
+        """command to the engine and its answer; when the engine is not running, nothing to do: it starts
+        again from the plan (engine.ini), which already has the change"""
         if not (self.engine and self.engine.poll() is None):
-            return None
+            return {"ok": True, "note": "engine not running"}
         with self.reply_cv:
             self.seq += 1
             seq = self.seq
@@ -875,7 +876,7 @@ class Supervisor:
             o = inp.options
             r = self.engine_request(f"input add id={inp.index} addr={inp.addr} program={int(o.get('program', 0))} "
                                     f"buffer_ms={int(o['buffer_ms'])} ring_pkts={int(o['ring_pkts'])} "
-                                    f"name={inp.name[:60]}") if running else {"ok": True}
+                                    f"name={inp.name[:60]}")
             if not r["ok"]:
                 for d in done:
                     self.engine_request(f"input del id={d.index}")
@@ -886,7 +887,7 @@ class Supervisor:
         bad = []
 
         def eng(cmd):
-            r = self.engine_request(cmd) if running else {"ok": True}
+            r = self.engine_request(cmd)
             if not r["ok"]:
                 bad.append(f"{cmd.split(' name=')[0]}: {r.get('error')}")
 
@@ -914,8 +915,7 @@ class Supervisor:
         for inp in plan.inputs:
             if inp.index in used:
                 continue
-            if running:
-                eng(f"input del id={inp.index}")
+            eng(f"input del id={inp.index}")
             p = self.proc_of(inp.index)
             if p:
                 self.ingest.remove(p)
