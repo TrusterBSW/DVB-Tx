@@ -409,7 +409,10 @@ radio, partagée par toutes les porteuses T2 de même FFT, intervalle de garde e
 
 Comme pour le DVB-T, les lobes OFDM ne sont pas filtrés (−49 dB en bord de bande) : un DVB-C voisin
 sur la même radio mesure 59 dB de MER au lieu de 85, bien au-delà de ce que donnent un convertisseur
-et son étage analogique.
+et son étage analogique. À l'antenne (HackRF vers un tuner Sony CXD2837ER, 32K 256-QAM 5/6) : C/N
+30,1 à 30,6 dB, 0 à 1 TEI par 15 s, 50,077 Mbit/s, comme le banc de filtres à 18,67 MS/s (c'est le
+bruit analogique du HackRF qui limite) ; sur un i5-9500 le moteur prend 0,31 cœur contre 0,46 avec
+le banc.
 
 ## Plusieurs porteuses, plusieurs radios
 

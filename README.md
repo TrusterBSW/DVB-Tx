@@ -194,6 +194,9 @@ for two adjacent T2 carriers. Engine CPU (whole process), T2 32K 256-QAM 5/6: 0.
 1.16 with the filter bank at 16.33 MS/s; two T2 and one DVB-C 256-QAM carrier: 1.06 cores at 27.43 MS/s against
 2.68 at 24.18 MS/s. Like DVB-T, the OFDM side lobes are not filtered (-49 dB at the band edge): an adjacent DVB-C
 carrier on the same radio measures 59 dB of MER instead of 85 (far above what a DAC and its analog stage give).
+Over the air (HackRF to a Sony CXD2837ER tuner, 32K 256-QAM 5/6): C/N 30.1-30.6 dB, 0-1 TEI per 15 s, 50.077
+Mbit/s, the same as the filter bank at 18.67 MS/s (the HackRF analog noise is the limit); on an i5-9500 the engine
+takes 0.31 core against 0.46 with the bank.
 
 ## License
 
