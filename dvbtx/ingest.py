@@ -55,10 +55,12 @@ _FF_CAPS = {}
 def ffmpeg_caps(ffmpeg):
     if ffmpeg in _FF_CAPS:
         return _FF_CAPS[ffmpeg]
-    caps = {"extension_picky": False, "encoders": set(), "ok": False}
+    caps = {"extension_picky": False, "readrate_catchup": False, "encoders": set(), "ok": False}
     try:
         h = subprocess.run([ffmpeg, "-hide_banner", "-h", "demuxer=hls"], capture_output=True, text=True, timeout=10)
         caps["extension_picky"] = "extension_picky" in h.stdout
+        f = subprocess.run([ffmpeg, "-hide_banner", "-h", "full"], capture_output=True, text=True, timeout=10)
+        caps["readrate_catchup"] = "-readrate_catchup" in f.stdout
         e = subprocess.run([ffmpeg, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=10)
         caps["encoders"] = {l.split()[1] for l in e.stdout.splitlines() if len(l.split()) > 1 and l.startswith(" ")}
         caps["ok"] = True
@@ -150,6 +152,7 @@ class Recipe:
         self.playlist = None       # files of a folder, played one ffmpeg after the other
         self.maps = None           # stream selection forced by the recipe
         self.probe = []            # URLs/paths whose codecs may be checked before copying
+        self.network = False       # fetched over HTTP: -re must be able to catch up after a slow fetch
 
 
 def recipe_for(src, opts, ing, work_dir, pl_index=0):
@@ -162,6 +165,7 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
     caps = ffmpeg_caps(ff)
 
     def http_input(url):
+        r.network = True
         a = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1",
              "-reconnect_delay_max", "5", "-rw_timeout", "15000000"]
         if caps.get("extension_picky") and (".m3u8" in url or "m3u8" in url):
@@ -279,6 +283,10 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
         for a in r.inputs:
             if a == "-i":
                 out.append("-re")
+                # each HLS segment costs a new connection: at the default catch-up rate (1.05) the lag
+                # grows by a fraction of a second per segment until the service falls back to its backup
+                if r.network and caps.get("readrate_catchup"):
+                    out += ["-readrate_catchup", str(opts.get("readrate_catchup", 2))]
             out.append(a)
         r.inputs = out
         # the input options of the first input go before its -re: keep them in front
