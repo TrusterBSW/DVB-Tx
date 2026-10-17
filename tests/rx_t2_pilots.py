@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """DVB-T2 synthesis check on a null-radio capture, without a T2 decoder: symbol timing from the
 guard-interval correlation, FFT of each symbol at the radio rate, then the continual pilots
-(BPSK, same carriers in every symbol: found as the bins whose x^2 keeps one phase) give a MER:
+(BPSK, same carriers in every symbol: found as the bins of constant amplitude) give a MER:
 error across the BPSK axis after a phase per carrier and per symbol. No channel filter: a single
 carrier next to the T2 one leaks into the rectangular FFT window (a real receiver filters it out).
 
@@ -63,18 +63,21 @@ def main():
     # then only turns the carriers, no interference from the next symbol), carriers around 0 Hz
     K = fft // 2
     Y = np.array([np.fft.fftshift(np.fft.fft(x[s + G // 2:s + G // 2 + N]))[N // 2 - K:N // 2 + K] for s in starts])
-    p = Y ** 2
-    coh = np.abs(p.mean(0)) / (np.abs(Y) ** 2).mean(0)
-    pilots = np.where(coh > 0.9)[0]
+    # continual pilots: the bins of constant amplitude (BPSK; data cells vary), selected on the amplitude
+    # since the phase may turn from symbol to symbol (DVB-T: one IFFT per symbol, no continuous oscillator)
+    A = np.abs(Y)
+    pilots = np.where(A.std(0) < 0.02 * A.mean(0))[0]
     Z = Y[:, pilots]
+    ph = np.angle((Z ** 2).sum(1)) / 2                               # per symbol (mod pi)
+    Z = Z * np.exp(-1j * ph)[:, None]
     for j in np.unique(run):                  # per carrier and frame (each frame has its timing error)
         Z[run == j] *= np.exp(-1j * np.angle((Z[run == j] ** 2).mean(0)) / 2)[None, :]
-    ph = np.angle((Z ** 2).sum(1)) / 2                               # per symbol (mod pi)
+    ph = np.angle((Z ** 2).sum(1)) / 2
     Z = Z * np.exp(-1j * ph)[:, None]
     # BPSK pilots of several amplitudes (P2, continual, continual on a scattered position): the error across
     # the BPSK axis, doubled (circular noise), against the pilot power
     err = 2 * np.mean(Z.imag ** 2) / np.mean(Z.real ** 2)
-    print(f"k={k}, {len(starts)} symbols, {len(pilots)} continual-pilot bins (coherence > 0.9), "
+    print(f"k={k}, {len(starts)} symbols, {len(pilots)} continual-pilot bins, "
           f"pilot MER {-10 * np.log10(err):.1f} dB")
 
 
