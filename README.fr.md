@@ -230,7 +230,8 @@ Une chaîne se désigne par son numéro, son service_id (`0x0103`) ou son nom. L
 Quand dvbtx ne tourne pas, `dvbtx channel` modifie le fichier seul (pris au prochain démarrage) ;
 `--offline` le fait même s'il tourne. Sécurité : les changements par le web sont refusés s'ils
 viennent d'un autre site, exigent `web.token` s'il est défini (à mettre dès que `web.listen` n'est
-pas `127.0.0.1`), et les sources `exec:`, `pipe:`, `stdin:` ne passent que par le fichier
+pas `127.0.0.1`), et les sources `exec:`, `pipe:`, `stdin:` comme les arguments bruts
+`ffmpeg_input` / `ffmpeg_output` ne passent que par le fichier
 (`web.allow_exec_sources` pour l'autoriser). Référence complète : [`docs/CHANNELS.md`](docs/CHANNELS.md).
 
 ## Numéros de chaînes (LCN) et ONID

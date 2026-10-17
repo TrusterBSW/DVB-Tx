@@ -158,7 +158,8 @@ The web API can change what is broadcast, so:
 - `web.token = "..."`: these requests then need `Authorization: Bearer <token>` (the page asks for
   it once, `dvbtx channel` reads it from the configuration file or `--token`). Set one when
   `web.listen` is not `127.0.0.1`;
-- sources that run a command or read the standard input (`exec:`, `pipe:`, `stdin:`) are refused
+- sources that run a command or read the standard input (`exec:`, `pipe:`, `stdin:`), and the raw
+  ffmpeg arguments `ffmpeg_input` / `ffmpeg_output` (they can name an output file), are refused
   from the API unless `web.allow_exec_sources = true`; they stay possible in the file.
 
 ## FILES
