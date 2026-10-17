@@ -6,6 +6,8 @@
 | `dvbc_ref.c` + `cmp_dvbc_docsis.py` | DVB-C (J.83 A) symbols against the mini-cmts encoder (validated with a cable modem) | the mini-cmts sources |
 | `rx_dvbc_check.py` | demodulates a DVB-C I/Q capture (null radio, `format=cs16`) with the mini-cmts receiver | the mini-cmts sources, numpy, scipy |
 | `rx_sc_mer.py` | MER of a QAM carrier in a null-radio capture with an ideal receiver (exact shift, exact RRC matched filter, timing to 1e-6 symbol): measures the transmitter alone | numpy |
+| `rx_t2_pilots.py` | MER of the DVB-T2 continual pilots in a null-radio capture (symbol timing from the guard interval, FFT at the radio rate): checks the direct T2 synthesis | numpy |
+| `dvbt2_group_test.c` + `cmp_dvbt2_interp.py` | the T2 synthesis at k x the T2 rate against `dvbt2_samples()` (identity, interpolation, sums of carriers, speed) | FFTW |
 | `fcbank_check.c` + `fcbank_check.py` | the frequency-domain filter bank (DVB-C/S/S2/T2 shaping at the radio rate) against an ideal synthesis, and its speed against the time-domain filter | FFTW |
 | `rx_sat.py` | DVB-S (leandvb) and DVB-S2 (gr-dvbs2rx: QPSK, 8PSK) reception of a capture or live from a USRP, then a TS check (sync, TEI, continuity) | leansdr, gr-dvbs2rx |
 | `bench_dvbt.c` | speed of the DVB-T coder (share of one core per carrier) | — |

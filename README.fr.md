@@ -393,6 +393,24 @@ fractions simples (`dvbtx check` l'affiche). Mesuré avec un récepteur idéal
 (même résultat avec les deux filtres : la mise en forme n'y est pour rien). `synth = "fir"` sur une
 porteuse garde l'ancien filtre (utilisé aussi quand le débit n'est pas une fraction simple).
 
+Quand la fréquence de la radio est un multiple entier k de celle de la T2 (64/7 MHz en canal de
+8 MHz ; le planificateur choisit une telle fréquence dès que la radio porte de la T2, et place
+l'oscillateur sur une grille de 62,5 kHz par rapport aux porteuses T2), la T2 n'est plus
+rééchantillonnée du tout : chaque symbole OFDM est une IFFT de k × FFT points à la fréquence de la
+radio, partagée par toutes les porteuses T2 de même FFT, intervalle de garde et longueur de trame
+(P1 compris). Mesuré sur les pilotes continus (`tests/rx_t2_pilots.py`, radio null) :
+
+| | synthèse T2 directe | banc de filtres |
+|---|---|---|
+| MER des pilotes, 1 porteuse T2 | 148 dB (référence native : 146 dB) | – |
+| MER des pilotes, 2 porteuses T2 adjacentes | 145,5 dB chacune | – |
+| CPU du moteur, T2 32K 256-QAM 5/6 | 0,42 cœur à 18,29 MS/s | 1,16 cœur à 16,33 MS/s |
+| CPU du moteur, 2 T2 + 1 DVB-C 256-QAM | 1,06 cœur à 27,43 MS/s | 2,68 cœurs à 24,18 MS/s |
+
+Comme pour le DVB-T, les lobes OFDM ne sont pas filtrés (−49 dB en bord de bande) : un DVB-C voisin
+sur la même radio mesure 59 dB de MER au lieu de 85, bien au-delà de ce que donnent un convertisseur
+et son étage analogique.
+
 ## Plusieurs porteuses, plusieurs radios
 
 Toutes les porteuses d'une radio partagent une seule IFFT à la fréquence de la radio : chacune est

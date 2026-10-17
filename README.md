@@ -185,6 +185,16 @@ which the symbol rates are simple fractions (`dvbtx check` shows it). Measured w
 21 dB with the former 16-symbol polyphase filter; DVB-T2 resampling within -110 dB of ideal. `synth = "fir"` on a
 carrier keeps the polyphase filter (also used when the rate is not a simple fraction).
 
+When the radio rate is a whole multiple k of the DVB-T2 rate (64/7 MHz in 8 MHz channels; the planner prefers
+such a rate when the radio carries T2, and puts the LO on a 62.5 kHz grid from the T2 carriers), the T2 carriers
+are not resampled at all: each OFDM symbol is one IFFT of k x FFT points at the radio rate, shared by all the T2
+carriers with the same FFT size, guard interval and frame length (P1 included). Measured on the continual pilots
+(`tests/rx_t2_pilots.py`, null radio): 148 dB for one carrier (146 dB for the native-rate reference), 145.5 dB
+for two adjacent T2 carriers. Engine CPU (whole process), T2 32K 256-QAM 5/6: 0.42 core at 18.29 MS/s against
+1.16 with the filter bank at 16.33 MS/s; two T2 and one DVB-C 256-QAM carrier: 1.06 cores at 27.43 MS/s against
+2.68 at 24.18 MS/s. Like DVB-T, the OFDM side lobes are not filtered (-49 dB at the band edge): an adjacent DVB-C
+carrier on the same radio measures 59 dB of MER instead of 85 (far above what a DAC and its analog stage give).
+
 ## License
 
 GPL-3.0-or-later.

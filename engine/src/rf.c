@@ -71,6 +71,8 @@ typedef struct carrier {
     dvbt2 *t2;
     float complex *t2buf;
     int t2n, t2pos;
+    dvbt2_group *t2g;             /* this pseudo-carrier synthesises DVB-T2 carriers at k x their rate */
+    int in_group;                 /* member of such a group (no thread of its own) */
     int ncar;                     /* elements per ring slot: OFDM carriers, or samples of a block */
     float complex *ring;
     uint64_t wr, rd;
@@ -276,6 +278,9 @@ static void *dvbt_thread(void *arg)
             float complex *slot = c->ring + (size_t)(c->wr % RING_SYMS) * c->ncar;
             if (c->fb)
                 fcbank_block(c->fb, slot, c->ncar);
+            else if (c->t2g)
+                for (int k = 0; k < c->ncar;)
+                    k += dvbt2_group_samples(c->t2g, slot + k, c->ncar - k);
             else if (c->in_bank)
                 for (int k = 0; k < c->ncar; k++)
                     c->symf(c->symctx, &slot[k]);
@@ -427,6 +432,81 @@ static int open_output(carrier *c, const char *out, char *err, int errlen)
 bad:
     snprintf(err, errlen, "carrier %d: bad output '%s'", c->idx, out);
     return -1;
+}
+
+static carrier *pseudo_carrier(radio *r, const char *what)
+{
+    carrier *bc = xcalloc(1, sizeof *bc);
+    bc->idx = -1;
+    bc->radio = r;
+    snprintf(bc->standard, sizeof bc->standard, "%s", what);
+    pthread_mutex_init(&bc->lock, NULL);
+    pthread_cond_init(&bc->cond, NULL);
+    bc->ncar = r->blklen;
+    bc->ring = xcalloc((size_t)RING_SYMS * bc->ncar, sizeof(float complex));
+    return bc;
+}
+
+/* DVB-T2 carriers of a radio whose rate is k times theirs: synthesised together, one IFFT of k x FFT points
+ * per OFDM symbol (no resampling); the others go to the filter banks */
+static int t2_groups(radio *r, carrier **sc, int nsc, double wtot, char *err, int errlen)
+{
+    int n = 0;
+    for (int i = 0; i < nsc; i++)
+        n += !strcmp(sc[i]->standard, "dvbt2") && strcmp(sc[i]->synth, "fir");
+    carrier *grp[8];
+    dvbt2_timing_t tim[8];
+    int ng = 0, nmem[8] = { 0 };
+    for (int i = 0; i < nsc; i++) {
+        carrier *c = sc[i];
+        dvbt2_timing_t t;
+        if (strcmp(c->standard, "dvbt2") || !strcmp(c->synth, "fir") || dvbt2_timing(&c->t2c, &t))
+            continue;
+        double kf = r->p.rate / t.sample_rate, bf = c->offset_hz / (r->p.rate / ((double)t.fft * lround(kf)));
+        int k = (int)lround(kf), bins = (int)lround(bf);
+        if (fabs(kf - k) > 1e-9 * kf || fabs(bf - bins) > 1e-4) {
+            LOGI("carrier %d: radio rate %.3f not a multiple of %.3f or offset %.1f off the subcarrier grid: "
+                 "DVB-T2 resampled", c->idx, r->p.rate, t.sample_rate, c->offset_hz);
+            continue;
+        }
+        int g = 0;
+        while (g < ng && !dvbt2_timing_equal(&tim[g], &t))
+            g++;
+        if (g == ng) {
+            if (ng == 8 || g_nbanks >= MAX_BANKS)
+                continue;
+            dvbt2_group *t2g = dvbt2_group_new(k, n > 1 ? (n < 4 ? n : 4) : 0);
+            if (!t2g)
+                continue;
+            grp[ng] = pseudo_carrier(r, "t2group");
+            grp[ng]->t2g = t2g;
+            tim[ng++] = t;
+        }
+        float gain = (float)sqrt(pow(10.0, c->gain_db / 10.0) / wtot);
+        int rc = dvbt2_group_add(grp[g]->t2g, &c->t2c, bins, gain, mux_pull, c->mux);
+        if (rc < 0) {
+            LOGI("carrier %d: DVB-T2 group: %s, resampled instead", c->idx, dvbt2_group_error(rc));
+            continue;
+        }
+        LOGD("radio %d: DVB-T2 group %d member %d: carrier %d at %d bins (FFT %d x %d)", r->idx, g, rc, c->idx, bins,
+             t.fft, k);
+        c->in_group = 1;
+        nmem[g]++;
+        r->ncarriers++;
+    }
+    for (int g = 0; g < ng; g++) {
+        if (!nmem[g]) {
+            dvbt2_group_free(grp[g]->t2g);
+            continue;
+        }
+        if (g_nbanks >= MAX_BANKS) {
+            snprintf(err, errlen, "radio %d: too many synthesis groups", r->idx);
+            return -1;
+        }
+        g_banks[g_nbanks++] = grp[g];
+        r->sc[r->nsc++] = grp[g];
+    }
+    return 0;
 }
 
 int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
@@ -776,12 +856,17 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             }
             df = a;
         }
-        carrier *banks[64];
+        carrier *banks[64], *scl[64];
         int nbanks = 0, nsc = r->nsc;
+        memcpy(scl, r->sc, sizeof(carrier *) * nsc);
         r->nsc = 0;
         r->ncarriers = r->nmem;
+        if (t2_groups(r, scl, nsc, wtot, err, errlen))
+            return -1;
         for (int i = 0; i < nsc; i++) {
-            carrier *c = r->sc[i];
+            carrier *c = scl[i];
+            if (c->in_group)
+                continue;
             int is_t2 = !strcmp(c->standard, "dvbt2");
             double half = is_t2 ? c->symbol_rate * c->rolloff / 2 : c->symbol_rate * (1 + c->rolloff) / 2;
             if (fabs(c->offset_hz) + half > r->p.rate / 2) {
@@ -818,15 +903,8 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
                 if (ok < 0 && nbanks < 64 && g_nbanks < MAX_BANKS) {
                     fcbank *fb = fcbank_new(r->p.rate, c->symbol_rate, (double)df);
                     if (fb && fcbank_add(fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym, c) >= 0) {
-                        carrier *bc = xcalloc(1, sizeof *bc);
-                        bc->idx = -1;
-                        bc->radio = r;
-                        snprintf(bc->standard, sizeof bc->standard, "bank");
-                        pthread_mutex_init(&bc->lock, NULL);
-                        pthread_cond_init(&bc->cond, NULL);
+                        carrier *bc = pseudo_carrier(r, "bank");
                         bc->fb = fb;
-                        bc->ncar = r->blklen;
-                        bc->ring = xcalloc((size_t)RING_SYMS * bc->ncar, sizeof(float complex));
                         banks[nbanks++] = bc;
                         g_banks[g_nbanks++] = bc;
                         r->sc[r->nsc++] = bc;
@@ -893,6 +971,8 @@ int rf_start(void)
     }
     for (int i = 0; i < g_ncarriers; i++) {
         carrier *c = g_carriers[i];
+        if (c->in_group)
+            continue;
         void *(*fn)(void *) = c->radio ? dvbt_thread : ts_thread;
         if (pthread_create(&c->th, NULL, fn, c))
             return -1;

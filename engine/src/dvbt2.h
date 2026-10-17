@@ -59,12 +59,59 @@ typedef struct dvbt2_info {
 } dvbt2_info;
 int dvbt2_get_info(const dvbt2_cfg *c, dvbt2_info *info);   /* 0, or -1 if invalid */
 
+/* Frame timing: carriers with equal timings can share one synthesis (dvbt2_group). */
+typedef struct dvbt2_timing_t {
+    int fft, guard;          /* samples at the elementary rate */
+    int n_p2, l_data;
+    int frame_samples;       /* P1 + (N_P2 + L_data) * (fft + guard), elementary rate */
+    int t_num, t_den;        /* elementary period T = t_num / t_den microseconds */
+    double sample_rate;
+} dvbt2_timing_t;
+int dvbt2_timing(const dvbt2_cfg *c, dvbt2_timing_t *t);              /* 0, or -1 if invalid */
+int dvbt2_timing_equal(const dvbt2_timing_t *a, const dvbt2_timing_t *b);
+
 dvbt2 *dvbt2_new(const dvbt2_cfg *c, ts_pull_fn pull, void *ctx);
 void dvbt2_free(dvbt2 *t);
 /* Writes the next chunk of time-domain samples (P1, then P2/data symbols with their guard
  * interval) and returns how many (<= max, never more than one OFDM symbol; call again for
  * more). The first call encodes a whole T2 frame; afterwards the FEC work for frame k+1 is
- * spread over the symbols of frame k, so packets are pulled at a steady pace. */
+ * spread over the symbols of frame k, so packets are pulled at a steady pace.
+ * (It is a dvbt2_group with k = 1 and one member at offset 0.) */
 int dvbt2_samples(dvbt2 *t, float complex *out, int max);
+
+/* ---- several frame-synchronous DVB-T2 carriers synthesised by one IFFT at the radio rate ----
+ * Radio rate = k * dvbt2_sample_rate(cfg). Every symbol of the group is one IFFT of size
+ * k * fft (guard interval k * guard), the P1 one IFFT of size 1024 k per segment; each member's
+ * carriers sit at their offset and follow the phase of a continuous oscillator at that offset,
+ * so the output equals, at the elementary sampling instants, the sum of the members'
+ * dvbt2_samples() outputs each multiplied by exp(j 2 pi offset t). */
+typedef struct dvbt2_group dvbt2_group;
+enum {
+    DVBT2_GROUP_EINVAL = -1,   /* dvbt2_cfg_check() fails */
+    DVBT2_GROUP_ETIMING = -2,  /* different frame timing than the first member */
+    DVBT2_GROUP_EOVERLAP = -3,
+    DVBT2_GROUP_EBAND = -4,    /* carriers outside +-(k fft / 2) bins */
+    DVBT2_GROUP_EP1 = -5,      /* offset_bins * 1024 / fft not an integer (P1 subcarrier grid) */
+    DVBT2_GROUP_EFULL = -6,    /* more than 64 members */
+    DVBT2_GROUP_ENOMEM = -7,
+};
+/* k: integer oversampling 1..64. threads: 0 = everything in the caller's thread, inside
+ * dvbt2_group_samples(); n > 0 = n worker threads created here run the members' FEC encoding and
+ * carrier placement for step s+1 while the caller's thread transforms step s (member i on worker
+ * i % n). Each member's pull callback is then called from its worker thread, asynchronously
+ * with the caller (never concurrently with itself). */
+dvbt2_group *dvbt2_group_new(int k, int threads);
+/* offset_bins: centre carrier relative to the radio LO, in data subcarrier spacings
+ * (radio_rate / (fft * k)); must be a multiple of fft / 1024 (P1 grid). gain: linear amplitude
+ * of this member (gain 1: mean power ~1 like dvbt2_samples). The first member fixes the timing
+ * (bandwidth, FFT, guard interval, L_data); constellation, code rate, rotation, FEC blocks, pilot
+ * pattern, carrier mode, L1 and ids may differ. Returns the member index or a DVBT2_GROUP_E*.
+ * The first call plans the IFFT (FFTW_MEASURE, under the library's planner mutex). */
+int dvbt2_group_add(dvbt2_group *g, const dvbt2_cfg *c, int offset_bins, float gain, ts_pull_fn pull, void *ctx);
+const char *dvbt2_group_error(int err);
+/* Next chunk of the summed signal at the radio rate: <= max samples, at most one step (P1 of
+ * 2048 k samples or one symbol of k (fft + guard)); pulls like dvbt2_samples for each member. */
+int dvbt2_group_samples(dvbt2_group *g, float complex *out, int max);
+void dvbt2_group_free(dvbt2_group *g);
 
 #endif

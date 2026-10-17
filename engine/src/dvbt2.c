@@ -18,6 +18,7 @@
 #include <fftw3.h>
 #include <math.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -309,10 +310,10 @@ int dvbt2_get_info(const dvbt2_cfg *c, dvbt2_info *info)
 
 /* ------------------------------------------------------------------ state */
 
-typedef struct cmap {          /* one carrier map: data carriers and pilots, as FFT bins */
+typedef struct cmap {          /* one carrier map: data carriers and pilots */
     int ndata, npilot;
-    uint32_t *data_bin;
-    uint32_t *pilot_bin;
+    int32_t *data_rel;         /* carrier index relative to the centre carrier (= FFT bin from DC) */
+    int32_t *pilot_rel;
     float *pilot_val;          /* amplitude with the reference sequence sign */
 } cmap;
 
@@ -358,16 +359,44 @@ struct dvbt2 {
     cmap p2map, fcmap, *dmap;  /* dmap[dy] */
     uint8_t pn[CHIPS];
     float norm;
-    fftwf_complex *fbuf;
-    fftwf_plan plan;
-    float complex p1[2048];
-
-    /* output */
-    float complex *sym;
+    float p1pat[1024];         /* P1 carriers (1K spacing), index 512 on DC */
     float complex *symcells;   /* cells of the symbol being built (cache-friendly copy) */
-    int sym_len, sym_pos;
-    int l;                     /* next symbol of the frame, -1 = P1 */
+    int l;                     /* next step of the frame: -1 = P1, then symbols 0 .. LF-1 */
     int started;
+    struct dvbt2_group *own;   /* the k = 1 group used by dvbt2_samples() */
+};
+
+#define MAX_MEMBERS 64
+
+struct dvbt2_group {
+    int k, N, Nt, gi, lf, n;   /* Nt = k N, gi in radio samples */
+    dvbt2_timing_t timing;
+    struct gmember {
+        dvbt2 *t;
+        int off, off1;         /* offset in data / P1 subcarrier spacings */
+        int lo, hi;            /* occupied bins */
+        float gain, pre;       /* cells x pre (x oscillator phase), then IFFT x post */
+        int owned;
+    } m[MAX_MEMBERS];
+    float post;
+    fftwf_complex *fbuf[2], *p1buf;   /* two spectra: one being filled, one transformed */
+    fftwf_plan plan, p1plan;          /* plan: fbuf[0] -> sym + gi (also run on fbuf[1]) */
+    float complex *sym, *p1a;
+    int sym_len, sym_pos;
+    int l;                     /* step to output next: -1 = P1, else symbol */
+    int64_t T;                 /* its first radio sample */
+    int bi;                    /* spectrum of that step */
+
+    /* worker threads (nthreads > 0): member i is handled by worker i % nthreads, which runs
+     * its FEC share and carrier placement for the step after the one being transformed */
+    int nthreads;
+    pthread_t *tid;
+    pthread_mutex_t lock;
+    pthread_cond_t go, done;
+    unsigned gen;
+    int pending, quit, inflight;
+    int job_l, job_bi;
+    int64_t job_win;
 };
 
 static pthread_mutex_t plan_lock = PTHREAD_MUTEX_INITIALIZER;   /* FFTW planner is not thread-safe */
@@ -978,19 +1007,21 @@ static int cmap_build(dvbt2 *t, const uint8_t *type, const float *amp, int expec
         return -1;
     m->ndata = nd;
     m->npilot = np;
-    m->data_bin = malloc(sizeof(uint32_t) * (size_t)nd);
-    m->pilot_bin = malloc(sizeof(uint32_t) * (size_t)(np ? np : 1));
+    m->data_rel = malloc(sizeof(int32_t) * (size_t)nd);
+    m->pilot_rel = malloc(sizeof(int32_t) * (size_t)(np ? np : 1));
     m->pilot_val = malloc(sizeof(float) * (size_t)(np ? np : 1));
-    if (!m->data_bin || !m->pilot_bin || !m->pilot_val)
+    if (!m->data_rel || !m->pilot_rel || !m->pilot_val)
         return -1;
-    int left = (p->N - p->cps) / 2 + 1;
+    /* gr-dtv: carrier k at position (N - C_PS) / 2 + 1 + k of the shifted spectrum, i.e. the
+     * centre carrier (C_PS - 1) / 2 on DC */
+    int centre = (p->cps - 1) / 2;
     nd = np = 0;
     for (int k = 0; k < p->cps; k++) {
-        uint32_t bin = (uint32_t)((left + k + p->N / 2) & (p->N - 1));
+        int32_t rel = k - centre;
         if (type[k] == C_DATA) {
-            m->data_bin[nd++] = bin;
+            m->data_rel[nd++] = rel;
         } else if (type[k] != C_PAPR) {
-            m->pilot_bin[np] = bin;
+            m->pilot_rel[np] = rel;
             m->pilot_val[np++] = prbs[k + p->koff] ? -amp[type[k]] : amp[type[k]];
         }
     }
@@ -999,8 +1030,8 @@ static int cmap_build(dvbt2 *t, const uint8_t *type, const float *amp, int expec
 
 static void cmap_free(cmap *m)
 {
-    free(m->data_bin);
-    free(m->pilot_bin);
+    free(m->data_rel);
+    free(m->pilot_rel);
     free(m->pilot_val);
 }
 
@@ -1103,10 +1134,9 @@ static int build_pilots(dvbt2 *t)
 
 /* ------------------------------------------------------------------ P1 */
 
-static void build_p1(dvbt2 *t, fftwf_complex *buf, fftwf_plan plan)
+static void build_p1_pattern(dvbt2 *t)
 {
     int seq[384], d[385], rnd[384];
-    float freq[1024], shft[1024];
     int s1 = 0, s2 = (t->p.fftcode & 7) << 1, idx = 0;
     for (int i = 0; i < 8; i++)
         for (int j = 7; j >= 0; j--)
@@ -1128,38 +1158,14 @@ static void build_p1(dvbt2 *t, fftwf_complex *buf, fftwf_plan plan)
     d[0] = 1;
     for (int i = 1; i < 385; i++)
         d[i] = seq[i - 1] ? -d[i - 1] : d[i - 1];
-    memset(freq, 0, sizeof freq);
+    memset(t->p1pat, 0, sizeof t->p1pat);
     for (int i = 0; i < 384; i++)
-        freq[t2_p1_active_carriers[i] + 86] = (float)(d[i + 1] * rnd[i]);
-    for (int i = 0; i < 1023; i++)
-        shft[i + 1] = freq[i];
-    shft[0] = freq[1023];
-    float complex a[1024], b[1024];
-    float sc = (float)sqrt(384.0);
-    for (int pass = 0; pass < 2; pass++) {
-        const float *in = pass ? shft : freq;
-        float complex *o = pass ? b : a;
-        float complex *x = (float complex *)buf;
-        for (int i = 0; i < 512; i++) {
-            x[512 + i] = in[i];
-            x[i] = in[512 + i];
-        }
-        fftwf_execute(plan);
-        for (int i = 0; i < 1024; i++)
-            o[i] = x[i] / sc;
-    }
-    int k = 0;
-    for (int j = 0; j < 542; j++)
-        t->p1[k++] = b[j];
-    for (int j = 0; j < 1024; j++)
-        t->p1[k++] = a[j];
-    for (int j = 542; j < 1024; j++)
-        t->p1[k++] = b[j];
+        t->p1pat[t2_p1_active_carriers[i] + 86] = (float)(d[i + 1] * rnd[i]);
 }
 
 /* ------------------------------------------------------------------ construction */
 
-void dvbt2_free(dvbt2 *t)
+static void member_free(dvbt2 *t)
 {
     if (!t)
         return;
@@ -1187,19 +1193,19 @@ void dvbt2_free(dvbt2 *t)
         for (int s = 0; s < t->p.dy; s++)
             cmap_free(&t->dmap[s]);
     free(t->dmap);
-    free(t->sym);
     free(t->symcells);
-    if (t->fbuf) {
-        pthread_mutex_lock(&plan_lock);
-        if (t->plan)
-            fftwf_destroy_plan(t->plan);
-        pthread_mutex_unlock(&plan_lock);
-        fftwf_free(t->fbuf);
-    }
     free(t);
 }
 
-dvbt2 *dvbt2_new(const dvbt2_cfg *c, ts_pull_fn pull, void *ctx)
+void dvbt2_free(dvbt2 *t)
+{
+    if (!t)
+        return;
+    dvbt2_group_free(t->own);   /* does not own t */
+    member_free(t);
+}
+
+static dvbt2 *member_new(const dvbt2_cfg *c, ts_pull_fn pull, void *ctx)
 {
     dvbt2 *t = calloc(1, sizeof *t);
     if (!t)
@@ -1238,13 +1244,11 @@ dvbt2 *dvbt2_new(const dvbt2_cfg *c, ts_pull_fn pull, void *ctx)
         t->Hp2[i] = malloc(sizeof(uint32_t) * (size_t)p->cp2);
         t->Hfc[i] = malloc(sizeof(uint32_t) * (size_t)(p->nfc ? p->nfc : 1));
     }
-    t->sym = malloc(sizeof(float complex) * (size_t)(p->N + p->gi > 2048 ? p->N + p->gi : 2048));
-    t->fbuf = fftwf_alloc_complex((size_t)p->N);
     t->symcells = malloc(sizeof(float complex) * (size_t)(p->cdata > p->cp2 ? p->cdata : p->cp2));
     if (fail || !t->cw || !t->cellv || !t->cperm || !t->icperm ||
         !t->mcells || !t->mbuf[0] || !t->mbuf[1] || !t->l1post || !t->dummy ||
         (p->np2 > 1 && !t->zz) || !t->Hd[0] || !t->Hd[1] || !t->Hp2[0] || !t->Hp2[1] ||
-        !t->Hfc[0] || !t->Hfc[1] || !t->sym || !t->symcells || !t->fbuf)
+        !t->Hfc[0] || !t->Hfc[1] || !t->symcells)
         goto err;
 
     build_bit_interleaver(t);
@@ -1273,26 +1277,11 @@ dvbt2 *dvbt2_new(const dvbt2_cfg *c, ts_pull_fn pull, void *ctx)
         }
     }
     t->norm = (float)(5.0 / sqrt(27.0 * p->cps));
-
-    pthread_mutex_lock(&plan_lock);
-    fftwf_complex *p1buf = fftwf_alloc_complex(1024);
-    fftwf_plan p1plan = p1buf ? fftwf_plan_dft_1d(1024, p1buf, p1buf, FFTW_BACKWARD, FFTW_ESTIMATE) : NULL;
-    t->plan = fftwf_plan_dft_1d(p->N, t->fbuf, t->fbuf, FFTW_BACKWARD, FFTW_MEASURE);
-    pthread_mutex_unlock(&plan_lock);
-    if (!p1plan || !t->plan) {
-        if (p1buf)
-            fftwf_free(p1buf);
-        goto err;
-    }
-    build_p1(t, p1buf, p1plan);
-    pthread_mutex_lock(&plan_lock);
-    fftwf_destroy_plan(p1plan);
-    pthread_mutex_unlock(&plan_lock);
-    fftwf_free(p1buf);
+    build_p1_pattern(t);
     t->l = -1;
     return t;
 err:
-    dvbt2_free(t);
+    member_free(t);
     return NULL;
 }
 
@@ -1388,7 +1377,30 @@ static void finish_frame(dvbt2 *t)
     t->frame_count++;
 }
 
-static void make_symbol(dvbt2 *t, int l)
+/* Before each step (P1 or symbol) of a member: frame boundaries and the share of the FEC
+ * work of the next frame (spread over the LF + 1 steps of the current one). */
+static void member_step(dvbt2 *t)
+{
+    const t2p *p = &t->p;
+    if (!t->started) {
+        finish_frame(t);   /* encode the whole first frame */
+        t->started = 1;
+        t->l = -1;
+    } else if (t->l == p->lf) {
+        finish_frame(t);
+        t->l = -1;
+    }
+    int step = t->l + 1;
+    int target = (int)(((long)p->nfec * (step + 1) + p->lf) / (p->lf + 1));
+    if (target > p->nfec)
+        target = p->nfec;
+    while (t->enc_block < target)
+        encode_block(t);
+}
+
+/* Place the carriers of symbol l (0 = first P2) in the spectrum b of size Nt, centre carrier
+ * at bin 'off', each carrier multiplied by sc (unless unit). Members do not overlap. */
+static void member_place(dvbt2 *t, int l, float complex *b, int Nt, int off, float complex sc, int unit)
 {
     const t2p *p = &t->p;
     const float complex *M = t->mbuf[t->cur];
@@ -1409,60 +1421,421 @@ static void make_symbol(dvbt2 *t, int l)
             m = &t->dmap[l % p->dy];
         }
     }
-    float complex *b = (float complex *)t->fbuf;
-    float complex *sc = t->symcells;
-    memcpy(sc, cells, sizeof(float complex) * (size_t)m->ndata);   /* sequential, then random reads in cache */
-    memset(b, 0, sizeof(float complex) * (size_t)p->N);
-    for (int i = 0; i < m->ndata; i++)
-        b[m->data_bin[i]] = sc[H[i]];
+    float complex *c = t->symcells;
+    memcpy(c, cells, sizeof(float complex) * (size_t)m->ndata);   /* sequential, then random reads in cache */
     float s = t->pn[l] ? -1.0f : 1.0f;
-    for (int i = 0; i < m->npilot; i++)
-        b[m->pilot_bin[i]] = m->pilot_val[i] * s;
-    fftwf_execute(t->plan);
-    float nm = t->norm;
-    int N = p->N, gi = p->gi;
-    float complex *o = t->sym;
-    for (int i = 0; i < N; i++)
-        o[gi + i] = b[i] * nm;
-    memcpy(o, o + N, sizeof(float complex) * (size_t)gi);
-    t->sym_len = N + gi;
-    t->sym_pos = 0;
+    if (unit) {
+        for (int i = 0; i < m->ndata; i++) {
+            int bin = m->data_rel[i] + off;
+            b[bin < 0 ? bin + Nt : bin] = c[H[i]];
+        }
+        for (int i = 0; i < m->npilot; i++) {
+            int bin = m->pilot_rel[i] + off;
+            b[bin < 0 ? bin + Nt : bin] = m->pilot_val[i] * s;
+        }
+    } else {
+        for (int i = 0; i < m->ndata; i++) {
+            int bin = m->data_rel[i] + off;
+            b[bin < 0 ? bin + Nt : bin] = c[H[i]] * sc;
+        }
+        for (int i = 0; i < m->npilot; i++) {
+            int bin = m->pilot_rel[i] + off;
+            b[bin < 0 ? bin + Nt : bin] = (m->pilot_val[i] * s) * sc;
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ groups */
+
+int dvbt2_timing(const dvbt2_cfg *c, dvbt2_timing_t *tm)
+{
+    t2p p;
+    if (derive(c, &p))
+        return -1;
+    memset(tm, 0, sizeof *tm);
+    tm->fft = p.N;
+    tm->guard = p.gi;
+    tm->n_p2 = p.np2;
+    tm->l_data = p.ldata;
+    tm->frame_samples = (int)p.frame_samples;
+    tm->t_num = p.tnum;
+    tm->t_den = p.tden;
+    tm->sample_rate = p.fs;
+    return 0;
+}
+
+int dvbt2_timing_equal(const dvbt2_timing_t *a, const dvbt2_timing_t *b)
+{
+    return a->fft == b->fft && a->guard == b->guard && a->n_p2 == b->n_p2 && a->l_data == b->l_data &&
+           a->frame_samples == b->frame_samples && a->t_num == b->t_num && a->t_den == b->t_den;
+}
+
+const char *dvbt2_group_error(int err)
+{
+    switch (err) {
+    case DVBT2_GROUP_EINVAL: return "invalid DVB-T2 parameters";
+    case DVBT2_GROUP_ETIMING: return "frame timing differs from the other carriers of the group "
+                                     "(bandwidth, FFT size, guard interval and data symbols must be equal)";
+    case DVBT2_GROUP_EOVERLAP: return "overlaps another carrier of the group";
+    case DVBT2_GROUP_EBAND: return "outside the radio bandwidth";
+    case DVBT2_GROUP_EP1: return "offset is not a multiple of the P1 subcarrier spacing (fft / 1024 bins)";
+    case DVBT2_GROUP_EFULL: return "too many carriers in the group";
+    case DVBT2_GROUP_ENOMEM: return "out of memory";
+    default: return err >= 0 ? "no error" : "unknown error";
+    }
+}
+
+static void group_job(dvbt2_group *g, int w);
+
+static void *group_worker(void *arg)
+{
+    dvbt2_group *g = ((void **)arg)[0];
+    int w = (int)(intptr_t)((void **)arg)[1];
+    free(arg);
+    unsigned seen = 0;
+    pthread_mutex_lock(&g->lock);
+    for (;;) {
+        while (!g->quit && g->gen == seen)
+            pthread_cond_wait(&g->go, &g->lock);
+        if (g->quit)
+            break;
+        seen = g->gen;
+        pthread_mutex_unlock(&g->lock);
+        group_job(g, w);
+        pthread_mutex_lock(&g->lock);
+        if (--g->pending == 0)
+            pthread_cond_signal(&g->done);
+    }
+    pthread_mutex_unlock(&g->lock);
+    return NULL;
+}
+
+dvbt2_group *dvbt2_group_new(int k, int threads)
+{
+    if (k < 1 || k > 64 || threads < 0 || threads > MAX_MEMBERS)
+        return NULL;
+    dvbt2_group *g = calloc(1, sizeof *g);
+    if (!g)
+        return NULL;
+    g->k = k;
+    pthread_mutex_init(&g->lock, NULL);
+    pthread_cond_init(&g->go, NULL);
+    pthread_cond_init(&g->done, NULL);
+    if (threads > 0) {
+        g->tid = calloc((size_t)threads, sizeof(pthread_t));
+        if (!g->tid) {
+            free(g);
+            return NULL;
+        }
+        for (int w = 0; w < threads; w++) {
+            void **arg = malloc(2 * sizeof(void *));
+            if (!arg)
+                break;
+            arg[0] = g;
+            arg[1] = (void *)(intptr_t)w;
+            if (pthread_create(&g->tid[w], NULL, group_worker, arg)) {
+                free(arg);
+                break;
+            }
+            g->nthreads = w + 1;
+        }
+    }
+    return g;
+}
+
+static void job_wait(dvbt2_group *g)
+{
+    if (!g->inflight)
+        return;
+    pthread_mutex_lock(&g->lock);
+    while (g->pending)
+        pthread_cond_wait(&g->done, &g->lock);
+    pthread_mutex_unlock(&g->lock);
+    g->inflight = 0;
+}
+
+void dvbt2_group_free(dvbt2_group *g)
+{
+    if (!g)
+        return;
+    job_wait(g);
+    if (g->tid) {
+        pthread_mutex_lock(&g->lock);
+        g->quit = 1;
+        pthread_cond_broadcast(&g->go);
+        pthread_mutex_unlock(&g->lock);
+        for (int w = 0; w < g->nthreads; w++)
+            pthread_join(g->tid[w], NULL);
+        free(g->tid);
+    }
+    pthread_mutex_destroy(&g->lock);
+    pthread_cond_destroy(&g->go);
+    pthread_cond_destroy(&g->done);
+    for (int i = 0; i < g->n; i++)
+        if (g->m[i].owned)
+            member_free(g->m[i].t);
+    pthread_mutex_lock(&plan_lock);
+    if (g->plan)
+        fftwf_destroy_plan(g->plan);
+    if (g->p1plan)
+        fftwf_destroy_plan(g->p1plan);
+    pthread_mutex_unlock(&plan_lock);
+    for (int i = 0; i < 2; i++)
+        if (g->fbuf[i])
+            fftwf_free(g->fbuf[i]);
+    if (g->p1buf)
+        fftwf_free(g->p1buf);
+    if (g->sym)
+        fftwf_free(g->sym);
+    free(g->p1a);
+    free(g);
+}
+
+static void group_scales(dvbt2_group *g)
+{
+    /* a lone member keeps gr-dtv's order (IFFT, then x normalisation, its cells untouched);
+     * with several members everything is applied to the cells (no pass after the IFFT) */
+    if (g->n == 1) {
+        float n0 = g->m[0].t->norm * g->m[0].gain;
+        g->post = n0 != 0.0f ? n0 : 1.0f;
+    } else {
+        g->post = 1.0f;
+    }
+    for (int i = 0; i < g->n; i++)
+        g->m[i].pre = g->m[i].t->norm * g->m[i].gain / g->post;
+}
+
+static int group_attach(dvbt2_group *g, dvbt2 *t, int off, float gain, int owned)
+{
+    const t2p *p = &t->p;
+    dvbt2_timing_t tm;
+    dvbt2_timing(&t->c, &tm);
+    if (g->n >= MAX_MEMBERS)
+        return DVBT2_GROUP_EFULL;
+    if (g->sym_len)
+        return DVBT2_GROUP_EINVAL;   /* already running */
+    if (g->n && !dvbt2_timing_equal(&tm, &g->timing))
+        return DVBT2_GROUP_ETIMING;
+    int Nt = p->N * g->k, half = (p->cps - 1) / 2;
+    if (off - half <= -Nt / 2 || off + half >= Nt / 2)
+        return DVBT2_GROUP_EBAND;
+    if ((off * 1024) % p->N)
+        return DVBT2_GROUP_EP1;
+    for (int i = 0; i < g->n; i++)
+        if (off + half >= g->m[i].lo && off - half <= g->m[i].hi)
+            return DVBT2_GROUP_EOVERLAP;
+    if (!g->n) {
+        g->timing = tm;
+        g->N = p->N;
+        g->Nt = Nt;
+        g->gi = p->gi * g->k;
+        g->lf = p->lf;
+        size_t len = (size_t)(Nt + g->gi > 2048 * g->k ? Nt + g->gi : 2048 * g->k);
+        g->sym = (float complex *)fftwf_alloc_complex(len);
+        g->p1a = malloc(sizeof(float complex) * 1024 * (size_t)g->k);
+        g->fbuf[0] = fftwf_alloc_complex((size_t)Nt);
+        g->fbuf[1] = fftwf_alloc_complex((size_t)Nt);
+        g->p1buf = fftwf_alloc_complex(1024 * (size_t)g->k);
+        if (!g->sym || !g->p1a || !g->fbuf[0] || !g->fbuf[1] || !g->p1buf)
+            return DVBT2_GROUP_ENOMEM;
+        pthread_mutex_lock(&plan_lock);
+        /* P1 plan first: planned after a MEASURE of the same size, FFTW would reuse that wisdom */
+        g->p1plan = fftwf_plan_dft_1d(1024 * g->k, g->p1buf, g->p1buf, FFTW_BACKWARD, FFTW_ESTIMATE);
+        g->plan = fftwf_plan_dft_1d(Nt, g->fbuf[0], (fftwf_complex *)(g->sym + g->gi), FFTW_BACKWARD,
+                                    FFTW_MEASURE | FFTW_PRESERVE_INPUT);
+        pthread_mutex_unlock(&plan_lock);
+        if (!g->plan || !g->p1plan)
+            return DVBT2_GROUP_ENOMEM;
+        /* planning wrote the arrays; bins outside the members stay zero from now on */
+        memset(g->fbuf[0], 0, sizeof(fftwf_complex) * (size_t)Nt);
+        memset(g->fbuf[1], 0, sizeof(fftwf_complex) * (size_t)Nt);
+        g->l = -1;
+    }
+    struct gmember *m = &g->m[g->n++];
+    m->t = t;
+    m->off = off;
+    m->off1 = off * 1024 / p->N;
+    m->lo = off - half;
+    m->hi = off + half;
+    m->gain = gain;
+    m->owned = owned;
+    group_scales(g);
+    return g->n - 1;
+}
+
+int dvbt2_group_add(dvbt2_group *g, const dvbt2_cfg *c, int offset_bins, float gain, ts_pull_fn pull, void *ctx)
+{
+    dvbt2_timing_t tm;
+    if (dvbt2_timing(c, &tm))
+        return DVBT2_GROUP_EINVAL;
+    if (g->n && !dvbt2_timing_equal(&tm, &g->timing))
+        return DVBT2_GROUP_ETIMING;   /* before the expensive construction */
+    dvbt2 *t = member_new(c, pull, ctx);
+    if (!t)
+        return DVBT2_GROUP_ENOMEM;
+    int r = group_attach(g, t, offset_bins, gain, 1);
+    if (r < 0)
+        member_free(t);
+    return r;
+}
+
+/* exp(j 2 pi num / den), exactly 1 for num = 0 */
+static float complex cis_frac(int64_t num, int64_t den)
+{
+    num %= den;
+    if (num < 0)
+        num += den;
+    if (!num)
+        return 1.0f;
+    double a = 2.0 * M_PI * (double)num / (double)den;
+    return (float)cos(a) + I * (float)sin(a);
+}
+
+/* P1 at k times the rate: the 1K patterns of the members at their offsets, A = IFFT, C and B
+ * from the pattern shifted by one 1K subcarrier (f_SH); each member's phase follows a
+ * continuous oscillator at its offset (the same one as for the data symbols). */
+static void group_p1(dvbt2_group *g, int64_t Tf)
+{
+    int k = g->k, M = 1024 * k;
+    float complex *x = (float complex *)g->p1buf;
+    float complex *o = g->sym;
+    float sc = (float)sqrt(384.0);
+    for (int pass = 0; pass < 2; pass++) {   /* 0: A (unshifted), 1: C/B (shifted) */
+        memset(x, 0, sizeof(float complex) * (size_t)M);
+        for (int i = 0; i < g->n; i++) {
+            const struct gmember *m = &g->m[i];
+            int64_t start = pass ? Tf : Tf + 542 * k;     /* where the segment's index 0 lies */
+            float complex ph = cis_frac((int64_t)m->off1 * (start % M), M);
+            int unit = ph == 1.0f && m->gain == 1.0f;
+            float complex gp = m->gain * ph;
+            for (int j = 0; j < 1024; j++) {
+                float v = m->t->p1pat[j];
+                if (v == 0.0f)
+                    continue;
+                int bin = j - 512 + m->off1 + pass;
+                bin %= M;
+                if (bin < 0)
+                    bin += M;
+                x[bin] = unit ? v : v * gp;
+            }
+        }
+        fftwf_execute(g->p1plan);
+        if (pass == 0) {
+            for (int i = 0; i < M; i++)
+                g->p1a[i] = x[i] / sc;
+        } else {
+            for (int i = 0; i < 542 * k; i++)
+                o[i] = x[i] / sc;
+            memcpy(o + 542 * k, g->p1a, sizeof(float complex) * (size_t)M);
+            for (int i = 542 * k; i < M; i++)
+                o[i + M] = x[i] / sc;
+        }
+    }
+    g->sym_len = 2048 * k;
+    g->sym_pos = 0;
+}
+
+/* Work of worker w (or of the caller without workers) for step job_l: the members' FEC
+ * shares, then (for a symbol) their carriers in spectrum job_bi. */
+static void group_job(dvbt2_group *g, int w)
+{
+    int Nt = g->Nt, step = g->nthreads ? g->nthreads : 1;
+    float complex *b = (float complex *)g->fbuf[g->job_bi];
+    for (int i = w; i < g->n; i += step) {
+        const struct gmember *m = &g->m[i];
+        member_step(m->t);
+        if (g->job_l >= 0) {
+            /* this member's bins (the IFFT does not modify its input; gaps stay zero) */
+            int lo = m->lo, hi = m->hi;
+            if (hi < 0) {
+                memset(b + Nt + lo, 0, sizeof(float complex) * (size_t)(hi - lo + 1));
+            } else if (lo < 0) {
+                memset(b + Nt + lo, 0, sizeof(float complex) * (size_t)(-lo));
+                memset(b, 0, sizeof(float complex) * (size_t)(hi + 1));
+            } else {
+                memset(b + lo, 0, sizeof(float complex) * (size_t)(hi - lo + 1));
+            }
+            float complex ph = cis_frac((int64_t)m->off * (g->job_win % Nt), Nt);
+            int unit = ph == 1.0f && m->pre == 1.0f;
+            member_place(m->t, g->job_l, b, Nt, m->off, m->pre * ph, unit);
+        }
+        m->t->l++;
+    }
+}
+
+static void job_start(dvbt2_group *g, int l, int64_t T, int bi)
+{
+    g->job_l = l;
+    g->job_win = T + g->gi;   /* start of the FFT window */
+    g->job_bi = bi;
+    if (!g->nthreads) {
+        group_job(g, 0);
+        return;
+    }
+    pthread_mutex_lock(&g->lock);
+    g->pending = g->nthreads;
+    g->gen++;
+    pthread_cond_broadcast(&g->go);
+    pthread_mutex_unlock(&g->lock);
+    g->inflight = 1;
+}
+
+int dvbt2_group_samples(dvbt2_group *g, float complex *out, int max)
+{
+    if (!g->n)
+        return 0;
+    if (g->sym_pos >= g->sym_len) {
+        int l = g->l, bi = g->bi;
+        int64_t T = g->T;
+        if (!g->sym_len && !g->inflight)   /* first step */
+            job_start(g, l, T, bi);
+        job_wait(g);
+        /* the next step is prepared (by the workers, meanwhile) in the other spectrum */
+        int len = l < 0 ? 2048 * g->k : g->Nt + g->gi;
+        int l2 = l + 1 == g->lf ? -1 : l + 1;
+        g->l = l2;
+        g->T = T + len;
+        g->bi = !bi;
+        if (g->nthreads)
+            job_start(g, l2, g->T, g->bi);
+        if (l < 0) {
+            group_p1(g, T);
+        } else {
+            float complex *o = g->sym;
+            int Nt = g->Nt, gi = g->gi;
+            fftwf_execute_dft(g->plan, g->fbuf[bi], (fftwf_complex *)(o + gi));
+            if (g->post != 1.0f)
+                for (int i = 0; i < Nt; i++)
+                    o[gi + i] *= g->post;
+            memcpy(o, o + Nt, sizeof(float complex) * (size_t)gi);
+            g->sym_len = Nt + gi;
+            g->sym_pos = 0;
+        }
+        if (!g->nthreads)
+            job_start(g, l2, g->T, g->bi);   /* synchronous: prepare the next step now */
+    }
+    int n = g->sym_len - g->sym_pos;
+    if (n > max)
+        n = max;
+    memcpy(out, g->sym + g->sym_pos, sizeof(float complex) * (size_t)n);
+    g->sym_pos += n;
+    return n;
+}
+
+dvbt2 *dvbt2_new(const dvbt2_cfg *c, ts_pull_fn pull, void *ctx)
+{
+    dvbt2 *t = member_new(c, pull, ctx);
+    if (!t)
+        return NULL;
+    t->own = dvbt2_group_new(1, 0);
+    if (!t->own || group_attach(t->own, t, 0, 1.0f, 0) < 0) {
+        dvbt2_free(t);
+        return NULL;
+    }
+    return t;
 }
 
 int dvbt2_samples(dvbt2 *t, float complex *out, int max)
 {
-    const t2p *p = &t->p;
-    if (!t->started) {
-        finish_frame(t);   /* encode the whole first frame */
-        t->started = 1;
-        t->l = -1;
-        t->sym_len = t->sym_pos = 0;
-    }
-    if (t->sym_pos >= t->sym_len) {
-        if (t->l == p->lf) {        /* end of frame */
-            finish_frame(t);
-            t->l = -1;
-        }
-        /* spread the FEC work of the next frame over the LF + 1 steps of this one */
-        int step = t->l + 1;
-        int target = (int)(((long)p->nfec * (step + 1) + p->lf) / (p->lf + 1));
-        if (target > p->nfec)
-            target = p->nfec;
-        while (t->enc_block < target)
-            encode_block(t);
-        if (t->l < 0) {
-            memcpy(t->sym, t->p1, sizeof t->p1);
-            t->sym_len = 2048;
-            t->sym_pos = 0;
-        } else {
-            make_symbol(t, t->l);
-        }
-        t->l++;
-    }
-    int n = t->sym_len - t->sym_pos;
-    if (n > max)
-        n = max;
-    memcpy(out, t->sym + t->sym_pos, sizeof(float complex) * (size_t)n);
-    t->sym_pos += n;
-    return n;
+    return dvbt2_group_samples(t->own, out, max);
 }

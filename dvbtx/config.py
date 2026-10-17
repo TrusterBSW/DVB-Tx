@@ -335,6 +335,26 @@ def _fft_rate_p(rates, lo, hi, primes):
     return min(cands)
 
 
+def _t2_rate(sc, lo, hi):
+    """Whole multiple of the DVB-T2 elementary rate (the engine then synthesises the T2 carriers directly,
+    one IFFT per OFDM symbol, instead of resampling them), if the other carriers are simple fractions of it"""
+    t2 = {_sc_rate(c) for c in sc if c.standard == "dvbt2"}
+    if len(t2) != 1:
+        return None
+    f0 = t2.pop()
+    for k in range(max(1, math.ceil(lo / f0 - 1e-9)), 65):
+        r = k * f0
+        if r > hi * 1.0001:
+            return None
+        if not any(abs(r * d - round(r * d)) < 1e-6 for d in range(1, 32)):
+            continue
+        fr = [_simple_fraction(_sc_rate(c) / r) for c in sc if c.standard != "dvbt2"]
+        if all(f is not None and _is_smooth(f.numerator, SC_PRIMES) and _is_smooth(f.denominator, SC_PRIMES)
+               for f in fr):
+            return r
+    return None
+
+
 def _smooth_size(n, multiple):
     """smallest m >= n, multiple of `multiple`, whose other factors are 2, 3, 5, 7 (fast FFT)."""
     m = max(multiple, int(math.ceil(n / multiple)) * multiple)
@@ -617,7 +637,16 @@ def _plan_radio(r):
             target = c.frequency - lo             # keep the LO leakage out of the channel
         else:
             target = (lo_edge + hi_edge) / 2
-        r.center = f0 + round((target - f0) / spacing) * spacing if ofdm else round(target / 1000) * 1000
+        t2 = [c for c in cars if c.standard == "dvbt2" and c.synth != "fir"]
+        if ofdm:
+            r.center = f0 + round((target - f0) / spacing) * spacing
+        elif t2:
+            # T2 offsets on the P1 subcarrier grid (rate / 1024), in whole Hz: direct synthesis at k x the rate
+            g = _sc_rate(t2[0]) / 1024
+            g *= next((m for m in range(1, 65) if abs(m * g - round(m * g)) < 1e-6), 1)
+            r.center = t2[0].frequency + round((target - t2[0].frequency) / g) * g
+        else:
+            r.center = round(target / 1000) * 1000
     elif ofdm:
         d = (f0 - r.center) / spacing
         if abs(d - round(d)) > 1e-3:
@@ -650,7 +679,8 @@ def _plan_radio(r):
         r.rate = max(lo_rate, math.ceil(need / 100e3) * 100e3)
         sc = [c for c in cars if c.standard in ("dvbc", "dvbs", "dvbs2", "dvbt2") and c.synth != "fir"]
         if sc:
-            fr = _fft_rate(sorted({_sc_rate(c) for c in sc}), max(need, lo_rate), hi_rate)
+            fr = (_t2_rate(sc, max(need, lo_rate), hi_rate)
+                  or _fft_rate(sorted({_sc_rate(c) for c in sc}), max(need, lo_rate), hi_rate))
             if fr:
                 r.rate = fr
     if r.rate < need:

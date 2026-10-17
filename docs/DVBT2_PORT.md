@@ -59,6 +59,70 @@ combinations (8 291 valid).
   `DVBTX_TS_PULL_FN`; an identical typedef may be repeated in C11).
 - Build: add `src/dvbt2.c` (and `src/dvb_fec.c`, already there) to `SRC` in `engine/Makefile`.
 
+## Radio-rate synthesis: dvbt2_group
+
+`dvbt2_group_new(k, threads)` / `dvbt2_group_add()` / `dvbt2_group_samples()` synthesise one or
+more frame-synchronous DVB-T2 carriers directly at k times the elementary rate (integer k), all
+sharing one IFFT of size k x fft per symbol (guard interval k x GI), like `ofdm.c` for DVB-T.
+`dvbt2_samples()` is such a group with k = 1 and one member at offset 0.
+
+- Members must have equal frame timing (`dvbt2_timing()` / `dvbt2_timing_equal()`: sample rate,
+  FFT, guard interval, L_data, hence N_P2 and frame length); constellation, code rate, rotation,
+  FEC blocks, pilot pattern, carrier mode, L1 constellation and ids may differ.
+- `offset_bins` is in data subcarrier spacings (radio_rate / (k fft)); it must be a multiple of
+  fft / 1024 so that the P1 (1K pattern, its own spacing) also sits on an integer bin. Members
+  may not overlap and must fit in +-k fft / 2.
+- Each member's carriers follow the phase of a continuous oscillator at its offset (cells of
+  the symbol whose FFT window starts at radio sample w multiplied by exp(j 2 pi off w / (k fft)),
+  P1 segments likewise), so the output equals, at the elementary sampling instants, the sum of
+  the members' `dvbt2_samples()` outputs each multiplied by exp(j 2 pi f_off t).
+- P1: per member the 1K pattern at its offset in an IFFT of 1024 k; A = that IFFT, C and B from
+  the pattern shifted by one 1K subcarrier (f_SH), segment lengths x k (the continuous-time
+  definition of clause 9.8, sampled at the radio rate).
+- Scale: member gain multiplies its cells; gain 1 gives the mean power of `dvbt2_samples()`.
+- `threads > 0`: worker threads run the members' FEC shares and carrier placement for the next
+  step while the caller's thread transforms the current one; pull callbacks then run on those
+  workers. FFTW's own threads were tried and dropped (multi-threaded FFTW_MEASURE planning of
+  196 608 points took 508 s and the transform was slower).
+
+Validation (10.5.1.3, 32K ext PP7 256QAM 5/6 GI 1/128 unless stated, 2 frames):
+
+| Test | Result |
+|---|---|
+| k = 1, one member, offset 0 vs `dvbt2_samples()` | bit-identical (and gr-dtv comparisons still identical) |
+| k = 2, +-14336 bins (+-4 MHz), group[k n] x exp(-j2pi off n/fft) vs native | 134.9 dB |
+| k = 6, -14336 bins, same | 134.1 dB |
+| k = 6, 8K PP7 16QAM GI 1/32, +3584 bins (4 MHz) | 136.5 dB |
+| receiver view: DFT of each symbol window / P1 A segment at the radio rate vs native | 136-138 dB (symbols), 138-139 dB (P1) |
+| ideal interpolation of the native signal (zero-padded FFT), full band / native band | 44.2 / 46.1 dB (symbols), 29.5 / 32.1 dB (P1) |
+| 2 members k = 6 (256QAM 5/6 and 16QAM 1/2 short, gains 1 and 0.5) vs sum of each alone | 134.0 dB, power 1.255 (1.25 expected) |
+| 6 members k = 6, mixed QPSK..256QAM, rates, rotation, short frames, normal/extended carriers, gains, 6 workers, vs sum | 133.7 dB, power 5.337 (5.34 expected) |
+
+The ideal-interpolation figures are not a synthesis error: the native-rate samples alias the
+out-of-band sidelobes of the true continuous-time OFDM signal (rectangular symbols and P1
+segments), -48.6 dB for 32K (-44 dB for 8K) and much more for P1, which has only ~129 guard
+subcarriers of its own on each side. A receiver sees the group output exactly (136-139 dB per
+window). Conversely, the group transmits those sidelobes (as `ofdm.c` does for DVB-T): about
+-49 dB of the carrier power outside its native band, i.e. roughly -44 dB relative to the
+nearest carriers of an adjacent 8 MHz member, falling quickly further away.
+
+CPU (Threadripper 2950X, shared with the running transmitter, one 32K ext 256QAM 5/6 carrier
+= defaults: L_data 67, 229 FEC blocks):
+
+| Case | CPU / real time | wall / real time |
+|---|---|---|
+| `dvbt2_samples()`, HEAD version | 0.221-0.232 | same |
+| `dvbt2_samples()`, this version (group k = 1) | 0.215-0.228 | same |
+| 1 carrier, k = 2 (18.29 MS/s) | 0.286-0.289 | same |
+| 6 carriers, k = 6 (54.86 MS/s), no worker | 1.646 | 1.646 (not real time) |
+| 6 carriers, k = 6, 3 workers | 2.45-2.64 | 0.74-0.79 |
+| 6 carriers, k = 6, 6 workers | 3.25-3.31 | 0.85 |
+
+Synthesis at k = 2 adds about 0.07 core to the generation of one carrier. k must be an integer:
+a radio rate of 16.33 MS/s (1.786 x 64/7 MHz) is not possible with a group. With workers the
+total CPU grows (memory traffic of six 26 MB frame buffers in parallel), but the radio-rate
+signal of six carriers is produced in real time with margin.
+
 ## Performance
 
 AMD Threadripper 2950X (one core, -O3 -march=x86-64-v2), steady state after init:
