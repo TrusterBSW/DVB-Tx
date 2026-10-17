@@ -2,6 +2,7 @@
 #include "ofdm.h"
 
 #include <fftw3.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +13,7 @@
 
 struct ofdm_group {
     int nfft, ncp, n;
-    struct { int ncar, bin_off; float gain; } m[MAX_MEMBERS];
+    struct { int ncar, bin_off; float gain; double ph, dph; } m[MAX_MEMBERS];
     fftwf_complex *buf;
     fftwf_plan plan;
 };
@@ -58,6 +59,13 @@ int ofdm_group_add(ofdm_group *g, int ncar, int bin_off, float gain)
     g->m[g->n].ncar = ncar;
     g->m[g->n].bin_off = bin_off;
     g->m[g->n].gain = gain;
+    /* a member off DC follows a continuous oscillator e^{j 2 pi bin_off n / nfft}: each symbol is
+     * nfft + ncp samples long, so its phase advances by bin_off * ncp / nfft cycles per symbol (a
+     * fraction unless the offset is a multiple of nfft / ncp bins). Without it the receiver sees a
+     * phase step between symbols, takes it for a frequency error and degrades the signal (DVB-T
+     * 8k at +3579 bins of 16384, GI 512: C/N 9.6 dB on a link that gives 30 dB) */
+    g->m[g->n].ph = 0;
+    g->m[g->n].dph = fmod((double)bin_off * g->ncp / g->nfft, 1.0);
     return g->n++;
 }
 
@@ -71,7 +79,8 @@ void ofdm_group_synth(ofdm_group *g, const float complex *const *cars, float com
     for (int i = 0; i < g->n; i++) {
         const float complex *c = cars[i];
         int ncar = g->m[i].ncar, half = ncar / 2;
-        float gain = g->m[i].gain;
+        float complex gain = g->m[i].gain * cexpf(2.0f * (float)M_PI * (float)g->m[i].ph * I);
+        g->m[i].ph = fmod(g->m[i].ph + g->m[i].dph, 1.0);
         int start = g->m[i].bin_off - half;            /* bin of carrier 0, may be negative */
         int k = 0;
         for (; k < ncar && start + k < 0; k++)
