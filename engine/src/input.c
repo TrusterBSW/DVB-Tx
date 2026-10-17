@@ -502,6 +502,16 @@ int inputs_start(input **in, int n)
     g_ninputs = n;
     if (n == 0)
         return 0;
+    /* what arrived while the radios were being prepared (FFT plans: seconds) is dropped: read at once,
+     * it would look like a source running ahead of real time */
+    char tmp[2048];
+    for (int i = 0; i < n; i++) {
+        long dropped = 0;
+        while (recv(in[i]->fd, tmp, sizeof tmp, MSG_DONTWAIT) > 0)
+            dropped++;
+        if (dropped)
+            LOGD("input %s: %ld datagrams received before the start dropped", in[i]->name, dropped);
+    }
     return pthread_create(&g_thread, NULL, rx_thread, NULL);
 }
 
