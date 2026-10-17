@@ -22,6 +22,8 @@ struct sdr_dev {
     uint64_t consumed;              /* samples */
     int64_t at_ns;
     uint64_t underruns;
+    uint64_t shortfalls;            /* reported by the firmware: its FIFO ran dry (USB too slow) */
+    int64_t m0_at;                  /* last read of the M0 state; -1: not supported */
 };
 
 static int64_t now_ns(void)
@@ -223,13 +225,32 @@ static int hk_write(sdr_dev *d, const float complex *const *bufs, int n, float s
     return 0;
 }
 
+/* the firmware counts the times its sample FIFO ran dry: gaps on air the host does not see (USB
+ * transfers too late although our ring was full); read at most once a second */
+static void read_m0(sdr_dev *d)
+{
+    int64_t now = now_ns();
+    if (d->m0_at < 0 || now - d->m0_at < 1000000000LL || !d->started)
+        return;
+    d->m0_at = now;
+    hackrf_m0_state st;
+    if (hackrf_get_m0_state(d->dev, &st) != HACKRF_SUCCESS) {
+        d->m0_at = -1;
+        return;
+    }
+    pthread_mutex_lock(&d->lock);
+    d->shortfalls = st.num_shortfalls;
+    pthread_mutex_unlock(&d->lock);
+}
+
 static void hk_stats(sdr_dev *d, sdr_stats *s)
 {
+    read_m0(d);
     pthread_mutex_lock(&d->lock);
     s->samples = d->consumed;
     s->at_ns = d->at_ns;
     s->underruns = d->underruns;
-    s->late = 0;
+    s->late = d->shortfalls;
     s->fill = (double)d->used / (double)d->size;
     pthread_mutex_unlock(&d->lock);
 }

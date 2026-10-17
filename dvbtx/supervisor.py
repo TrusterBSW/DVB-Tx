@@ -590,6 +590,12 @@ class Supervisor:
                 if r["underruns"] > prev:
                     conds[k] = ("critical", f"radio {r['index']}: {r['underruns'] - prev} underruns (CPU or USB too slow)")
                 self.__dict__.setdefault("_underruns", {})[r["index"]] = r["underruns"]
+                # gaps the radio itself reports (HackRF: its FIFO ran dry, USB transfers too late)
+                prev = getattr(self, "_late", {}).get(r["index"], r.get("late", 0))
+                if r.get("late", 0) > prev:
+                    conds[f"late.radio{r['index']}"] = ("critical", f"radio {r['index']}: {r['late'] - prev} gaps on air "
+                                                         "reported by the radio (USB path too slow: hub, dock?)")
+                self.__dict__.setdefault("_late", {})[r["index"]] = r.get("late", 0)
         for p in self.ingest:
             if p.state in ("backoff", "error") and p.restarts >= 2:
                 conds[f"ingest.{p.inp.index}"] = ("warning", f"input {p.inp.name}: {p.state}, {p.restarts} restarts "

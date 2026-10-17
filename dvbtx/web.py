@@ -48,6 +48,7 @@ def metrics(sup):
     for r in st.get("radios", []):
         lb = {"radio": r["index"], "driver": r["driver"]}
         m("radio_underruns_total", r["underruns"], lb)
+        m("radio_device_gaps_total", r.get("late", 0), lb)
         m("radio_buffer_fill", r["fill"], lb)
         m("radio_cpu_percent", r["cpu"], lb)
     for c in st.get("carriers", []):
