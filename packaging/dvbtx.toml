@@ -33,7 +33,9 @@ schedule_cycle_ms = 10000
 
 [web]
 enabled = true
-listen = "127.0.0.1:8080"               # monitoring page; "0.0.0.0:8080" for the LAN (no authentication!)
+listen = "127.0.0.1:8080"               # monitoring page; "0.0.0.0:8080" for the LAN (then set a token)
+token = ""                              # if set, changes (channels, restarts) need "Authorization: Bearer <token>"
+allow_exec_sources = false              # let the web API / dvbtx channel set exec:, pipe:, stdin: sources
 
 [monitoring]
 tsduck = "auto"                         # run "tsp -P analyze" on each multiplex: true, false, auto (if tsp exists)

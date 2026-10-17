@@ -1,11 +1,13 @@
 """Supervisor: SI tables, the C engine, the ingest processes, TSDuck analysers, alerts, history."""
 
 import collections
+import copy
 import datetime as dt
 import hashlib
 import json
 import logging
 import os
+import queue
 import shutil
 import signal
 import socket
@@ -14,6 +16,7 @@ import threading
 import time
 import urllib.request
 
+from . import channels as chmod
 from . import config as cfgmod
 from . import epg as epgmod
 from . import si
@@ -406,6 +409,13 @@ class History:
         return {"t": t[cut:], "series": {k: list(v)[cut:] for k, v in self.series.items()}}
 
 
+class _Call:
+    """a function run by the main loop for another thread (web API)"""
+
+    def __init__(self, fn):
+        self.fn, self.ev, self.result, self.error = fn, threading.Event(), None, None
+
+
 class Supervisor:
     def __init__(self, plan, args=None):
         self.plan = plan
@@ -445,6 +455,13 @@ class Supervisor:
         self._stop = False          # set from signal handlers: a plain flag, no lock (an Event can deadlock)
         self._reload = False
         self.lock = threading.Lock()
+        # channels changed while running
+        self.calls = queue.Queue()
+        self.next_input = max((i.index for i in plan.inputs), default=-1) + 1
+        self.retiring = []          # [IngestProc, input id, deadline]: old sources kept until replaced
+        self.seq = 0
+        self.replies = {}
+        self.reply_cv = threading.Condition()
 
     # ---------------------------------------------------------------- engine
 
@@ -466,6 +483,10 @@ class Supervisor:
                 continue
             if st.get("type") == "stats":
                 self._on_stats(st)
+            elif st.get("type") == "reply":
+                with self.reply_cv:
+                    self.replies[st.get("seq")] = st
+                    self.reply_cv.notify_all()
 
     def _read_engine_err(self, proc):
         for raw in iter(proc.stderr.readline, b""):
@@ -488,18 +509,17 @@ class Supervisor:
             vals[f"c{i}.si"] = round(c["si_rate"])
             vals[f"c{i}.lead"] = c.get("clock_lead_ms")
             for s in c.get("services", []):
-                k = f"s{i}.{s['index']}"
+                k = f"s{i}.{s['sid']}"
                 vals[k + ".rate"] = round(s["rate"])
                 vals[k + ".vmargin"] = s.get("video_margin_min_ms")
                 vals[k + ".amargin"] = s.get("audio_margin_min_ms")
                 vals[k + ".late"] = s.get("late_max_ms")
                 # service type from the streams
-                svc = self.plan.carriers[i].services[s["index"]]
                 vt = s.get("video_type", -1)
                 if s.get("streams"):
                     t = si.service_type_from_streams(vt if vt >= 0 else None, s.get("audio_types") or [])
-                    if self.detected.get(svc.sid) != t:
-                        self.detected[svc.sid] = t
+                    if self.detected.get(s["sid"]) != t:
+                        self.detected[s["sid"]] = t
         for r in st.get("radios", []):
             vals[f"r{r['index']}.cpu"] = r.get("cpu")
         self.history.add(st.get("time", time.time()), vals)
@@ -566,8 +586,11 @@ class Supervisor:
                                                       f"exceeds the channel capacity {c['ts_rate'] / 1e6:.2f} Mbit/s")
                 elif occ >= float(a["overload_percent"]):
                     conds[f"full.{car.index}"] = ("warning", f"{car.name}: multiplex {occ:.1f}% full")
+                by_sid = {x.sid: x for x in car.services}
                 for s in c.get("services", []):
-                    svc = car.services[s["index"]]
+                    svc = by_sid.get(s["sid"])
+                    if svc is None:              # just removed
+                        continue
                     vm = s.get("video_margin_min_ms")
                     if vm is not None and vm < 0:
                         conds[f"margin.{svc.sid}"] = ("critical", f"{svc.name}: frames sent {-vm:.0f} ms after their decoding time")
@@ -630,17 +653,19 @@ class Supervisor:
                 log.error("web page on %s: %s (running without it)", self.cfg["web"]["listen"], e)
         tick = 0
         while not self._stop:
-            time.sleep(1.0)
+            self._run_calls(1.0)
             if self._stop:
                 break
             tick += 1
             if self._reload:
                 self._reload = False
                 self.reload_si()
+                self.channels_reload()
             self.engine_poll()
             for p in self.ingest:
                 p.poll()
             self.restart_stalled()
+            self._retire()
             for an in self.analyzers:
                 an.poll()
             try:
@@ -650,7 +675,7 @@ class Supervisor:
             if tick % 2 == 0:
                 self.check_alerts()
         log.info("stopping")
-        for p in self.ingest:
+        for p in self.ingest + [r[0] for r in self.retiring]:
             p.stop()
         for an in self.analyzers:
             an.stop()
@@ -668,6 +693,294 @@ class Supervisor:
         self.si.next_sched = 0
         self.si.tick(force=True)
 
+    # ---------------------------------------------------------------- channels while running
+
+    def call(self, fn, timeout=120):
+        """runs fn() in the main loop (from a web thread) and returns its result"""
+        c = _Call(fn)
+        self.calls.put(c)
+        if not c.ev.wait(timeout):
+            raise chmod.ChannelError("the transmitter did not answer in time")
+        if c.error:
+            raise c.error
+        return c.result
+
+    def _run_calls(self, seconds):
+        end = time.monotonic() + seconds
+        while not self._stop:
+            left = end - time.monotonic()
+            if left <= 0:
+                return
+            try:
+                c = self.calls.get(timeout=left)
+            except queue.Empty:
+                return
+            try:
+                c.result = c.fn()
+            except chmod.ChannelError as e:
+                c.error = e
+            except Exception as e:                       # noqa: BLE001 - reported to the caller
+                log.exception("channel change failed")
+                c.error = chmod.ChannelError(f"internal error: {e}")
+            c.ev.set()
+
+    def engine_request(self, text, timeout=5):
+        """command to the engine; its answer (dict), or None if the engine is not running"""
+        if not (self.engine and self.engine.poll() is None):
+            return None
+        with self.reply_cv:
+            self.seq += 1
+            seq = self.seq
+        self.engine_cmd(f"seq={seq} {text}")
+        with self.reply_cv:
+            self.reply_cv.wait_for(lambda: seq in self.replies, timeout)
+            return self.replies.pop(seq, {"ok": False, "error": "no answer from the engine"})
+
+    def proc_of(self, index):
+        return next((p for p in self.ingest if p.inp.index == index), None)
+
+    def _new_input_index(self):
+        i = self.next_input
+        self.next_input += 1
+        return i
+
+    def channel_add(self, spec, allow_exec=False):
+        new_cfg, new_plan, sid = chmod.add(self.cfg, self.plan, spec, allow_exec)
+        return dict(self._apply(new_cfg, new_plan), sid=sid)
+
+    def channel_remove(self, ref):
+        s = chmod.find(self.plan, ref)
+        new_cfg, new_plan, sid = chmod.remove(self.cfg, self.plan, ref)
+        return dict(self._apply(new_cfg, new_plan, removed=(s.carrier.index, s.local_index)), sid=sid)
+
+    def channel_update(self, ref, changes, allow_exec=False):
+        new_cfg, new_plan, sid = chmod.update(self.cfg, self.plan, ref, changes, allow_exec)
+        return dict(self._apply(new_cfg, new_plan), sid=sid)
+
+    def channels(self):
+        live = {}
+        for c in (self.stats or {}).get("carriers", []):
+            for x in c.get("services", []):
+                live[x["sid"]] = x.get("source")
+        return [dict(chmod.describe(s), on=live.get(s.sid)) for s in self.plan.services]
+
+    def channels_reload(self):
+        """SIGHUP: the channels of the configuration file applied (the other settings need a restart)"""
+        if not self.plan.config_path or self.args is None:
+            return
+        try:
+            from .cli import load_cfg
+            new_cfg = load_cfg(self.args)
+            new_plan = cfgmod.build(new_cfg)
+        except (cfgmod.ConfigError, OSError) as e:
+            log.error("configuration not reloaded: %s", e)
+            return
+
+        def rest(c):
+            d = copy.deepcopy(c)
+            for car in d.get("carrier", []):
+                car.pop("service", None)
+            d.pop("defaults", None)
+            return d
+        old_r, new_r = rest(self.cfg), rest(new_cfg)
+        if old_r.get("carrier") != new_r.get("carrier") or old_r.get("radio") != new_r.get("radio"):
+            log.error("configuration reload: the radios or multiplexes changed: restart dvbtx to apply; "
+                      "channels left as they are")
+            return
+        if old_r != new_r:
+            log.warning("configuration reload: settings other than the channels changed: restart dvbtx to apply them")
+        try:
+            r = self._apply(new_cfg, new_plan, save=False)
+            log.info("configuration reload: %s", "; ".join(r["changes"]) or "no channel change")
+        except chmod.ChannelError as e:
+            log.error("configuration reload: %s", e)
+
+    def _apply(self, new_cfg, new_plan, removed=None, save=True):
+        """Makes the running transmitter match new_plan (same radios and multiplexes, other channels):
+        only the channels that changed are touched. Returns {"changes": [...], "saved": bool, ...}."""
+        plan = self.plan
+        old = {s.sid: s for s in plan.services}
+        new = {s.sid: s for s in new_plan.services}
+        base = int(self.cfg["ingest"]["base_port"])
+        skip = chmod.SI_KEYS | chmod.ENGINE_KEYS | {"source", "backup"}
+
+        def eng_key(s):
+            return (s.carrier.index, s.pid_base, tuple(s.opts.get(k) for k in sorted(chmod.ENGINE_KEYS - {"sid", "pid_base"})))
+
+        def ing_key(s):
+            return (s.source, json.dumps({k: v for k, v in s.opts.items() if k not in skip}, sort_keys=True, default=str))
+
+        gone = [s for sid, s in old.items() if sid not in new or eng_key(s) != eng_key(new[sid])]
+        came = [n for sid, n in new.items() if sid not in old or eng_key(old[sid]) != eng_key(n)]
+        kept = [(old[sid], n) for sid, n in new.items() if sid in old and eng_key(old[sid]) == eng_key(n)]
+        backups = {i.source: i for i in plan.inputs if i.role == "backup"}
+        added_inputs, swaps, backup_set, renamed, changes, detail = [], [], [], [], [], []
+
+        def change(what, name, before=None, after=None, text=""):
+            changes.append(text)
+            detail.append({"what": what, "name": name, "from": before, "to": after})
+
+        def backup_of(n):
+            if not n.backup:
+                return None
+            if n.backup not in backups:
+                backups[n.backup] = cfgmod.backup_input(self._new_input_index(), n, base)
+                added_inputs.append(backups[n.backup])
+            return backups[n.backup]
+
+        def primary_of(n):
+            inp = cfgmod.primary_input(self._new_input_index(), n, base)
+            if inp.kind == "direct" and any(i.kind == "direct" and i.addr == inp.addr for i in plan.inputs):
+                raise chmod.ChannelError(f"{inp.addr} is already received for another channel")
+            added_inputs.append(inp)
+            return inp
+
+        for n in came:
+            primary_of(n)
+            n.backup_input = backup_of(n)
+            change("added" if n.sid not in old else "recreated", n.name,
+                   text=f"{n.name} added" if n.sid not in old else f"{n.name} re-created")
+        for o, n in kept:
+            if ing_key(o) != ing_key(n):
+                if o.input.kind == "direct" and n.source == o.source:
+                    n.input = o.input                      # same address: options apply at the next start
+                else:
+                    primary_of(n)
+                    swaps.append((o, n))
+                    change("source", n.name, o.source, n.source, f"{n.name}: new source {n.source}")
+            else:
+                n.input = o.input
+            n.input.service, n.input.options, n.input.name = n, n.opts, n.name
+            if n.backup != o.backup:
+                n.backup_input = backup_of(n)
+                backup_set.append(n)
+                change("backup", n.name, o.backup, n.backup, f"{n.name}: backup {n.backup or 'none'}")
+            else:
+                n.backup_input = o.backup_input
+            if n.name != o.name:
+                renamed.append(n)
+                change("name", n.name, o.name, n.name, f"{o.name} renamed {n.name}")
+            if n.lcn != o.lcn:
+                change("number", n.name, o.lcn, n.lcn, f"{n.name}: number {o.lcn} -> {n.lcn}")
+            if (n.provider, n.visible, n.type, n.epg_id) != (o.provider, o.visible, o.type, o.epg_id):
+                change("si", n.name, text=f"{n.name}: service information")
+        for s in gone:
+            if s.sid not in new:
+                change("removed", s.name, text=f"{s.name} removed")
+
+        # 1. new inputs first: if the engine refuses one, nothing has changed yet
+        running = self.engine is not None and self.engine.poll() is None
+        done = []
+        for inp in added_inputs:
+            o = inp.options
+            r = self.engine_request(f"input add id={inp.index} addr={inp.addr} program={int(o.get('program', 0))} "
+                                    f"buffer_ms={int(o['buffer_ms'])} ring_pkts={int(o['ring_pkts'])} "
+                                    f"name={inp.name[:60]}") if running else {"ok": True}
+            if not r["ok"]:
+                for d in done:
+                    self.engine_request(f"input del id={d.index}")
+                raise chmod.ChannelError(f"input {inp.name}: {r.get('error')}")
+            done.append(inp)
+
+        # 2. the engine's services
+        bad = []
+
+        def eng(cmd):
+            r = self.engine_request(cmd) if running else {"ok": True}
+            if not r["ok"]:
+                bad.append(f"{cmd.split(' name=')[0]}: {r.get('error')}")
+
+        for s in gone:
+            eng(f"service del carrier={s.carrier.index} sid={s.sid}")
+        for n in came:
+            o = n.opts
+            eng(f"service add carrier={n.carrier.index} sid={n.sid} pid_base={n.pid_base} primary={n.input.index} "
+                f"backup={n.backup_input.index if n.backup_input else -1} "
+                f"switch_timeout_ms={int(o['switch_timeout_ms'])} return_ms={int(o['return_ms'])} "
+                f"max_late_ms={int(o['max_late_ms'])} early_ms={int(o['early_ms'])} pcr_max_ms={int(o['pcr_max_ms'])} "
+                f"pmt_period_ms={int(o['pmt_period_ms'])} priority={int(o.get('priority', 5))} name={n.name}")
+        for o, n in swaps:
+            eng(f"service set carrier={n.carrier.index} sid={n.sid} primary={n.input.index}")
+        for n in backup_set:
+            eng(f"service set carrier={n.carrier.index} sid={n.sid} backup={n.backup_input.index if n.backup_input else -1}")
+        for n in renamed:
+            eng(f"service set carrier={n.carrier.index} sid={n.sid} name={n.name}")
+
+        # 3. inputs nobody uses any more: the engine frees them once released (a replaced source plays
+        # until its successor delivers: its ffmpeg is stopped when the engine has let it go)
+        used = {n.input.index for n in new_plan.services} | {n.backup_input.index for n in new_plan.services
+                                                            if n.backup_input}
+        swapped = {o.input.index for o, _ in swaps}
+        for inp in plan.inputs:
+            if inp.index in used:
+                continue
+            if running:
+                eng(f"input del id={inp.index}")
+            p = self.proc_of(inp.index)
+            if p:
+                self.ingest.remove(p)
+                if inp.index in swapped:
+                    self.retiring.append([p, inp.index, time.monotonic() + 30])
+                else:
+                    p.stop()
+        for inp in added_inputs:
+            self.ingest.append(IngestProc(inp, plan))         # started by the main loop
+
+        # 4. the plan now describes the new channels (the same radio and multiplex objects)
+        for car in plan.carriers:
+            car.services = [n for n in new_plan.services if n.carrier.index == car.index]
+            for n in car.services:
+                n.carrier = car
+        plan.services = list(new_plan.services)
+        plan.inputs = sorted([i for i in plan.inputs if i.index in used] + added_inputs, key=lambda i: i.index)
+        old_cfg = self.cfg
+        plan.cfg = self.cfg = new_cfg
+        if self.store:
+            self.store.services = plan.services
+            try:
+                self.store.refresh(remap=True)
+            except Exception as e:                          # noqa: BLE001 - a broken EPG must not stop the TV
+                log.warning("EPG: %s", e)
+        now = dt.datetime.now(UTC)
+        self.si.write_static()
+        self.si.write_pf(now)
+        if self.cfg["epg"].get("schedule", True):
+            self.si.write_schedule(now)
+        for c in changes:
+            log.info("channels: %s", c)
+        if bad:
+            # the engine and the plan disagree: restarted from the plan (every channel cut a few seconds)
+            log.error("engine refused a change (%s): restarting it", "; ".join(bad))
+            if self.engine and self.engine.poll() is None:
+                self.engine.kill()
+
+        # 5. the configuration file
+        res = {"changes": changes, "detail": detail, "saved": False, "applied": running}
+        if not save:
+            return res
+        if not plan.config_path:
+            res["warning"] = "not saved: no configuration file, or channels set on the command line"
+            return res
+        try:
+            chmod.persist(plan.config_path, old_cfg, new_cfg, removed)
+            res["saved"] = True
+        except (chmod.ChannelError, OSError) as e:
+            res["warning"] = f"not saved in {plan.config_path}: {e}"
+            log.warning("channels: %s", res["warning"])
+        return res
+
+    def _retire(self):
+        """old sources of channels whose source changed: stopped once the engine has released them"""
+        if not self.retiring:
+            return
+        live = {i["index"] for i in (self.stats or {}).get("inputs", [])} if time.time() - self.stats_at < 5 else None
+        now = time.monotonic()
+        for r in list(self.retiring):
+            p, idx, deadline = r
+            if (live is not None and idx not in live) or now > deadline:
+                p.stop()
+                self.retiring.remove(r)
+
     def status(self):
         """everything the web page shows"""
         with self.lock:
@@ -681,7 +994,8 @@ class Supervisor:
                "alerts": list(self.alerts.active.values()), "alert_history": list(self.alerts.history)[:50],
                "network": {k: plan.cfg["network"][k] for k in ("name", "network_id", "onid", "country", "provider")},
                "thresholds": {"margin_min_ms": self.cfg["alerts"]["margin_min_ms"]},
-               "si": dict(self.si.stats), "epg_errors": self.store.errors[-5:] if self.store else []}
+               "si": dict(self.si.stats), "epg_errors": self.store.errors[-5:] if self.store else [],
+               "config_path": plan.config_path}
         rst = {r["index"]: r for r in (st or {}).get("radios", [])}
         for r in plan.radios:
             if r.carriers:
@@ -694,8 +1008,9 @@ class Supervisor:
         for c in plan.carriers:
             live = cst.get(c.index)
             svcs = []
+            lsv = {x["sid"]: x for x in (live or {}).get("services", [])}
             for s in c.services:
-                ls = live["services"][s.local_index] if live and s.local_index < len(live.get("services", [])) else None
+                ls = lsv.get(s.sid)
                 evs = self.store.events(s.sid) if self.store else []
                 pres, fol, _ = epgmod.present_following(evs, dt.datetime.now(UTC))
                 svcs.append({"name": s.name, "sid": s.sid, "lcn": s.lcn, "source": s.source, "backup": s.backup,

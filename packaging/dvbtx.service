@@ -7,7 +7,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/dvbtx run --config /etc/dvbtx/dvbtx.toml
-# reload = re-read the EPG folder and rebuild the SI tables (a configuration change needs a restart)
+# reload = re-read the EPG folder and the channels of the configuration file (applied channel by channel,
+# the others untouched); a change of the radios or multiplexes needs a restart
 ExecReload=/bin/kill -HUP $MAINPID
 # UHD reads ~/.config/uhd.conf (FPGA image of a B210 clone, ...) and needs $HOME
 Environment=HOME=/root PYTHONUNBUFFERED=1

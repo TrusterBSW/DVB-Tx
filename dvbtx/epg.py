@@ -237,11 +237,12 @@ class EpgStore:
                     self._url_cache[u] = (now, self._url_cache[u][1])
         return changed
 
-    def refresh(self, force=False):
-        """Reloads if something changed; returns True if the events changed."""
+    def refresh(self, force=False, remap=False):
+        """Reloads if something changed; returns True if the events changed. remap: the channels changed,
+        events matched again to them (URLs not fetched again)."""
         snap = self._snapshot()
-        url_changed = self._fetch_urls(force)
-        if not force and not url_changed and snap == self._mtimes:
+        url_changed = False if remap else self._fetch_urls(force)
+        if not force and not remap and not url_changed and snap == self._mtimes:
             return False
         self._mtimes = snap
         self.errors = []

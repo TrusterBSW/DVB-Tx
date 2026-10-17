@@ -55,6 +55,21 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11.5px; backgroun
 details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .epg { font-size: 12px; color: var(--muted); max-width: 260px; }
 .err { color: var(--crit); }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); padding: 18px 20px;
+  width: min(560px, calc(100vw - 32px)); box-shadow: 0 10px 40px rgb(0 0 0 / .25); }
+dialog::backdrop { background: rgb(0 0 0 / .35); }
+dialog h3 { margin: 0 0 12px; font-size: 16px; }
+dialog label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+dialog input[type=text], dialog input[type=number], dialog select { width: 100%; font: inherit; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+dialog .hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+button.primary { background: var(--info); border-color: var(--info); color: #fff; }
+button.danger { color: var(--crit); }
+#toast { position: fixed; right: 16px; bottom: 16px; max-width: min(520px, calc(100vw - 32px)); z-index: 5; }
+#toast > div { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 8px; padding: 10px 12px;
+  margin-top: 8px; box-shadow: 0 4px 18px rgb(0 0 0 / .15); font-size: 13px; }
+#toast > div.bad { border-left-color: var(--crit); }
 @media (max-width: 700px) { main { padding: 12px; } header { padding: 10px 12px; } .hide-sm { display: none; } }
 </style>
 </head>
@@ -83,6 +98,22 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
     </div></div></section>
   <section><h2>Historique des alertes</h2><div class="card scroll"><table id="ahist"></table></div></section>
 </main>
+<dialog id="chdlg">
+  <form method="dialog" onsubmit="return chSubmit(event)">
+    <h3 id="ch_title">Chaîne</h3>
+    <div id="ch_carrier_row"><label for="ch_carrier">Multiplex</label><select id="ch_carrier"></select></div>
+    <label for="ch_name">Nom</label><input id="ch_name" type="text" maxlength="60" required>
+    <label for="ch_lcn">Numéro (LCN)</label><input id="ch_lcn" type="number" min="1" max="1023" placeholder="le premier libre">
+    <div id="ch_swap_row" class="hint"><label style="display:inline;color:inherit"><input id="ch_swap" type="checkbox"> si le numéro est pris, échanger avec cette chaîne</label></div>
+    <label for="ch_source">Source</label><input id="ch_source" type="text" required placeholder="fichier, URL, ytdlp:…, twitch://…, udp://…">
+    <div class="hint">Changer de source ne coupe pas la chaîne : l'ancienne joue jusqu'à ce que la nouvelle arrive.</div>
+    <label for="ch_backup">Vidéo de secours</label><input id="ch_backup" type="text" placeholder="vide : aucune">
+    <div class="hint" id="ch_saved"></div>
+    <div class="err" id="ch_err"></div>
+    <div class="actions"><button type="button" onclick="chdlg.close()">Annuler</button><button class="primary" id="ch_ok">Enregistrer</button></div>
+  </form>
+</dialog>
+<div id="toast"></div>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
@@ -144,7 +175,9 @@ function marginPill(v) {
   return `<span class="pill ${cls}">${ms(v)} ms</span>`;
 }
 
+let last = null;
 function render(s) {
+  last = s;
   if (s.thresholds) marginMin = s.thresholds.margin_min_ms;
   $("#title").textContent = s.network.name || "dvbtx";
   document.title = (s.network.name || "dvbtx") + " – dvbtx";
@@ -197,7 +230,7 @@ function render(s) {
       const lv = sv.live || {}, inp = sv.input || {};
       const src = lv.source || "none";
       const srcCls = src === "primary" ? "ok" : src === "backup" ? "warning" : "critical";
-      const k = `s${c.index}.${i}`;
+      const k = `s${c.index}.${sv.sid}`;
       return `<tr>
         <td class="num">${sv.lcn}</td>
         <td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${COLORS[i % COLORS.length]};margin-right:6px"></i><b>${esc(sv.name)}</b><div class="muted hide-sm" style="font-size:11px">${hex(sv.sid)} · type ${hex(sv.type, 2)}</div></td>
@@ -210,6 +243,7 @@ function render(s) {
         <td class="num">${lv.late_max_ms != null && lv.late_max_ms < 0 ? `<span class="muted">${ms(-lv.late_max_ms)} d'avance</span>` : ms(lv.late_max_ms)}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
         <td class="num hide-sm">${inp.cc_errors ?? "–"}</td>
         <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
+        <td style="white-space:nowrap"><button onclick="chEdit(${sv.sid})">Modifier</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
       </tr>`;
     }).join("");
     return `<div class="card">
@@ -227,10 +261,11 @@ function render(s) {
         <span>débit ${mbps(ts.bitrate)} Mbit/s</span><span>erreurs transport ${ts.transport_errors ?? 0}</span>
         <span>discontinuités ${ts.pids.reduce((a, p) => a + (p.discontinuities || 0), 0)}</span><span class="muted">il y a ${ts.age_s} s</span>
         <a href="/api/analysis/${c.index}" target="_blank">rapport complet</a></div>` : ""}
-      <div class="scroll" style="margin-top:10px"><table>
+      <div class="row" style="margin-top:10px"><span style="flex:1"></span><button onclick="chAdd(${c.index})">+ Ajouter une chaîne</button></div>
+      <div class="scroll" style="margin-top:6px"><table>
         <tr><th class="num">LCN</th><th>Chaîne</th><th>Source</th><th class="num">Entrée Mbit/s</th><th class="num">Sortie Mbit/s</th>
         <th class="num" title="Temps entre l'émission d'une image et le moment où le récepteur doit la décoder (minimum sur 1 s)">Marge vidéo</th><th class="hide-sm">10 min</th>
-        <th class="num">Marge audio</th><th class="num" title="Retard maximal d'envoi par rapport à l'instant idéal">Retard ms</th><th class="num hide-sm">CC entrée</th><th class="hide-sm">En cours</th></tr>
+        <th class="num">Marge audio</th><th class="num" title="Retard maximal d'envoi par rapport à l'instant idéal">Retard ms</th><th class="num hide-sm">CC entrée</th><th class="hide-sm">En cours</th><th></th></tr>
         ${rows}</table></div>
     </div>`;
   }).join("");
@@ -291,8 +326,98 @@ async function calc() {
   $("#k_per").textContent = r.error ? r.error : `soit ${(r.per_service / 1e6).toFixed(2)} Mbit/s par chaîne (3 % gardés pour les tables)`;
 }
 calcForm();
-async function restartInput(i) { await fetch(`/api/input/${i}/restart`, { method: "POST" }); refresh(); }
-async function reloadSi() { await fetch("/api/reload", { method: "POST" }); refresh(); }
+// ---- changes: same-origin JSON requests, with the token of web.token if the transmitter has one
+function token() { try { return localStorage.getItem("dvbtx_token") || ""; } catch (e) { return ""; } }
+async function api(method, path, body) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const h = {};
+    if (body !== undefined) h["Content-Type"] = "application/json";
+    if (token()) h["Authorization"] = "Bearer " + token();
+    const r = await fetch(path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401 && attempt === 0) {
+      const t = prompt("Jeton de l'émetteur (web.token) :");
+      if (!t) return { ok: false, error: "jeton requis" };
+      try { localStorage.setItem("dvbtx_token", t); } catch (e) { /* not kept */ }
+      continue;
+    }
+    return r.ok ? j : { ok: false, error: j.error || `erreur ${r.status}` };
+  }
+}
+function toast(html, bad) {
+  const d = document.createElement("div");
+  if (bad) d.className = "bad";
+  d.innerHTML = html;
+  $("#toast").appendChild(d);
+  setTimeout(() => d.remove(), bad ? 12000 : 6000);
+}
+function report(r) {
+  if (!r.ok) { toast(`<b>Refusé</b> · ${esc(r.error)}`, true); return false; }
+  const W = { added: (d) => `${d.name} ajoutée`, recreated: (d) => `${d.name} recréée`, removed: (d) => `${d.name} supprimée`,
+    name: (d) => `Nouveau nom : ${d.from} → ${d.to}`, number: (d) => `${d.name} : numéro ${d.from} → ${d.to}`,
+    source: (d) => `${d.name} : nouvelle source ${d.to}`, backup: (d) => `${d.name} : secours ${d.to || "aucun"}`,
+    si: (d) => `${d.name} : informations de service` };
+  const ch = (r.detail || []).map((d) => esc((W[d.what] || ((x) => x.name))(d))).join("<br>") || "aucun changement";
+  toast(`${ch}${r.saved ? '<div class="muted">enregistré dans la configuration</div>' : ""}${r.warning ? `<div class="err">${esc(r.warning)}</div>` : ""}`);
+  return true;
+}
+const chdlg = $("#chdlg");
+let chMode = null;
+function svcBySid(sid) {
+  for (const c of (last || {}).carriers || []) for (const sv of c.services) if (sv.sid === sid) return [c, sv];
+  return [null, null];
+}
+function chOpen(mode, c, sv) {
+  chMode = { mode, sid: sv ? sv.sid : null, before: sv ? { name: sv.name, lcn: sv.lcn, source: sv.source, backup: sv.backup || "" } : null };
+  $("#ch_title").textContent = mode === "add" ? "Ajouter une chaîne" : `Modifier ${sv.name}`;
+  $("#ch_carrier").innerHTML = (last.carriers || []).map((x) => `<option value="${x.index}">${esc(x.name)}</option>`).join("");
+  $("#ch_carrier").value = c.index;
+  $("#ch_carrier_row").style.display = mode === "add" && last.carriers.length > 1 ? "" : "none";
+  $("#ch_swap_row").style.display = mode === "add" ? "none" : "";
+  $("#ch_name").value = sv ? sv.name : "";
+  $("#ch_lcn").value = sv ? sv.lcn : "";
+  $("#ch_swap").checked = false;
+  $("#ch_source").value = sv ? sv.source : "";
+  $("#ch_backup").value = sv ? (sv.backup || "") : "";
+  $("#ch_err").textContent = "";
+  $("#ch_saved").textContent = last.config_path ? `Appliqué tout de suite à cette chaîne seulement, et enregistré dans ${last.config_path}.`
+    : "Appliqué tout de suite à cette chaîne seulement (pas de fichier de configuration : non enregistré).";
+  chdlg.showModal();
+}
+function chAdd(ci) { const c = last.carriers.find((x) => x.index === ci); chOpen("add", c, null); }
+function chEdit(sid) { const [c, sv] = svcBySid(sid); if (sv) chOpen("edit", c, sv); }
+async function chSubmit(ev) {
+  ev.preventDefault();
+  const name = $("#ch_name").value.trim(), lcn = $("#ch_lcn").value, src = $("#ch_source").value.trim(), bk = $("#ch_backup").value.trim();
+  $("#ch_ok").disabled = true;
+  let r;
+  try {
+    if (chMode.mode === "add") {
+      const body = { carrier: Number($("#ch_carrier").value), name, source: src };
+      if (lcn) body.lcn = Number(lcn);
+      if (bk) body.backup = bk;
+      r = await api("POST", "/api/channels", body);
+    } else {
+      const b = chMode.before, body = {};
+      if (name !== b.name) body.name = name;
+      if (lcn && Number(lcn) !== b.lcn) { body.lcn = Number(lcn); body.swap = $("#ch_swap").checked; }
+      if (src !== b.source) body.source = src;
+      if (bk !== b.backup) body.backup = bk;
+      if (!Object.keys(body).length) { chdlg.close(); return false; }
+      r = await api("PATCH", `/api/channels/${hex(chMode.sid)}`, body);
+    }
+  } finally { $("#ch_ok").disabled = false; }
+  if (r.ok) { chdlg.close(); report(r); refresh(); } else { $("#ch_err").textContent = r.error; }
+  return false;
+}
+async function chRemove(sid) {
+  const [, sv] = svcBySid(sid);
+  if (!sv || !confirm(`Supprimer la chaîne ${sv.lcn} « ${sv.name} » ? Les autres chaînes ne sont pas touchées.`)) return;
+  report(await api("DELETE", `/api/channels/${hex(sid)}`));
+  refresh();
+}
+async function restartInput(i) { const r = await api("POST", `/api/input/${i}/restart`); r.ok ? toast("source relancée") : report(r); refresh(); }
+async function reloadSi() { const r = await api("POST", "/api/reload"); r.ok ? toast("EPG et tables SI rechargés") : report(r); refresh(); }
 refreshHist().then(refresh);
 setInterval(refresh, 1000);
 setInterval(refreshHist, 5000);

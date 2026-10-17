@@ -22,7 +22,7 @@ DEFAULTS = {
     },
     "epg": {"dir": "", "urls": [], "url_refresh_s": 3600, "days": 7, "pf_cycle_ms": 1000,
             "schedule_cycle_ms": 10000, "schedule": True},
-    "web": {"listen": "127.0.0.1:8080", "enabled": True},
+    "web": {"listen": "127.0.0.1:8080", "enabled": True, "token": "", "allow_exec_sources": False},
     "monitoring": {"tsduck": "auto", "interval": 5, "export": [], "stats_export": [], "tsp": "tsp"},
     "alerts": {"margin_min_ms": 150, "overload_percent": 98.0, "input_down_s": 10, "late_ms": 300, "hold_s": 4,
                "webhook": "", "command": "", "repeat_s": 300},
@@ -250,6 +250,7 @@ class Plan:
     services: list
     inputs: list
     tz: object
+    config_path: str = None      # file the channel changes are written back to (None: not saved)
 
     @property
     def work_dir(self):
@@ -528,28 +529,14 @@ def build(cfg):
     port = int(cfg["ingest"]["base_port"])
     backups = {}
     for svc in services:
-        kind, addr = _input_kind(svc.source, svc.opts)
-        if kind == "ffmpeg":
-            addr = f"127.0.0.1:{port + len(inputs)}"
-        inp = Input(len(inputs), f"{svc.name}", addr, svc.source, kind, svc, "primary", svc.opts)
-        inputs.append(inp)
-        svc.input = inp
+        inputs.append(primary_input(len(inputs), svc, port))
     for svc in services:
         if not svc.backup:
             continue
-        key = svc.backup
-        if key not in backups:
-            kind, addr = _input_kind(svc.backup, svc.opts)
-            if kind == "ffmpeg":
-                addr = f"127.0.0.1:{port + len(inputs)}"
-            bopts = dict(svc.opts, loop=True, encode_on=bool(svc.opts.get("backup_encode", False)),
-                         ffmpeg_input=[], ffmpeg_output=[], readrate="auto")
-            bname = re.sub(r'["\\\x00-\x1f]', "_", os.path.basename(svc.backup))[:50]
-            inp = Input(len(inputs), f"backup:{bname}", addr, svc.backup, kind, None,
-                        "backup", bopts)
-            inputs.append(inp)
-            backups[key] = inp
-        svc.backup_input = backups[key]
+        if svc.backup not in backups:
+            inputs.append(backup_input(len(inputs), svc, port))
+            backups[svc.backup] = inputs[-1]
+        svc.backup_input = backups[svc.backup]
 
     for r in radios:
         if r.carriers:
@@ -563,6 +550,27 @@ def build(cfg):
             raise ConfigError(f"carrier {car.name}: encoder bitrates ({fixed / 1e6:.2f} Mbit/s) exceed the "
                               f"channel capacity ({car.ts_rate / 1e6:.2f} Mbit/s)")
     return Plan(cfg, radios, carriers, services, inputs, tz)
+
+
+def primary_input(index, svc, base_port):
+    """input of a service's own source (ffmpeg on UDP port base_port + index, or received directly)"""
+    kind, addr = _input_kind(svc.source, svc.opts)
+    if kind == "ffmpeg":
+        addr = f"127.0.0.1:{base_port + index}"
+    inp = Input(index, f"{svc.name}", addr, svc.source, kind, svc, "primary", svc.opts)
+    svc.input = inp
+    return inp
+
+
+def backup_input(index, svc, base_port):
+    """input of a backup source (looped, shared by the services that have the same one)"""
+    kind, addr = _input_kind(svc.backup, svc.opts)
+    if kind == "ffmpeg":
+        addr = f"127.0.0.1:{base_port + index}"
+    bopts = dict(svc.opts, loop=True, encode_on=bool(svc.opts.get("backup_encode", False)),
+                 ffmpeg_input=[], ffmpeg_output=[], readrate="auto")
+    bname = re.sub(r'["\\\x00-\x1f]', "_", os.path.basename(svc.backup))[:50]
+    return Input(index, f"backup:{bname}", addr, svc.backup, kind, None, "backup", bopts)
 
 
 def _bitrate(v):

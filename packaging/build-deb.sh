@@ -27,7 +27,7 @@ install -m 644 packaging/dvbtx.toml "$ROOT/etc/dvbtx/"
 install -m 644 packaging/sysctl.conf "$ROOT/etc/sysctl.d/90-dvbtx.conf"
 install -m 644 packaging/dvbtx.service packaging/dvbtx@.service "$ROOT/lib/systemd/system/"
 install -m 644 configs/*.toml "$ROOT/usr/share/dvbtx/configs/"
-install -m 644 README.md README.fr.md "$ROOT/usr/share/doc/dvbtx/"
+install -m 644 README.md README.fr.md docs/CHANNELS.md "$ROOT/usr/share/doc/dvbtx/"
 { printf 'Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\nUpstream-Name: dvbtx\n\n'
   printf 'Files: *\nCopyright: 2024-2026 BILLY Rémi\nLicense: GPL-3.0-or-later\n'
   sed -e 's/^$/./' -e 's/^/ /' LICENSE; } > "$ROOT/usr/share/doc/dvbtx/copyright"

@@ -9,6 +9,16 @@ GET  /api/calc?standard=dvbt&constellation=64qam&...   useful bit rate of a chan
 GET  /metrics                Prometheus exposition
 POST /api/input/<n>/restart  restart one ingest process
 POST /api/reload             re-read the EPG and rebuild the SI tables
+GET    /api/channels                    the channels (number, service_id, name, source, backup, ...)
+POST   /api/channels                    add one: {"name", "source", "carrier"?, "lcn"?, "sid"?, "backup"?, options}
+PATCH  /api/channels/<channel>          change it: {"name"?, "lcn"?, "swap"?, "source"?, "backup"?, options}
+DELETE /api/channels/<channel>          remove it
+  <channel>: number (LCN), service_id (0x0101) or name (URL-encoded). The changes are applied
+  at once to that channel only, and written to the configuration file. Answer: {"ok", "sid",
+  "changes", "saved", "warning"?} or {"error"} with status 400.
+
+Requests that change something must come from this page or a program (no other web site: Origin
+checked, JSON body), and carry the token when web.token is set (Authorization: Bearer <token>).
 """
 
 import datetime as dt
@@ -18,6 +28,7 @@ import os
 import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import unquote, urlsplit
 
 log = logging.getLogger("dvbtx.web")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -59,8 +70,11 @@ def metrics(sup):
         m("carrier_null_bps", c["null_rate"], lb)
         m("carrier_si_bps", c["si_rate"], lb)
         m("carrier_cpu_percent", c.get("cpu"), lb)
+        by_sid = {x.sid: x for x in car.services}
         for s in c.get("services", []):
-            svc = car.services[s["index"]]
+            svc = by_sid.get(s["sid"])
+            if svc is None:
+                continue
             sl = {"carrier": c["carrier"], "service": svc.name, "sid": svc.sid, "lcn": svc.lcn}
             m("service_bps", s["rate"], sl)
             m("service_video_margin_min_ms", s.get("video_margin_min_ms"), sl)
@@ -140,23 +154,97 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"rate": r, "per_service": r * 0.97 / max(1, n)})
             if path == "/metrics":
                 return self._send(200, metrics(sup).encode(), "text/plain; version=0.0.4")
+            if path == "/api/channels":
+                return self._send(200, sup.channels())
             return self._send(404, {"error": "not found"})
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    # ---------------------------------------------------------------- changes
+
+    def _allowed(self, body_expected):
+        """same origin (a page of another site cannot drive the transmitter), JSON body, token if set"""
+        origin = self.headers.get("Origin")
+        if origin and urlsplit(origin).netloc != self.headers.get("Host", ""):
+            self._send(403, {"error": "request from another web site refused"})
+            return False
+        if body_expected and not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            self._send(415, {"error": "JSON body expected (Content-Type: application/json)"})
+            return False
+        token = (self.sup.cfg.get("web") or {}).get("token") or ""
+        if token:
+            given = self.headers.get("Authorization", "")
+            given = given[7:] if given.startswith("Bearer ") else self.headers.get("X-Dvbtx-Token", "")
+            if given != token:
+                self._send(401, {"error": "token required (web.token)"})
+                return False
+        return True
+
+    def _body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > 65536:
+            raise ValueError("body too large")
+        data = json.loads(self.rfile.read(n) or b"{}")
+        if not isinstance(data, dict):
+            raise ValueError("JSON object expected")
+        return data
+
+    def _change(self, fn):
+        from .channels import ChannelError
+        try:
+            res = self.sup.call(fn)
+            return self._send(200, dict(res, ok=True))
+        except (ChannelError, ValueError) as e:
+            return self._send(400, {"ok": False, "error": str(e)})
+
     def do_POST(self):
         sup = self.sup
-        m = re.fullmatch(r"/api/input/(\d+)/restart", self.path)
+        path = self.path.partition("?")[0]
+        if not self._allowed(path == "/api/channels"):
+            return
+        m = re.fullmatch(r"/api/input/(\d+)/restart", path)
         if m:
-            i = int(m.group(1))
-            if i < len(sup.ingest):
-                sup.ingest[i].restart()
+            p = sup.proc_of(int(m.group(1)))
+            if p:
+                p.restart()
                 return self._send(200, {"ok": True})
             return self._send(404, {"error": "no such input"})
-        if self.path == "/api/reload":
+        if path == "/api/reload":
             sup.reload_si()
             return self._send(200, {"ok": True})
+        if path == "/api/channels":
+            try:
+                spec = self._body()
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            allow = bool(sup.cfg["web"].get("allow_exec_sources"))
+            return self._change(lambda: sup.channel_add(spec, allow))
         return self._send(404, {"error": "not found"})
+
+    def do_PATCH(self):
+        sup = self.sup
+        m = re.fullmatch(r"/api/channels/([^/?]+)", self.path.partition("?")[0])
+        if not m:
+            return self._send(404, {"error": "not found"})
+        if not self._allowed(True):
+            return
+        try:
+            changes = self._body()
+        except ValueError as e:
+            return self._send(400, {"error": str(e)})
+        ref = unquote(m.group(1))
+        allow = bool(sup.cfg["web"].get("allow_exec_sources"))
+        return self._change(lambda: sup.channel_update(ref, changes, allow))
+
+    def do_DELETE(self):
+        sup = self.sup
+        m = re.fullmatch(r"/api/channels/([^/?]+)", self.path.partition("?")[0])
+        if not m:
+            return self._send(404, {"error": "not found"})
+        if not self._allowed(False):
+            return
+        ref = unquote(m.group(1))
+        return self._change(lambda: sup.channel_remove(ref))
 
 
 def start(sup, listen):

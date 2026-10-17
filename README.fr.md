@@ -196,6 +196,43 @@ différents), HLS, M3U, YouTube via yt-dlp, RTMP en écoute, UDP direct, pipe no
 et mire. Pas encore essayées (faute de matériel ou de compte) : Twitch, tvheadend, RTSP, SRT, v4l2
 et écran.
 
+## Changer les chaînes pendant l'émission : `dvbtx channel`
+
+On ajoute, supprime, renomme, renumérote une chaîne ou on change sa source pendant que dvbtx
+émet : seule cette chaîne est touchée (les autres ne perdent aucun paquet), et le changement est
+réécrit dans le fichier de configuration (commentaires conservés ; `sid`, `lcn` et `pid_base` y sont
+figés pour que rien ne se décale, les téléviseurs reconnaissant une chaîne à son service_id).
+
+Changer de source ne coupe pas la chaîne : la nouvelle source démarre à côté de l'ancienne, et la
+chaîne bascule sur une image clé de la nouvelle au moment où elle doit partir ; l'ancienne joue
+jusque-là (15 s au plus). Mesuré : 25 à 33 ms entre deux paquets vidéo pendant la bascule, comme
+sans changement.
+
+```bash
+dvbtx channel list                                        # numéro, service_id, nom, ce qui passe, source
+dvbtx channel add "France 24" https://exemple.org/live.m3u8 --number 3
+dvbtx channel add "Sky News" "ytdlp:https://www.youtube.com/@SkyNews/live" --option ytdlp_format=b
+dvbtx channel source 3 "ytdlp:https://www.youtube.com/@France24_fr/live"   # sans coupure
+dvbtx channel rename 3 "France 24 FR"
+dvbtx channel renumber "France 24 FR" 1 --swap            # échange avec la chaîne qui avait le 1
+dvbtx channel set 3 epg_id=France24.fr                    # n'importe quel réglage (CLÉ= l'enlève)
+dvbtx channel remove 0x0103
+```
+
+Une chaîne se désigne par son numéro, son service_id (`0x0103`) ou son nom. Les mêmes opérations :
+
+- **page web** : bouton **+ Ajouter une chaîne** par multiplex, **Modifier** (nom, numéro avec
+  échange, source, secours) et **✕** par chaîne ;
+- **API** : `GET/POST /api/channels`, `PATCH/DELETE /api/channels/<numéro|0xSID|nom>` (JSON) ;
+- **fichier** : on l'édite à la main, puis `systemctl reload dvbtx` applique les différences chaîne
+  par chaîne (les radios et multiplex demandent un redémarrage).
+
+Quand dvbtx ne tourne pas, `dvbtx channel` modifie le fichier seul (pris au prochain démarrage) ;
+`--offline` le fait même s'il tourne. Sécurité : les changements par le web sont refusés s'ils
+viennent d'un autre site, exigent `web.token` s'il est défini (à mettre dès que `web.listen` n'est
+pas `127.0.0.1`), et les sources `exec:`, `pipe:`, `stdin:` ne passent que par le fichier
+(`web.allow_exec_sources` pour l'autoriser). Référence complète : [`docs/CHANNELS.md`](docs/CHANNELS.md).
+
 ## Numéros de chaînes (LCN) et ONID
 
 La NIT contient pour chaque multiplex le `private_data_specifier` EACEM (0x28) suivi du
@@ -304,7 +341,7 @@ principale est stable depuis `return_ms` (10 s). Les PID, la PMT et la continuit
 ```bash
 sudo systemctl enable --now dvbtx         # /etc/dvbtx/dvbtx.toml
 journalctl -u dvbtx -f
-sudo systemctl reload dvbtx               # relit l'EPG et reconstruit les tables SI
+sudo systemctl reload dvbtx               # relit l'EPG et les chaînes du fichier (appliquées à chaud)
 sudo systemctl enable --now dvbtx@salon   # autre instance : /etc/dvbtx/salon.toml (ses propres radios et ports)
 ```
 

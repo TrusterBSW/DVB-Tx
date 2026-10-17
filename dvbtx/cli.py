@@ -48,10 +48,18 @@ def _add_config_args(p):
     o.add_argument("-v", "--verbose", action="store_true")
 
 
-def load_plan(a):
+def config_path(a):
+    """file given with -c, else /etc/dvbtx/dvbtx.toml when nothing is set on the command line"""
     path = a.config
-    if not path and os.path.exists("/etc/dvbtx/dvbtx.toml") and not a.services and a.frequency is None and a.channel is None:
+    if not path and os.path.exists("/etc/dvbtx/dvbtx.toml") and not getattr(a, "services", None) \
+            and getattr(a, "frequency", None) is None and getattr(a, "channel", None) is None:
         path = "/etc/dvbtx/dvbtx.toml"
+    return path
+
+
+def load_cfg(a):
+    """merged configuration dict (file, quick options, --set, run options), not yet validated"""
+    path = config_path(a)
     quick = {k: getattr(a, k, None) for k in QUICK}
     quick["services"] = a.services
     if not any(v is not None for k, v in quick.items() if k != "services") and not a.services:
@@ -72,7 +80,17 @@ def load_plan(a):
         cfg["monitoring"]["stats_export"] = list(cfg["monitoring"]["stats_export"]) + a.stats_export
     if a.no_tsduck:
         cfg["monitoring"]["tsduck"] = False
-    return cfgmod.build(cfg)
+    return cfg
+
+
+def load_plan(a):
+    path = config_path(a)
+    plan = cfgmod.build(load_cfg(a))
+    # channel changes are written back to the file, unless channels also come from the command line
+    if path and not a.services and not any(o.split("=", 1)[0].strip().startswith("carrier.") and ".service" in o
+                                            for o in a.set):
+        plan.config_path = path
+    return plan
 
 
 def cmd_run(a):
@@ -172,6 +190,174 @@ def cmd_devices(a):
         print("no radio found (hackrf_info, uhd_find_devices, SoapySDRUtil not installed or nothing plugged)")
 
 
+# ------------------------------------------------------------------ dvbtx channel
+
+CHANNEL_HELP = """Channels of the running transmitter, changed without touching the others: the change is
+applied at once (only that channel is affected) and written to the configuration file. When dvbtx
+is not running (no answer on its web address), the configuration file alone is edited: applied at
+the next start. CHANNEL is a number (LCN), a service_id (0x0101) or a name.
+
+examples:
+  dvbtx channel list
+  dvbtx channel add "France 24" https://example.org/live.m3u8 --number 5
+  dvbtx channel source 5 "ytdlp:https://www.youtube.com/@SkyNews/live" --option ytdlp_format=b
+  dvbtx channel rename 5 "France 24 HD"
+  dvbtx channel renumber "France 24 HD" 2 --swap
+  dvbtx channel remove 0x0105
+"""
+
+
+def _channel_target(a):
+    """(url, token, config path) the command works with"""
+    path = config_path(a)
+    cfg = None
+    if path and os.path.exists(path):
+        try:
+            cfg = cfgmod.load(path)
+        except (cfgmod.ConfigError, OSError):
+            cfg = None
+    url = a.url
+    if not url:
+        listen = (cfg or cfgmod.DEFAULTS)["web"].get("listen") or ""
+        if listen:
+            host, _, port = listen.rpartition(":")
+            if host in ("", "0.0.0.0", "*", "::", "[::]"):
+                host = "127.0.0.1"
+            url = f"http://{host}:{port}"
+    token = a.token or os.environ.get("DVBTX_TOKEN") or ((cfg or {}).get("web") or {}).get("token") or ""
+    return url, token, path
+
+
+def _api(url, token, method, path, body=None):
+    """(status, answer) from the running transmitter; None if nothing answers at url"""
+    import json
+    import urllib.error
+    import urllib.request
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url.rstrip("/") + path, data=data, method=method)
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=150) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"{}")
+        except ValueError:
+            return e.code, {"error": e.reason}
+    except (urllib.error.URLError, ConnectionError, TimeoutError):
+        return None
+
+
+def _options(items):
+    out = {}
+    for it in items or []:
+        if "=" not in it:
+            sys.exit(f"error: --option expects KEY=VALUE, got {it!r}")
+        k, v = it.split("=", 1)
+        out[k.strip()] = None if v == "" else cfgmod.parse_value(v)
+    return out
+
+
+def _channel_request(a):
+    """(method, API path, body) and the equivalent offline operation"""
+    from urllib.parse import quote
+    from . import channels as chmod
+    op = a.channel_cmd
+    if op == "add":
+        spec = dict(_options(a.option), name=a.name, source=a.source)
+        for k, v in (("lcn", a.number), ("sid", a.sid), ("carrier", a.mux)):
+            if v is not None:
+                spec[k] = v
+        if a.backup is not None:
+            spec["backup"] = a.backup
+        if a.no_backup:
+            spec["backup"] = False
+        return "POST", "/api/channels", spec, lambda cfg, plan: chmod.add(cfg, plan, spec) + (None,)
+    ref = a.channel
+    path = "/api/channels/" + quote(str(ref), safe="")
+    if op == "remove":
+        def off(cfg, plan):
+            s = chmod.find(plan, ref)
+            return chmod.remove(cfg, plan, ref) + ((s.carrier.index, s.local_index),)
+        return "DELETE", path, None, off
+    if op == "rename":
+        changes = {"name": a.new_name}
+    elif op == "renumber":
+        changes = {"lcn": a.number, "swap": a.swap}
+    elif op == "source":
+        changes = dict(_options(a.option), source=a.source)
+        if a.backup is not None:
+            changes["backup"] = a.backup
+        if a.no_backup:
+            changes["backup"] = ""
+    else:                                   # set
+        changes = _options(a.values)
+        if not changes:
+            sys.exit("error: give KEY=VALUE settings (KEY= removes one)")
+    return "PATCH", path, changes, lambda cfg, plan: chmod.update(cfg, plan, ref, changes) + (None,)
+
+
+def _print_result(res, where):
+    for c in res.get("changes") or []:
+        print(f"  {c}")
+    if not res.get("changes"):
+        print("  nothing changed")
+    if res.get("warning"):
+        print(f"warning: {res['warning']}")
+    print(where)
+
+
+def cmd_channel(a):
+    from . import channels as chmod
+    if not a.channel_cmd:
+        print(CHANNEL_HELP)
+        return
+    url, token, path = _channel_target(a)
+    if a.channel_cmd == "list":
+        r = None if a.offline or not url else _api(url, token, "GET", "/api/channels")
+        if r and r[0] == 200:
+            rows, live = r[1], True
+        else:
+            if not path:
+                sys.exit(f"error: dvbtx does not answer{' on ' + url if url else ''} and no configuration file given (-c)")
+            plan = cfgmod.build(cfgmod.load(path))
+            rows, live = [chmod.describe(s) for s in plan.services], False
+        if a.json:
+            import json
+            print(json.dumps(rows, indent=1))
+            return
+        print(f"{'No':>4}  {'SID':6}  {'Name':24} {'Mux':12} {'On':8} Source")
+        for c in sorted(rows, key=lambda c: c["lcn"]):
+            on = c.get("on") or ("-" if live else "")
+            print(f"{c['lcn']:>4}  0x{c['sid']:04X}  {c['name'][:24]:24} {c['carrier_name'][:12]:12} {on:8} {c['source']}"
+                  + (f"  (backup {c['backup']})" if c.get("backup") else ""))
+        if not live:
+            print(f"(from {path}: dvbtx is not running)")
+        return
+    method, api_path, body, offline = _channel_request(a)
+    r = None if a.offline or not url else _api(url, token, method, api_path, body)
+    if r is not None:
+        code, res = r
+        if code != 200:
+            sys.exit(f"error: {res.get('error', code)}")
+        _print_result(res, "applied" + (f", saved in the configuration file" if res.get("saved") else ", not saved"))
+        return
+    if not path or not os.path.exists(path):
+        sys.exit(f"error: dvbtx does not answer{' on ' + url if url else ''} and no configuration file (-c) to edit")
+    try:
+        cfg = cfgmod.load(path)
+        plan = cfgmod.build(cfg)
+        new_cfg, new_plan, sid, removed = offline(cfg, plan)
+        chmod.persist(path, cfg, new_cfg, removed)
+    except chmod.ChannelError as e:
+        sys.exit(f"error: {e}")
+    print(f"dvbtx is not running{' (nothing on ' + url + ')' if url and not a.offline else ''}: {path} updated, "
+          "applied at its next start (or now: systemctl reload dvbtx)")
+
+
 def cmd_calc(a):
     std = a.standard
     try:
@@ -235,6 +421,56 @@ def main(argv=None):
     b.add_argument("--image", help="picture to show instead of the text")
     b.add_argument("--duration", type=int, default=10)
     b.add_argument("--tone", action="store_true", help="1 kHz tone instead of silence")
+    ch = sub.add_parser("channel", aliases=["channels"], help="list, add, remove, rename, renumber channels, "
+                        "change their source (while running)", description=CHANNEL_HELP,
+                        formatter_class=argparse.RawDescriptionHelpFormatter)
+    def channel_common(p, dflt):
+        kw = {} if dflt else {"default": argparse.SUPPRESS}   # given before or after the command
+        p.add_argument("-c", "--config", help="configuration file (default /etc/dvbtx/dvbtx.toml): its web "
+                       "address and token are used, and it is edited directly when dvbtx is not running", **kw)
+        p.add_argument("--url", help="web address of the running dvbtx (default: web.listen of the configuration)",
+                       **kw)
+        p.add_argument("--token", help="web.token of the running dvbtx (or DVBTX_TOKEN)", **kw)
+        p.add_argument("--offline", action="store_true", help="edit the configuration file only, even if dvbtx "
+                       "runs (then apply it with systemctl reload dvbtx)", **kw)
+    channel_common(ch, True)
+    common = argparse.ArgumentParser(add_help=False)
+    channel_common(common, False)
+    cs = ch.add_subparsers(dest="channel_cmd", metavar="COMMAND")
+    _sub = cs.add_parser
+    cs.add_parser = lambda *x, **k: _sub(*x, parents=[common], **k)
+    x = cs.add_parser("list", help="the channels, with what each one is playing")
+    x.add_argument("--json", action="store_true")
+    x = cs.add_parser("add", help="add a channel")
+    x.add_argument("name")
+    x.add_argument("source", help="any source dvbtx reads: file, URL, ytdlp:..., twitch://..., udp://...")
+    x.add_argument("--number", "--lcn", type=int, help="channel number (default: the first free one)")
+    x.add_argument("--mux", help="multiplex (carrier index or name), needed if there are several")
+    x.add_argument("--sid", type=lambda v: int(v, 0), help="service_id (default: the first free one of the multiplex)")
+    x.add_argument("--backup", help="clip played when the source fails (default: defaults.backup)")
+    x.add_argument("--no-backup", action="store_true")
+    x.add_argument("--option", action="append", metavar="KEY=VALUE",
+                   help="any service setting, e.g. ytdlp_format=b, readrate=false, encode=true (repeatable)")
+    x = cs.add_parser("remove", aliases=["rm", "delete"], help="remove a channel")
+    x.add_argument("channel")
+    x = cs.add_parser("rename", help="give a channel another name")
+    x.add_argument("channel")
+    x.add_argument("new_name")
+    x = cs.add_parser("renumber", help="give a channel another number (LCN)")
+    x.add_argument("channel")
+    x.add_argument("number", type=int)
+    x.add_argument("--swap", action="store_true", help="if the number is taken, give that channel the old number")
+    x = cs.add_parser("source", help="play another source on a channel (no cut: the old one plays until the new "
+                      "one delivers)")
+    x.add_argument("channel")
+    x.add_argument("source")
+    x.add_argument("--backup", help="also change its backup clip")
+    x.add_argument("--no-backup", action="store_true", help="no backup clip any more")
+    x.add_argument("--option", action="append", metavar="KEY=VALUE", help="service settings that go with the "
+                   "new source, e.g. ytdlp_format=b (KEY= removes one)")
+    x = cs.add_parser("set", help="change any setting of a channel (KEY= removes it)")
+    x.add_argument("channel")
+    x.add_argument("values", nargs="+", metavar="KEY=VALUE")
     k = sub.add_parser("calc", help="useful MPEG-TS bit rate of a channel")
     k.add_argument("standard", choices=["dvbt", "dvbt2", "dvbc", "dvbs", "dvbs2"])
     k.add_argument("--fft", help="DVB-T2: 1k 2k 4k 8k 16k 32k")
@@ -261,8 +497,11 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if getattr(a, "verbose", False) else logging.INFO,
                         format="%(asctime)s %(levelname).1s %(name)s: %(message)s", datefmt="%H:%M:%S")
     try:
+        if getattr(a, "channel_cmd", None) in ("rm", "delete"):
+            a.channel_cmd = "remove"
         {"run": cmd_run, "check": cmd_check, "calc": cmd_calc, "epg": cmd_epg, "engine-ini": cmd_engine_ini,
-         "make-backup": cmd_make_backup, "devices": cmd_devices}[a.cmd](a)
+         "make-backup": cmd_make_backup, "devices": cmd_devices, "channel": cmd_channel,
+         "channels": cmd_channel}[a.cmd](a)
     except cfgmod.ConfigError as e:
         sys.exit(f"configuration error: {e}")
     except FileNotFoundError as e:

@@ -99,6 +99,29 @@ LO and sample rate, service_id, LCN, PIDs, service type (from the streams). Exam
 Capture sources are encoded (`video_bitrate = "auto"` takes the share of the multiplex left by the
 others), the others copied; `encode = { ... }` forces encoding (libx264/x265, VAAPI, NVENC, MPEG-2).
 
+## Channels while on air: `dvbtx channel`
+
+Add, remove, rename, renumber a channel or give it another source while dvbtx runs: only that
+channel is touched (the others lose no packet), and the change is written back to the
+configuration file (comments kept, `sid` / `lcn` / `pid_base` pinned so that nothing shifts).
+A change of source does not cut the channel: the old source plays until the new one has a key frame
+due, then the switch is made on it (measured: 25-33 ms between two video packets, as without change).
+
+```bash
+dvbtx channel list
+dvbtx channel add "France 24" https://example.org/live.m3u8 --number 3
+dvbtx channel source 3 "ytdlp:https://www.youtube.com/@France24_fr/live"
+dvbtx channel rename 3 "France 24 FR"
+dvbtx channel renumber "France 24 FR" 1 --swap
+dvbtx channel remove 0x0103
+```
+
+The same from the web page (**+ Ajouter une chaîne**, **Modifier**, **✕**), from the API
+(`GET/POST /api/channels`, `PATCH/DELETE /api/channels/<number|0xSID|name>`), or by editing the
+file then `systemctl reload dvbtx`. When dvbtx is not running, `dvbtx channel` edits the file.
+Changes from the web are refused from other sites and need `web.token` if one is set; `exec:`
+sources only from the file. Everything: [`docs/CHANNELS.md`](docs/CHANNELS.md).
+
 ## Logical channel numbers and ONID
 
 The NIT carries the EACEM private_data_specifier and logical_channel_descriptor (0x83), like the
@@ -145,7 +168,7 @@ frame, and returns once the primary has been stable for `return_ms` (10 s).
 
 ```bash
 sudo systemctl enable --now dvbtx        # /etc/dvbtx/dvbtx.toml
-sudo systemctl reload dvbtx              # re-read the EPG, rebuild the SI tables
+sudo systemctl reload dvbtx              # re-read the EPG and the channels of the file (applied live)
 sudo systemctl enable --now dvbtx@room   # another instance: /etc/dvbtx/room.toml
 ```
 
