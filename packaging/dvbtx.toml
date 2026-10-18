@@ -71,8 +71,15 @@ stats_interval_ms = 1000
 # Defaults of every service (each key can be set per service too)
 [defaults]
 backup = "/var/lib/dvbtx/backup.ts"     # played when the source stops (false: none); dvbtx make-backup creates one
-buffer_ms = 1000                        # de-jitter buffer between arrival and transmission
-switch_timeout_ms = 3000                # silence before switching to the backup
+buffer_ms = "auto"                      # de-jitter buffer between arrival and transmission (ms); auto: 6000 for
+                                        # live sources sent in segments (YouTube, Twitch, *.m3u8: at the live edge
+                                        # of the playlist they arrive in bursts, one per segment), 1000 otherwise
+ring_pkts = "auto"                      # packets held per input (auto: the buffer + 4 s at 15 Mbit/s)
+switch_timeout_ms = 3000                # silence before switching to the backup (once the buffer has played out)
+failover_s = 10                         # several sources: the next one when the one playing has delivered
+                                        # nothing for this long
+source_start_s = 30                     # ... or has not started within this time
+preferred_retry_s = 300                 # not on the first source: the preferred ones tried this often (0: never)
 return_ms = 10000                       # primary stable for this long before switching back
 max_late_ms = 600                       # packets later than this are dropped
 early_ms = 100                          # packets may leave this much in advance to smooth the peaks
@@ -152,3 +159,10 @@ cell_id = 0
 #  [[carrier.service]]
 #  name = "Film"
 #  source = "/srv/videos/film.mkv"      # see 'man dvbtx' / README for every kind of source
+
+#  [[carrier.service]]
+#  name = "Info"
+#  source = ["http://provider.example/u/p/289",   # several sources, in order of preference: the next one
+#            "http://provider.example/u/p/319",   # when the one playing fails, back to a preferred one when
+#            "http://other.example/info.m3u8"]    # it works again; none works: the backup clip
+#  buffer_ms = 8000                     # cache of this channel (ms), instead of auto

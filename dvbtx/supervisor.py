@@ -462,6 +462,7 @@ class Supervisor:
         self.seq = 0
         self.replies = {}
         self.reply_cv = threading.Condition()
+        self.fo = {}                # service_id -> state of the choice among its sources (see _failover)
 
     # ---------------------------------------------------------------- engine
 
@@ -601,7 +602,11 @@ class Supervisor:
                     elif (s.get("late_max_ms") or 0) > float(a["late_ms"]):
                         conds[f"late.{svc.sid}"] = ("warning", f"{svc.name}: packets up to {s['late_max_ms']:.0f} ms late")
                     if s.get("source") == "backup":
-                        conds[f"backup.{svc.sid}"] = ("warning", f"{svc.name}: on backup, primary source down")
+                        what = "its sources are down" if len(svc.sources or ()) > 1 else "primary source down"
+                        conds[f"backup.{svc.sid}"] = ("warning", f"{svc.name}: on backup, {what}")
+                    elif svc.active:
+                        conds[f"fallback.{svc.sid}"] = ("warning", f"{svc.name}: on its source {svc.active + 1} of "
+                                                        f"{len(svc.sources)} ({svc.source}), the preferred ones are down")
                     elif s.get("source") == "none":
                         conds[f"nosrc.{svc.sid}"] = ("critical", f"{svc.name}: no source")
             for i in st.get("inputs", []):
@@ -665,6 +670,7 @@ class Supervisor:
             for p in self.ingest:
                 p.poll()
             self.restart_stalled()
+            self._failover()
             self._retire()
             for an in self.analyzers:
                 an.poll()
@@ -675,7 +681,7 @@ class Supervisor:
             if tick % 2 == 0:
                 self.check_alerts()
         log.info("stopping")
-        for p in self.ingest + [r[0] for r in self.retiring]:
+        for p in self.ingest + [r[0] for r in self.retiring] + [f["cand"]["proc"] for f in self.fo.values() if f.get("cand")]:
             p.stop()
         for an in self.analyzers:
             an.stop()
@@ -808,8 +814,11 @@ class Supervisor:
         def eng_key(s):
             return (s.carrier.index, s.pid_base, tuple(s.opts.get(k) for k in sorted(chmod.ENGINE_KEYS - {"sid", "pid_base"})))
 
+        skip |= chmod.SUPERVISOR_KEYS
+
         def ing_key(s):
-            return (s.source, json.dumps({k: v for k, v in s.opts.items() if k not in skip}, sort_keys=True, default=str))
+            return (tuple(s.sources or [s.source]),
+                    json.dumps({k: v for k, v in s.opts.items() if k not in skip}, sort_keys=True, default=str))
 
         gone = [s for sid, s in old.items() if sid not in new or eng_key(s) != eng_key(new[sid])]
         came = [n for sid, n in new.items() if sid not in old or eng_key(old[sid]) != eng_key(n)]
@@ -848,10 +857,13 @@ class Supervisor:
                 else:
                     primary_of(n)
                     swaps.append((o, n))
-                    change("source", n.name, o.source, n.source, f"{n.name}: new source {n.source}")
+                    nl = n.sources or [n.source]
+                    change("source", n.name, o.source, nl[0] if len(nl) == 1 else nl,
+                           f"{n.name}: new source {', then '.join(nl)}")
             else:
-                n.input = o.input
-            n.input.service, n.input.options, n.input.name = n, n.opts, n.name
+                n.input, n.source, n.active = o.input, o.source, o.active     # the source in use stays
+            n.input.service, n.input.name = n, n.name
+            n.input.options = cfgmod.input_options(n.input.source, n.opts)
             if n.backup != o.backup:
                 n.backup_input = backup_of(n)
                 backup_set.append(n)
@@ -868,6 +880,10 @@ class Supervisor:
         for s in gone:
             if s.sid not in new:
                 change("removed", s.name, text=f"{s.name} removed")
+
+        # sources being tried for the channels whose source changes (or that go): abandoned
+        for sid in {s.sid for s in gone} | {n.sid for n in came} | {n.sid for _, n in swaps}:
+            self._fo_drop(sid)
 
         # 1. new inputs first: if the engine refuses one, nothing has changed yet
         running = self.engine is not None and self.engine.poll() is None
@@ -969,6 +985,123 @@ class Supervisor:
             log.warning("channels: %s", res["warning"])
         return res
 
+    # ---------------------------------------------------------------- several sources per channel
+
+    def _failover(self):
+        """Channels with several sources (source = [first choice, second, ...]): when the source in use
+        has delivered nothing for failover_s (or has not started within source_start_s), the next one
+        is used (after the last, the first again), the channel playing its backup meanwhile; while on
+        another than the first, the preferred ones are tried every preferred_retry_s in order, beside
+        the source in use, and the channel goes back to one as soon as it delivers (without a cut)."""
+        if not self.stats or time.time() - self.stats_at > 5 or not (self.engine and self.engine.poll() is None):
+            return
+        ins = {i["index"]: i for i in self.stats.get("inputs", [])}
+        now = time.monotonic()
+        for svc in list(self.plan.services):
+            n = len(svc.sources or ())
+            if n < 2 or svc.input is None:
+                continue
+            o = svc.opts
+            fail_ms = float(o.get("failover_s", 10)) * 1000
+            start_s = float(o.get("source_start_s", 30))
+            retry_s = float(o.get("preferred_retry_s", 300))
+            st = self.fo.setdefault(svc.sid, {"since": now, "next_probe": now + retry_s, "probe_k": 0})
+            i = ins.get(svc.input.index)
+            idle = i.get("idle_ms", -1) if i else -1
+            if i and i.get("streams") and 0 <= idle:
+                down = idle > fail_ms
+            else:
+                down = now - st["since"] > start_s          # never delivered: given source_start_s
+            if down:
+                k = (svc.active + 1) % n
+                log.warning("%s: source %d of %d down (%s), now on source %d: %s", svc.name, svc.active + 1, n,
+                            svc.source, k + 1, svc.sources[k])
+                self._fo_drop(svc.sid)
+                self._use_source(svc, k, old_down=True)
+                continue
+            # back to a preferred source
+            c = st.get("cand")
+            if c:
+                c["proc"].poll()
+                ci = ins.get(c["inp"].index)
+                ok = ci and ci.get("streams") and 0 <= ci.get("idle_ms", -1) < 1000
+                if not ok:
+                    c["ok_since"] = None
+                elif c["ok_since"] is None:
+                    c["ok_since"] = now
+                if ok and now - c["ok_since"] >= 2:   # short: some IPTV accounts tolerate a second connection briefly
+                    log.info("%s: source %d (%s) is back, using it again", svc.name, c["k"] + 1, svc.sources[c["k"]])
+                    st["cand"] = None
+                    self._use_source(svc, c["k"], c["inp"], c["proc"])
+                elif (c["ok_since"] is None and now - c["started"] > start_s) or now - c["started"] > start_s + 15:
+                    self._fo_drop(svc.sid)
+                    st["probe_k"] = c["k"] + 1
+                    if st["probe_k"] >= svc.active:
+                        st["probe_k"], st["next_probe"] = 0, now + retry_s
+                continue
+            if svc.active and retry_s > 0 and now >= st["next_probe"]:
+                self._fo_try(svc, min(st["probe_k"], svc.active - 1))
+
+    def _fo_try(self, svc, k):
+        """starts source k of svc beside the one in use (an input the engine receives, used by no service)"""
+        inp = cfgmod.primary_input(self._new_input_index(), svc, int(self.cfg["ingest"]["base_port"]), src=svc.sources[k])
+        if not self._engine_input_add(inp):
+            self.fo[svc.sid]["next_probe"] = time.monotonic() + float(svc.opts.get("preferred_retry_s", 300))
+            return
+        proc = IngestProc(inp, self.plan)
+        proc.poll()
+        self.fo[svc.sid]["cand"] = {"k": k, "inp": inp, "proc": proc, "started": time.monotonic(), "ok_since": None}
+        log.info("%s: trying its source %d again (%s)", svc.name, k + 1, svc.sources[k])
+
+    def _fo_drop(self, sid):
+        """abandons the source being tried for a channel (and forgets its state)"""
+        st = self.fo.pop(sid, None)
+        c = st and st.get("cand")
+        if c:
+            self.engine_request(f"input del id={c['inp'].index}")
+            c["proc"].stop()
+
+    def _engine_input_add(self, inp):
+        o = inp.options
+        r = self.engine_request(f"input add id={inp.index} addr={inp.addr} program={int(o.get('program', 0))} "
+                                f"buffer_ms={int(o['buffer_ms'])} ring_pkts={int(o['ring_pkts'])} name={inp.name[:60]}")
+        if not r["ok"]:
+            log.error("input %s: %s", inp.name, r.get("error"))
+        return r["ok"]
+
+    def _use_source(self, svc, k, inp=None, proc=None, old_down=False):
+        """svc plays its source k from now on: started if not yet (inp/proc: already running), swapped in
+        without a cut, the previous one stopped once the engine has let it go (at once if it is down:
+        it may hold what the next one needs, a UDP port, the only connection an IPTV account allows)"""
+        if inp is None:
+            inp = cfgmod.primary_input(self._new_input_index(), svc, int(self.cfg["ingest"]["base_port"]),
+                                       src=svc.sources[k])
+            if not self._engine_input_add(inp):
+                self.fo[svc.sid] = {"since": time.monotonic(), "next_probe": 0, "probe_k": 0}
+                return
+            proc = IngestProc(inp, self.plan)
+        old = svc.input
+        r = self.engine_request(f"service set carrier={svc.carrier.index} sid={svc.sid} primary={inp.index}")
+        if not r["ok"]:
+            log.error("%s: source %d refused by the engine: %s", svc.name, k + 1, r.get("error"))
+            self.engine_request(f"input del id={inp.index}")
+            proc.stop()
+            return
+        self.engine_request(f"input del id={old.index}")
+        p = self.proc_of(old.index)
+        if p:
+            self.ingest.remove(p)
+            if old_down:
+                p.stop()
+            else:
+                self.retiring.append([p, old.index, time.monotonic() + 30])
+        self.ingest.append(proc)
+        svc.input, svc.source, svc.active = inp, svc.sources[k], k
+        inp.service = svc
+        self.plan.inputs = sorted([i for i in self.plan.inputs if i.index != old.index] + [inp], key=lambda i: i.index)
+        now = time.monotonic()
+        self.fo[svc.sid] = {"since": now, "next_probe": now + float(svc.opts.get("preferred_retry_s", 300)), "probe_k": 0}
+
     def _retire(self):
         """old sources of channels whose source changed: stopped once the engine has released them"""
         if not self.retiring:
@@ -990,7 +1123,9 @@ class Supervisor:
                "stats_age": round(time.time() - self.stats_at, 1) if self.stats_at else None,
                "engine": {"running": self.engine is not None and self.engine.poll() is None,
                           "restarts": self.engine_restarts, "log": list(self.engine_lines)[-15:]},
-               "radios": [], "carriers": [], "inputs": [p.status() for p in self.ingest],
+               "radios": [], "carriers": [], "inputs": [p.status() for p in self.ingest] +
+                                                       [dict(f["cand"]["proc"].status(), role="trial")
+                                                        for f in self.fo.values() if f.get("cand")],
                "alerts": list(self.alerts.active.values()), "alert_history": list(self.alerts.history)[:50],
                "network": {k: plan.cfg["network"][k] for k in ("name", "network_id", "onid", "country", "provider")},
                "thresholds": {"margin_min_ms": self.cfg["alerts"]["margin_min_ms"]},
@@ -1014,6 +1149,10 @@ class Supervisor:
                 evs = self.store.events(s.sid) if self.store else []
                 pres, fol, _ = epgmod.present_following(evs, dt.datetime.now(UTC))
                 svcs.append({"name": s.name, "sid": s.sid, "lcn": s.lcn, "source": s.source, "backup": s.backup,
+                             "sources": list(s.sources or [s.source]), "active": s.active,
+                             "buffer_ms": s.opts.get("buffer_ms", "auto"),
+                             "buffer_ms_used": s.input.options.get("buffer_ms") if s.input else None,
+                             "trying": (self.fo.get(s.sid) or {}).get("cand", {}).get("k") if (self.fo.get(s.sid) or {}).get("cand") else None,
                              "type": self.si._stype(s), "live": ls,
                              "input": ist.get(s.input.index) if s.input else None,
                              "now": pres and {"title": pres.get("title"), "start": pres["start"].isoformat(),

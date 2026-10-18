@@ -222,7 +222,7 @@ dvbtx channel remove 0x0103
 Une chaîne se désigne par son numéro, son service_id (`0x0103`) ou son nom. Les mêmes opérations :
 
 - **page web** : bouton **+ Ajouter une chaîne** par multiplex, **Modifier** (nom, numéro avec
-  échange, source, secours) et **✕** par chaîne ;
+  échange, sources, cache, secours) et **✕** par chaîne ;
 - **API** : `GET/POST /api/channels`, `PATCH/DELETE /api/channels/<numéro|0xSID|nom>` (JSON) ;
 - **fichier** : on l'édite à la main, puis `systemctl reload dvbtx` applique les différences chaîne
   par chaîne (les radios et multiplex demandent un redémarrage).
@@ -329,6 +329,41 @@ curl http://127.0.0.1:8080/api/status                       # tout, en JSON
 
 Chaque multiplex est aussi copié en UDP sur `127.0.0.1:20900+n` (et sur les adresses de
 `carrier.monitor`, par exemple un multicast à regarder avec VLC).
+
+## Plusieurs sources par chaîne, cache
+
+`source` peut être une liste, dans l'ordre de préférence, sans limite de nombre :
+
+```toml
+  [[carrier.service]]
+  name = "France 24"
+  source = ["http://fournisseur/u/p/289",     # FHD, la préférée
+            "http://fournisseur/u/p/319",     # HD
+            "http://fournisseur/u/p/976"]     # Caraïbes
+```
+
+Si la source qui joue ne livre plus rien pendant `failover_s` (10 s), ou n'a pas démarré en
+`source_start_s` (30 s), la suivante est lancée (après la dernière : la première) ; la chaîne joue
+son secours pendant ce temps, puis repart sur la nouvelle source. Tant qu'elle n'est pas sur la
+première, les sources préférées sont réessayées dans l'ordre toutes les `preferred_retry_s` (300 s,
+0 : jamais), à côté de celle qui joue : la chaîne y revient sans coupure dès que l'une livre de
+nouveau. Si aucune ne marche, c'est le secours général (`backup`). Une source en panne est arrêtée
+avant que la suivante démarre : utile avec un abonnement IPTV limité à une connexion. L'essai
+d'une source préférée pendant qu'une autre joue ouvre une 2ᵉ connexion pendant quelques secondes
+(démarrage, 2 s de flux, puis la bascule, après quoi l'autre est fermée) : la plupart des comptes
+le tolèrent, comme au zapping ; sinon le fournisseur refuse l'essai (rien ne change) ou coupe
+l'autre (quelques secondes de secours), et `preferred_retry_s = 0` supprime ces essais.
+En ligne de commande : `dvbtx channel source "France 24" URL1 URL2 URL3` ; sur la page web, une
+source par ligne. La page et `dvbtx channel list` montrent la source utilisée (`source 2/3`).
+
+**Cache** : `buffer_ms` est le retard accepté entre l'arrivée d'une source et son émission. Plus
+grand, un flux irrégulier passe sans pertes ni bascule sur le secours, au prix d'un retard plus
+grand sur le direct. Par défaut `auto` : 6000 ms pour les sources livrées par segments (YouTube,
+Twitch, `.m3u8` : au bord du direct elles arrivent par paquets, un par segment de 2 à 5 s), 1000 ms
+sinon. Réglable par chaîne (100 à 30000 ms) : `buffer_ms = 8000` dans le fichier,
+`dvbtx channel source 3 URL --cache 8000`, `dvbtx channel set 3 buffer_ms=8000`, ou le champ
+**Cache** de la page web (vide : auto). Le changer ne coupe pas la chaîne. Une source qui ne livre
+plus rien n'est considérée en panne qu'une fois son cache joué.
 
 ## Flux de secours
 

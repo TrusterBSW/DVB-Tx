@@ -12,6 +12,7 @@
 | `rx_sat.py` | DVB-S (leandvb) and DVB-S2 (gr-dvbs2rx: QPSK, 8PSK) reception of a capture or live from a USRP, then a TS check (sync, TEI, continuity) | leansdr, gr-dvbs2rx |
 | `live_channels_test.py` | the engine with services and inputs added, changed, removed while running: PAT content and version, the other services undisturbed, no video gap on a change of source (33 checks) | ffmpeg |
 | `live_supervisor_test.py` | the same through `dvbtx run` and `dvbtx channel`: PAT and SDT received, the configuration file rewritten, a hand edit applied by SIGHUP, an engine crash after changes, the API refusing `exec:` and other sites, the file edited when dvbtx is stopped (32 checks) | ffmpeg |
+| `live_failover_test.py` | a channel with two sources in order of preference (UDP streams started and stopped): the second used when the first fails, back to the first without a cut, backup when both fail, the list changed through the API and written to the file; the other channel undisturbed (15 checks) | ffmpeg |
 | `channels_test.py` | the channel operations on the configuration and the TOML editor (comments kept, sub-tables, refusals, a file edited meanwhile left untouched) | — |
 | `bench_dvbt.c` | speed of the DVB-T coder (share of one core per carrier) | — |
 | `gr_dvbt_tx.py` | known-good GNU Radio DVB-T transmitter on a HackRF, to compare reception | gr-osmosdr |

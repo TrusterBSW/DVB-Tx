@@ -60,6 +60,7 @@ typedef struct input {
     /* statistics, read by the stats thread */
     _Atomic uint64_t rx_bytes, rx_pkts, kept_pkts, cc_errors, discont, dropped_nopcr;
     _Atomic int64_t last_rx_ns, last_pub_ns;
+    _Atomic int64_t last_ideal_ns;      /* latest ideal time published: data buffered until then */
     _Atomic int64_t slack_min_ns;          /* min (ideal - arrival) over the last window */
     _Atomic int64_t pcr_interval_max_ns;
     _Atomic int faster_than_realtime;

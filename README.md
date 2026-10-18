@@ -158,6 +158,25 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
   multiplex; `--stats-export`: engine statistics + alerts every second; `/metrics` for Prometheus;
   `/api/status` JSON; each multiplex is copied to `udp://127.0.0.1:20900+n` (and `carrier.monitor`).
 
+## Several sources per channel, cache
+
+`source` may be a list, in order of preference, as long as needed:
+`source = ["http://provider/u/p/289", "http://provider/u/p/319", "http://provider/u/p/976"]`.
+When the source playing has delivered nothing for `failover_s` (10 s), or has not started within
+`source_start_s` (30 s), the next one is started (after the last, the first again), the channel
+playing its backup meanwhile. While not on the first one, the preferred ones are tried again in
+order every `preferred_retry_s` (300 s, 0: never), beside the one playing: the channel goes back
+to one without a cut as soon as it delivers. None works: the general `backup`. A failed source is
+stopped before the next one starts (IPTV accounts limited to one connection).
+`dvbtx channel source 3 URL1 URL2 URL3`, or one source per line on the web page.
+
+**Cache**: `buffer_ms`, the delay accepted between the arrival of a source and its transmission:
+larger, an irregular stream goes through without losses or switch to the backup, the channel being
+later than live. `auto` (default): 6000 ms for sources delivered in segments (YouTube, Twitch,
+`.m3u8`: at the live edge they arrive in bursts, one per segment), 1000 ms otherwise. Per channel,
+100-30000 ms: `buffer_ms = 8000`, `--cache 8000`, or the **Cache** field of the web page; changing
+it does not cut the channel. A source is down only once its cache has played out.
+
 ## Backup clip
 
 Each service has a backup (`/var/lib/dvbtx/backup.ts`, made by `dvbtx make-backup --text ...` or

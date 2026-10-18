@@ -204,6 +204,8 @@ static void publish(input *in, const uint8_t *pkt, int64_t t_ideal, int64_t pcr,
     memcpy(e->pkt, pkt, TS_PKT);
     atomic_store_explicit(&in->head, h + 1, memory_order_release);
     atomic_fetch_add_explicit(&in->kept_pkts, 1, memory_order_relaxed);
+    if (t_ideal > atomic_load_explicit(&in->last_ideal_ns, memory_order_relaxed) || (flags & IN_DISC))
+        atomic_store_explicit(&in->last_ideal_ns, t_ideal, memory_order_relaxed);
 }
 
 /* ---- PSI ---- */

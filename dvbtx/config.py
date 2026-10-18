@@ -31,9 +31,10 @@ DEFAULTS = {
                "loglevel": "warning"},
     "engine": {"binary": "", "log_level": "info", "stats_interval_ms": 1000},
     "defaults": {
-        "backup": "", "buffer_ms": 1000, "switch_timeout_ms": 3000, "return_ms": 10000, "max_late_ms": 600,
-        "early_ms": 100, "pcr_max_ms": 35, "priority": 5, "pmt_period_ms": 100, "mux_delay": 0.7, "ring_pkts": 65536,
+        "backup": "", "buffer_ms": "auto", "switch_timeout_ms": 3000, "return_ms": 10000, "max_late_ms": 600,
+        "early_ms": 100, "pcr_max_ms": 35, "priority": 5, "pmt_period_ms": 100, "mux_delay": 0.7, "ring_pkts": "auto",
         "readrate": "auto", "map": ["0:v:0?", "0:a?"], "loop": True,
+        "failover_s": 10, "source_start_s": 30, "preferred_retry_s": 300,
         "copy_audio_codecs": ["aac", "mp2", "mp3", "ac3", "eac3", "aac_latm"],
         "encode": {"video_codec": "libx264", "preset": "veryfast", "video_bitrate": "auto", "gop_s": 1.0,
                    "audio_codec": "aac", "audio_bitrate": "128k", "audio_rate": 48000, "pix_fmt": "yuv420p",
@@ -203,6 +204,8 @@ class Service:
     input: Input = None
     backup_input: Input = None
     detected_type: int = None
+    sources: list = None   # the sources in order of preference (source: the one in use, sources[active])
+    active: int = 0
 
 
 @dataclass
@@ -483,6 +486,7 @@ def build(cfg):
         for si, s in enumerate(cc.get("service", [])):
             if "source" not in s:
                 raise ConfigError(f"carrier {ci} service {si}: 'source' is required")
+            srcs = source_list(s["source"], f"carrier {ci} service {si}")
             opts = copy.deepcopy(dflt)
             for k, v in s.items():
                 if k == "encode" and isinstance(v, dict):
@@ -520,8 +524,8 @@ def build(cfg):
             backup = opts.get("backup")
             backup = "" if backup is False else str(backup or "")
             svc = Service(len(services), car, si, name, str(s.get("provider", net["provider"])), sid, lcn,
-                          bool(s.get("visible", True)), stype, str(s["source"]), backup, str(s.get("epg_id", "")),
-                          pid_base, opts)
+                          bool(s.get("visible", True)), stype, srcs[0], backup, str(s.get("epg_id", "")),
+                          pid_base, opts, sources=srcs)
             car.services.append(svc)
             services.append(svc)
 
@@ -552,13 +556,51 @@ def build(cfg):
     return Plan(cfg, radios, carriers, services, inputs, tz)
 
 
-def primary_input(index, svc, base_port):
-    """input of a service's own source (ffmpeg on UDP port base_port + index, or received directly)"""
-    kind, addr = _input_kind(svc.source, svc.opts)
+def source_list(v, what="service"):
+    """source = "one" or ["first choice", "second", ...]: the sources of a service in order of preference"""
+    lst = [v] if isinstance(v, str) else list(v) if isinstance(v, (list, tuple)) else None
+    if not lst or not all(isinstance(x, str) and x.strip() for x in lst):
+        raise ConfigError(f"{what}: source must be a source or a list of sources")
+    lst = [x.strip() for x in lst]
+    if len(set(lst)) != len(lst):
+        raise ConfigError(f"{what}: the same source is given twice")
+    return lst
+
+
+def segmented_live(src):
+    """live source delivered in segments (HLS: YouTube, Twitch, *.m3u8): at the live edge of the
+    playlist, it arrives in bursts, each segment when it is published"""
+    return bool(re.match(r"(twitch://|ytdlp:)", src) or (re.match(r"https?://", src) and "m3u8" in src)
+                or re.match(r"https?://([^/]*\.)?(youtube\.com|youtu\.be|twitch\.tv)/", src))
+
+
+def input_options(src, opts):
+    """buffer_ms and ring_pkts of an input; "auto": 6 s for a segmented live source (a segment of
+    YouTube lasts 5 s, of Twitch 2 s), 1 s otherwise; the ring holds the buffer + 4 s at 15 Mbit/s"""
+    b = opts.get("buffer_ms", "auto")
+    if b in ("auto", None, ""):
+        b = 6000 if segmented_live(src) else 1000
+    elif isinstance(b, bool) or not isinstance(b, (int, float)) or not 100 <= b <= 30000:
+        raise ConfigError(f"buffer_ms {b!r}: \"auto\" or 100 to 30000 (ms)")
+    b = int(b)
+    n = opts.get("ring_pkts", "auto")
+    if n in ("auto", None, ""):
+        need, n = (b / 1000 + 4) * 15e6 / (188 * 8), 65536
+        while n < need:
+            n *= 2
+    return dict(opts, buffer_ms=b, ring_pkts=int(n))
+
+
+def primary_input(index, svc, base_port, src=None):
+    """input of a service's own source (ffmpeg on UDP port base_port + index, or received directly);
+    src: another of its sources (an input tried before it is used: the service is left as it is)"""
+    s = svc.source if src is None else src
+    kind, addr = _input_kind(s, svc.opts)
     if kind == "ffmpeg":
         addr = f"127.0.0.1:{base_port + index}"
-    inp = Input(index, f"{svc.name}", addr, svc.source, kind, svc, "primary", svc.opts)
-    svc.input = inp
+    inp = Input(index, f"{svc.name}", addr, s, kind, svc, "primary", input_options(s, svc.opts))
+    if src is None:
+        svc.input = inp
     return inp
 
 
@@ -567,8 +609,8 @@ def backup_input(index, svc, base_port):
     kind, addr = _input_kind(svc.backup, svc.opts)
     if kind == "ffmpeg":
         addr = f"127.0.0.1:{base_port + index}"
-    bopts = dict(svc.opts, loop=True, encode_on=bool(svc.opts.get("backup_encode", False)),
-                 ffmpeg_input=[], ffmpeg_output=[], readrate="auto")
+    bopts = input_options(svc.backup, dict(svc.opts, loop=True, encode_on=bool(svc.opts.get("backup_encode", False)),
+                                      ffmpeg_input=[], ffmpeg_output=[], readrate="auto"))
     bname = re.sub(r'["\\\x00-\x1f]', "_", os.path.basename(svc.backup))[:50]
     return Input(index, f"backup:{bname}", addr, svc.backup, kind, None, "backup", bopts)
 
@@ -803,4 +845,6 @@ def describe(plan):
         for s in c.services:
             b = f", backup {s.backup}" if s.backup else ""
             out.append(f"   LCN {s.lcn:3d}  SID 0x{s.sid:04X}  {s.name:<24} {s.source}{b}")
+            for i, alt in enumerate((s.sources or [])[1:], 2):
+                out.append(f"   {'':33} then {i}: {alt}")
     return "\n".join(out)

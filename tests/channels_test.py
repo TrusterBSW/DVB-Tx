@@ -137,6 +137,30 @@ def main():
     cfg, plan = load(path)
     check(ch.find(plan, "Cinq HD").lcn == 1 and ch.find(plan, "Un").lcn == 2, "numbers swapped")
 
+    # several sources in order of preference, and the cache
+    new, nplan, sid = ch.update(cfg, plan, "Trois", {"source": ["http://a.example/fhd.ts", "http://a.example/hd.ts",
+                                                                "http://b.example/sd.m3u8"], "buffer_ms": 8000})
+    ch.persist(path, cfg, new)
+    cfg, plan = load(path)
+    t = ch.find(plan, "Trois")
+    check(t.sources == ["http://a.example/fhd.ts", "http://a.example/hd.ts", "http://b.example/sd.m3u8"]
+          and t.source == t.sources[0], "list of sources written and read back in order")
+    check(t.input.options["buffer_ms"] == 8000, "cache set by the administrator")
+    i3 = cfgmod.primary_input(99, t, 20000, src=t.sources[2])
+    check(i3.options["buffer_ms"] == 8000 and t.input.index != 99, "a later source keeps the cache, service untouched")
+    new, nplan, sid = ch.update(cfg, plan, "Trois", {"buffer_ms": None})
+    check(ch.find(nplan, "Trois").input.options["buffer_ms"] == 1000, "cache back to auto (1 s for a file over HTTP)")
+    check(cfgmod.input_options("ytdlp:https://www.youtube.com/@x/live", {})["buffer_ms"] == 6000
+          and cfgmod.input_options("twitch://x", {})["buffer_ms"] == 6000, "auto cache: 6 s for YouTube, Twitch")
+    for bad, what in (({"source": ["a.ts", "a.ts"]}, "the same source twice"), ({"source": []}, "an empty list"),
+                      ({"buffer_ms": 50}, "a cache too small"), ({"buffer_ms": "x"}, "a cache that is not a number"),
+                      ({"source": ["a.ts", "exec:id"]}, "exec: in a list, from the API")):
+        try:
+            ch.update(cfg, plan, "Trois", bad, allow_exec=False)
+            check(False, f"{what} refused")
+        except ch.ChannelError as e:
+            check(True, f"{what} refused ({e})")
+
     # validation by the configuration builder
     for bad, what in (({"name": 'a"b', "source": "x.ts"}, "quote in a name"),
                       ({"name": "X", "source": "x.ts", "lcn": 9, "sid": 0x201}, "sid already used"),

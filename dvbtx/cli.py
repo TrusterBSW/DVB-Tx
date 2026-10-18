@@ -201,6 +201,9 @@ examples:
   dvbtx channel list
   dvbtx channel add "France 24" https://example.org/live.m3u8 --number 5
   dvbtx channel source 5 "ytdlp:https://www.youtube.com/@SkyNews/live" --option ytdlp_format=b
+  dvbtx channel source 5 http://a.example/fhd.ts http://a.example/hd.ts http://b.example/sd.ts
+                       (several sources: in order of preference, the next one when the one playing
+                       fails, back to a preferred one when it works again; all down: the backup clip)
   dvbtx channel rename 5 "France 24 HD"
   dvbtx channel renumber "France 24 HD" 2 --swap
   dvbtx channel remove 0x0105
@@ -261,13 +264,28 @@ def _options(items):
     return out
 
 
+def _cache(v):
+    """--cache: milliseconds, or auto (the key removed: the default)"""
+    if v == "auto":
+        return v
+    try:
+        return int(v)
+    except ValueError:
+        raise argparse.ArgumentTypeError("milliseconds (100-30000) or auto") from None
+
+
+def _sources(lst):
+    """one source, or several in order of preference"""
+    return lst[0] if len(lst) == 1 else list(lst)
+
+
 def _channel_request(a):
     """(method, API path, body) and the equivalent offline operation"""
     from urllib.parse import quote
     from . import channels as chmod
     op = a.channel_cmd
     if op == "add":
-        spec = dict(_options(a.option), name=a.name, source=a.source)
+        spec = dict(_options(a.option), name=a.name, source=_sources(a.source))
         for k, v in (("lcn", a.number), ("sid", a.sid), ("carrier", a.mux)):
             if v is not None:
                 spec[k] = v
@@ -275,6 +293,8 @@ def _channel_request(a):
             spec["backup"] = a.backup
         if a.no_backup:
             spec["backup"] = False
+        if a.cache not in (None, "auto"):
+            spec["buffer_ms"] = a.cache
         return "POST", "/api/channels", spec, lambda cfg, plan: chmod.add(cfg, plan, spec) + (None,)
     ref = a.channel
     path = "/api/channels/" + quote(str(ref), safe="")
@@ -288,11 +308,13 @@ def _channel_request(a):
     elif op == "renumber":
         changes = {"lcn": a.number, "swap": a.swap}
     elif op == "source":
-        changes = dict(_options(a.option), source=a.source)
+        changes = dict(_options(a.option), source=_sources(a.source))
         if a.backup is not None:
             changes["backup"] = a.backup
         if a.no_backup:
             changes["backup"] = ""
+        if a.cache is not None:
+            changes["buffer_ms"] = None if a.cache == "auto" else a.cache
     else:                                   # set
         changes = _options(a.values)
         if not changes:
@@ -332,8 +354,13 @@ def cmd_channel(a):
         print(f"{'No':>4}  {'SID':6}  {'Name':24} {'Mux':12} {'On':8} Source")
         for c in sorted(rows, key=lambda c: c["lcn"]):
             on = c.get("on") or ("-" if live else "")
-            print(f"{c['lcn']:>4}  0x{c['sid']:04X}  {c['name'][:24]:24} {c['carrier_name'][:12]:12} {on:8} {c['source']}"
+            srcs = c.get("sources") or [c["source"]]
+            act = c.get("active", 0) if live else 0
+            print(f"{c['lcn']:>4}  0x{c['sid']:04X}  {c['name'][:24]:24} {c['carrier_name'][:12]:12} {on:8} "
+                  + (f"{srcs[0]}" if len(srcs) == 1 else f"{'*' if act == 0 else ' '}1 {srcs[0]}")
                   + (f"  (backup {c['backup']})" if c.get("backup") else ""))
+            for i, x in enumerate(srcs[1:], 1):
+                print(f"{'':59} {'*' if act == i else ' '}{i + 1} {x}")
         if not live:
             print(f"(from {path}: dvbtx is not running)")
         return
@@ -443,12 +470,16 @@ def main(argv=None):
     x.add_argument("--json", action="store_true")
     x = cs.add_parser("add", help="add a channel")
     x.add_argument("name")
-    x.add_argument("source", help="any source dvbtx reads: file, URL, ytdlp:..., twitch://..., udp://...")
+    x.add_argument("source", nargs="+", help="any source dvbtx reads: file, URL, ytdlp:..., twitch://..., udp://...; "
+                   "several: in order of preference, the next one is used when the one playing fails")
     x.add_argument("--number", "--lcn", type=int, help="channel number (default: the first free one)")
     x.add_argument("--mux", help="multiplex (carrier index or name), needed if there are several")
     x.add_argument("--sid", type=lambda v: int(v, 0), help="service_id (default: the first free one of the multiplex)")
     x.add_argument("--backup", help="clip played when the source fails (default: defaults.backup)")
     x.add_argument("--no-backup", action="store_true")
+    x.add_argument("--cache", type=_cache, metavar="MS", help="buffer between the arrival of the source and "
+                   "the transmission (buffer_ms): larger, an irregular stream goes through without losses, the "
+                   "channel is later than live; auto (default): 6000 for YouTube, Twitch, HLS, 1000 otherwise")
     x.add_argument("--option", action="append", metavar="KEY=VALUE",
                    help="any service setting, e.g. ytdlp_format=b, readrate=false, encode=true (repeatable)")
     x = cs.add_parser("remove", aliases=["rm", "delete"], help="remove a channel")
@@ -463,9 +494,12 @@ def main(argv=None):
     x = cs.add_parser("source", help="play another source on a channel (no cut: the old one plays until the new "
                       "one delivers)")
     x.add_argument("channel")
-    x.add_argument("source")
+    x.add_argument("source", nargs="+", help="the new source, or several in order of preference")
     x.add_argument("--backup", help="also change its backup clip")
     x.add_argument("--no-backup", action="store_true", help="no backup clip any more")
+    x.add_argument("--cache", type=_cache, metavar="MS", help="buffer between the arrival of the source and "
+                   "the transmission (buffer_ms): larger, an irregular stream goes through without losses, the "
+                   "channel is later than live; auto (default): 6000 for YouTube, Twitch, HLS, 1000 otherwise")
     x.add_argument("--option", action="append", metavar="KEY=VALUE", help="service settings that go with the "
                    "new source, e.g. ytdlp_format=b (KEY= removes one)")
     x = cs.add_parser("set", help="change any setting of a channel (KEY= removes it)")

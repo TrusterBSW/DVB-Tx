@@ -31,6 +31,8 @@ SI_KEYS = {"name", "lcn", "provider", "visible", "type", "epg_id"}
 # keys of the engine's service settings: a change re-creates the service (brief interruption)
 ENGINE_KEYS = {"sid", "pid_base", "switch_timeout_ms", "return_ms", "max_late_ms", "early_ms", "pcr_max_ms",
                "pmt_period_ms", "priority"}
+# keys read by the supervisor only (choice among the sources of a service): applied without touching anything
+SUPERVISOR_KEYS = {"failover_s", "source_start_s", "preferred_retry_s"}
 # sources that run a command or read the transmitter's own input: refused from the web API unless
 # web.allow_exec_sources (the configuration file and the offline CLI may use them)
 EXEC_RE = re.compile(r"^(exec:|pipe:|stdin:?$|-$)")
@@ -88,7 +90,8 @@ def find_carrier(plan, ref):
 def describe(s):
     """JSON view of a service of the plan"""
     return {"carrier": s.carrier.index, "carrier_name": s.carrier.name, "lcn": s.lcn, "sid": s.sid,
-            "name": s.name, "source": s.source, "backup": s.backup, "pid_base": s.pid_base,
+            "name": s.name, "source": s.source, "sources": list(s.sources or [s.source]), "active": s.active,
+            "backup": s.backup, "pid_base": s.pid_base,
             "visible": s.visible, "provider": s.provider}
 
 
@@ -151,6 +154,17 @@ def _check_source(src, allow_exec):
     return src
 
 
+def _check_sources(v, allow_exec):
+    """a source, or a list of sources in order of preference (written as a string when there is one)"""
+    lst = [v] if isinstance(v, str) else list(v) if isinstance(v, (list, tuple)) else []
+    lst = [_check_source(x, allow_exec) for x in lst if not (isinstance(x, str) and not x.strip())]
+    if not lst:
+        raise ChannelError("source required")
+    if len(set(lst)) != len(lst):
+        raise ChannelError("the same source is given twice")
+    return lst[0] if len(lst) == 1 else lst
+
+
 def _build(cfg):
     try:
         return cfgmod.build(cfg)
@@ -164,7 +178,7 @@ def add(cfg, plan, spec, allow_exec=True):
     spec = dict(spec)
     _check_options(spec, allow_exec)
     car = find_carrier(plan, spec.pop("carrier", None))
-    raw = {"name": _check_name(spec.pop("name", "")), "source": _check_source(spec.pop("source", ""), allow_exec)}
+    raw = {"name": _check_name(spec.pop("name", "")), "source": _check_sources(spec.pop("source", ""), allow_exec)}
     for k, v in spec.items():
         if v is None or v == "":
             continue
@@ -213,7 +227,7 @@ def update(cfg, plan, ref, changes, allow_exec=True):
         if k == "name":
             raw["name"] = _check_name(v)
         elif k == "source":
-            raw["source"] = _check_source(v, allow_exec)
+            raw["source"] = _check_sources(v, allow_exec)
         elif k == "backup":
             raw["backup"] = _check_source(v, allow_exec) if v not in ("", None, False) else False
         elif k in ("sid", "carrier"):

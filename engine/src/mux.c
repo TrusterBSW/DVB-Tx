@@ -296,12 +296,16 @@ static void svc_take_prog(mux *m, svc *s, input *in)
     svc_build_pmt(m, s);
 }
 
-static int input_up(input *in, int64_t now, int64_t timeout)
+/* up: data arrived within the timeout, or data still buffered for now (a source that arrives in
+ * bursts, such as live HLS at the edge of the playlist, is not down while its buffer plays) */
+static int input_up(input *in, int64_t now, int64_t slot_now, int64_t timeout)
 {
     if (!in || !in->prog.valid)
         return 0;
     int64_t t = atomic_load_explicit(&in->last_pub_ns, memory_order_relaxed);
-    return t && now - t < timeout;
+    if (!t)
+        return 0;
+    return now - t < timeout || atomic_load_explicit(&in->last_ideal_ns, memory_order_relaxed) > slot_now;
 }
 
 /* first ring position whose ideal time is >= t (entries are close to time order) */
@@ -355,8 +359,8 @@ static void svc_check(mux *m, svc *s, int64_t slot_now)
          * without video, data due now); after PRIMARY_SWAP_NS, or off the primary, at once */
         input *n = s->next_primary;
         int64_t key = -1;
-        int ready = s->cur != 0 || now - s->next_since > PRIMARY_SWAP_NS;
-        if (!ready && input_up(n, now, to)) {
+        int ready = s->cur != 0 || now - s->next_since > PRIMARY_SWAP_NS + n->buffer_ns;
+        if (!ready && input_up(n, now, slot_now, to)) {
             if (atomic_load(&n->has_video))
                 ready = (key = input_key_between(n, slot_now, slot_now + 40000000)) >= 0;
             else {
@@ -375,7 +379,7 @@ static void svc_check(mux *m, svc *s, int64_t slot_now)
             }
         }
     }
-    int up0 = input_up(s->in[0], now, to), up1 = input_up(s->in[1], now, to);
+    int up0 = input_up(s->in[0], now, slot_now, to), up1 = input_up(s->in[1], now, slot_now, to);
     for (int i = 0; i < 2; i++) {
         int up = i ? up1 : up0;
         if (!up)

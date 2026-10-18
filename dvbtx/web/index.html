@@ -60,7 +60,7 @@ dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--c
 dialog::backdrop { background: rgb(0 0 0 / .35); }
 dialog h3 { margin: 0 0 12px; font-size: 16px; }
 dialog label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
-dialog input[type=text], dialog input[type=number], dialog select { width: 100%; font: inherit; padding: 6px 8px; border-radius: 6px;
+dialog input[type=text], dialog input[type=number], dialog select, dialog textarea { width: 100%; font: inherit; padding: 6px 8px; border-radius: 6px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
 dialog .hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
@@ -105,8 +105,10 @@ button.danger { color: var(--crit); }
     <label for="ch_name">Nom</label><input id="ch_name" type="text" maxlength="60" required>
     <label for="ch_lcn">Numéro (LCN)</label><input id="ch_lcn" type="number" min="1" max="1023" placeholder="le premier libre">
     <div id="ch_swap_row" class="hint"><label style="display:inline;color:inherit"><input id="ch_swap" type="checkbox"> si le numéro est pris, échanger avec cette chaîne</label></div>
-    <label for="ch_source">Source</label><input id="ch_source" type="text" required placeholder="fichier, URL, ytdlp:…, twitch://…, udp://…">
-    <div class="hint">Changer de source ne coupe pas la chaîne : l'ancienne joue jusqu'à ce que la nouvelle arrive.</div>
+    <label for="ch_source">Sources</label><textarea id="ch_source" rows="3" required spellcheck="false" placeholder="fichier, URL, ytdlp:…, twitch://…, udp://… (une par ligne)"></textarea>
+    <div class="hint">Une par ligne, dans l'ordre de préférence : si celle qui joue tombe, la suivante prend le relais, et la chaîne revient à une préférée dès qu'elle remarche ; toutes en panne : la vidéo de secours. Changer de source ne coupe pas la chaîne : l'ancienne joue jusqu'à ce que la nouvelle arrive.</div>
+    <label for="ch_cache">Cache (ms)</label><input id="ch_cache" type="number" min="100" max="30000" step="100" placeholder="auto">
+    <div class="hint" id="ch_cache_hint">Retard accepté entre l'arrivée de la source et l'émission. Plus grand : un flux irrégulier passe sans pertes ni bascule sur le secours, mais la chaîne a plus de retard sur le direct. Vide (auto) : 6000 pour YouTube, Twitch et le HLS (.m3u8), 1000 sinon.</div>
     <label for="ch_backup">Vidéo de secours</label><input id="ch_backup" type="text" placeholder="vide : aucune">
     <div class="hint" id="ch_saved"></div>
     <div class="err" id="ch_err"></div>
@@ -234,7 +236,7 @@ function render(s) {
       return `<tr>
         <td class="num">${sv.lcn}</td>
         <td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${COLORS[i % COLORS.length]};margin-right:6px"></i><b>${esc(sv.name)}</b><div class="muted hide-sm" style="font-size:11px">${hex(sv.sid)} · type ${hex(sv.type, 2)}</div></td>
-        <td><span class="pill ${srcCls}">${src === "primary" ? "principale" : src === "backup" ? "secours" : "aucune"}</span></td>
+        <td><span class="pill ${srcCls}">${src === "primary" ? "principale" : src === "backup" ? "secours" : "aucune"}</span>${(sv.sources || []).length > 1 ? `<div class="muted" style="font-size:11px" title="${esc(sv.source)}">source ${sv.active + 1}/${sv.sources.length}${sv.trying != null ? ` · essai de la ${sv.trying + 1}` : ""}</div>` : ""}</td>
         <td class="num">${mbps(inp.rate)}</td>
         <td class="num">${mbps(lv.rate)}</td>
         <td class="num">${marginPill(lv.video_margin_min_ms)}<div class="muted" style="font-size:11px">moy ${ms(lv.video_margin_avg_ms)}</div></td>
@@ -299,28 +301,34 @@ async function refresh() {
 async function refreshHist() {
   try { hist = await (await fetch("/api/history?last=600")).json(); } catch (e) { /* keep the previous */ }
 }
+// options from the largest to the smallest (guard intervals: from the smallest); KDEFAULT: preselected (the most demanding for DVB-T/T2)
 const KFIELDS = {
-  dvbt: { bandwidth: ["8000000", "7000000", "6000000", "5000000"], mode: ["8k", "2k"], constellation: ["64qam", "16qam", "qpsk"],
+  dvbt: { bandwidth: ["8", "7", "6", "5"], mode: ["8k", "2k"], constellation: ["64qam", "16qam", "qpsk"],
           code_rate: ["7/8", "5/6", "3/4", "2/3", "1/2"], guard: ["1/32", "1/16", "1/8", "1/4"] },
-  dvbt2: { bandwidth: ["8000000", "7000000", "6000000", "5000000", "10000000"], fft: ["32k", "16k", "8k", "4k", "2k", "1k"],
+  dvbt2: { bandwidth: ["10", "8", "7", "6", "5"], fft: ["32k", "16k", "8k", "4k", "2k", "1k"],
            extended: ["true", "false"], guard: ["1/128", "1/32", "1/16", "19/256", "1/8", "19/128", "1/4"],
-           pilot: ["PP7", "PP4", "PP2", "PP1", "PP3", "PP5", "PP6", "PP8"], constellation: ["256qam", "64qam", "16qam", "qpsk"],
-           code_rate: ["2/3", "3/5", "3/4", "4/5", "5/6", "1/2"] },
+           pilot: ["PP8", "PP7", "PP6", "PP5", "PP4", "PP3", "PP2", "PP1"], constellation: ["256qam", "64qam", "16qam", "qpsk"],
+           code_rate: ["5/6", "4/5", "3/4", "2/3", "3/5", "1/2"] },
   dvbc: { constellation: ["256qam", "64qam", "16qam"], symbol_rate: "6900000" },
-  dvbs: { code_rate: ["3/4", "1/2", "2/3", "5/6", "7/8"], symbol_rate: "27500000" },
-  dvbs2: { modulation: ["8psk", "qpsk", "16apsk", "32apsk"], code_rate: ["3/4", "2/3", "3/5", "4/5", "5/6", "8/9", "9/10", "1/2"],
+  dvbs: { code_rate: ["7/8", "5/6", "3/4", "2/3", "1/2"], symbol_rate: "27500000" },
+  dvbs2: { modulation: ["32apsk", "16apsk", "8psk", "qpsk"], code_rate: ["9/10", "8/9", "5/6", "4/5", "3/4", "2/3", "3/5", "1/2"],
            symbol_rate: "27500000", frame: ["normal", "short"] },
 };
+const KDEFAULT = { dvbt: { bandwidth: "8", code_rate: "7/8", guard: "1/32" },
+                   dvbt2: { bandwidth: "8", guard: "1/128", pilot: "PP7", code_rate: "5/6" },
+                   dvbs: { code_rate: "3/4" }, dvbs2: { modulation: "8psk", code_rate: "3/4" } };
+const KLABEL = { bandwidth: "bandwidth (MHz)" };
 function calcForm() {
-  const std = $("#k_std").value, f = KFIELDS[std];
+  const std = $("#k_std").value, f = KFIELDS[std], d = KDEFAULT[std] || {};
   $("#k_fields").innerHTML = Object.entries(f).map(([k, v]) => Array.isArray(v)
-    ? `<label>${k} <select data-k="${k}" onchange="calc()">${v.map((o) => `<option>${o}</option>`).join("")}</select></label>`
-    : `<label>${k} <input data-k="${k}" value="${v}" style="width:7em" oninput="calc()"></label>`).join("");
+    ? `<label>${KLABEL[k] || k} <select data-k="${k}" onchange="calc()">${v.map((o) => `<option${o === d[k] ? " selected" : ""}>${o}</option>`).join("")}</select></label>`
+    : `<label>${KLABEL[k] || k} <input data-k="${k}" value="${v}" style="width:7em" oninput="calc()"></label>`).join("");
   calc();
 }
 async function calc() {
   const q = new URLSearchParams({ standard: $("#k_std").value, services: $("#k_n").value });
-  document.querySelectorAll("#k_fields [data-k]").forEach((e) => q.set(e.dataset.k, e.value));
+  document.querySelectorAll("#k_fields [data-k]").forEach((e) =>
+    q.set(e.dataset.k, e.dataset.k === "bandwidth" ? String(Number(e.value) * 1e6) : e.value));
   const r = await (await fetch("/api/calc?" + q)).json();
   $("#k_rate").textContent = r.error ? "–" : (r.rate / 1e6).toFixed(3) + " Mbit/s";
   $("#k_per").textContent = r.error ? r.error : `soit ${(r.per_service / 1e6).toFixed(2)} Mbit/s par chaîne (3 % gardés pour les tables)`;
@@ -355,7 +363,7 @@ function report(r) {
   if (!r.ok) { toast(`<b>Refusé</b> · ${esc(r.error)}`, true); return false; }
   const W = { added: (d) => `${d.name} ajoutée`, recreated: (d) => `${d.name} recréée`, removed: (d) => `${d.name} supprimée`,
     name: (d) => `Nouveau nom : ${d.from} → ${d.to}`, number: (d) => `${d.name} : numéro ${d.from} → ${d.to}`,
-    source: (d) => `${d.name} : nouvelle source ${d.to}`, backup: (d) => `${d.name} : secours ${d.to || "aucun"}`,
+    source: (d) => `${d.name} : nouvelle source ${[].concat(d.to).join(", puis ")}`, backup: (d) => `${d.name} : secours ${d.to || "aucun"}`,
     si: (d) => `${d.name} : informations de service` };
   const ch = (r.detail || []).map((d) => esc((W[d.what] || ((x) => x.name))(d))).join("<br>") || "aucun changement";
   toast(`${ch}${r.saved ? '<div class="muted">enregistré dans la configuration</div>' : ""}${r.warning ? `<div class="err">${esc(r.warning)}</div>` : ""}`);
@@ -368,7 +376,9 @@ function svcBySid(sid) {
   return [null, null];
 }
 function chOpen(mode, c, sv) {
-  chMode = { mode, sid: sv ? sv.sid : null, before: sv ? { name: sv.name, lcn: sv.lcn, source: sv.source, backup: sv.backup || "" } : null };
+  const srcs = sv ? (sv.sources || [sv.source]).join("\n") : "";
+  const cache = sv && sv.buffer_ms !== "auto" && sv.buffer_ms != null ? String(sv.buffer_ms) : "";
+  chMode = { mode, sid: sv ? sv.sid : null, before: sv ? { name: sv.name, lcn: sv.lcn, source: srcs, backup: sv.backup || "", cache } : null };
   $("#ch_title").textContent = mode === "add" ? "Ajouter une chaîne" : `Modifier ${sv.name}`;
   $("#ch_carrier").innerHTML = (last.carriers || []).map((x) => `<option value="${x.index}">${esc(x.name)}</option>`).join("");
   $("#ch_carrier").value = c.index;
@@ -377,7 +387,9 @@ function chOpen(mode, c, sv) {
   $("#ch_name").value = sv ? sv.name : "";
   $("#ch_lcn").value = sv ? sv.lcn : "";
   $("#ch_swap").checked = false;
-  $("#ch_source").value = sv ? sv.source : "";
+  $("#ch_source").value = srcs;
+  $("#ch_cache").value = cache;
+  $("#ch_cache").placeholder = sv && sv.buffer_ms_used ? `auto (${sv.buffer_ms_used})` : "auto";
   $("#ch_backup").value = sv ? (sv.backup || "") : "";
   $("#ch_err").textContent = "";
   $("#ch_saved").textContent = last.config_path ? `Appliqué tout de suite à cette chaîne seulement, et enregistré dans ${last.config_path}.`
@@ -388,21 +400,26 @@ function chAdd(ci) { const c = last.carriers.find((x) => x.index === ci); chOpen
 function chEdit(sid) { const [c, sv] = svcBySid(sid); if (sv) chOpen("edit", c, sv); }
 async function chSubmit(ev) {
   ev.preventDefault();
-  const name = $("#ch_name").value.trim(), lcn = $("#ch_lcn").value, src = $("#ch_source").value.trim(), bk = $("#ch_backup").value.trim();
+  const name = $("#ch_name").value.trim(), lcn = $("#ch_lcn").value, bk = $("#ch_backup").value.trim();
+  const cache = $("#ch_cache").value.trim();
+  const lines = $("#ch_source").value.split("\n").map((x) => x.trim()).filter(Boolean);
+  const src = lines.join("\n"), srcBody = lines.length === 1 ? lines[0] : lines;
   $("#ch_ok").disabled = true;
   let r;
   try {
     if (chMode.mode === "add") {
-      const body = { carrier: Number($("#ch_carrier").value), name, source: src };
+      const body = { carrier: Number($("#ch_carrier").value), name, source: srcBody };
       if (lcn) body.lcn = Number(lcn);
       if (bk) body.backup = bk;
+      if (cache) body.buffer_ms = Number(cache);
       r = await api("POST", "/api/channels", body);
     } else {
       const b = chMode.before, body = {};
       if (name !== b.name) body.name = name;
       if (lcn && Number(lcn) !== b.lcn) { body.lcn = Number(lcn); body.swap = $("#ch_swap").checked; }
-      if (src !== b.source) body.source = src;
+      if (src !== b.source) body.source = srcBody;
       if (bk !== b.backup) body.backup = bk;
+      if (cache !== b.cache) body.buffer_ms = cache ? Number(cache) : null;
       if (!Object.keys(body).length) { chdlg.close(); return false; }
       r = await api("PATCH", `/api/channels/${hex(chMode.sid)}`, body);
     }

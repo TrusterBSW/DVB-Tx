@@ -13,12 +13,12 @@ dvbtx is on air, without touching the other channels.
 dvbtx channel [-c FILE] [--url URL] [--token TOKEN] [--offline] COMMAND ...
 
 dvbtx channel list [--json]
-dvbtx channel add NAME SOURCE [--number N] [--mux MUX] [--sid SID] [--backup SRC | --no-backup]
-                              [--option KEY=VALUE]...
+dvbtx channel add NAME SOURCE... [--number N] [--mux MUX] [--sid SID] [--backup SRC | --no-backup]
+                                 [--cache MS|auto] [--option KEY=VALUE]...
 dvbtx channel remove CHANNEL
 dvbtx channel rename CHANNEL NEW_NAME
 dvbtx channel renumber CHANNEL NUMBER [--swap]
-dvbtx channel source CHANNEL SOURCE [--backup SRC | --no-backup] [--option KEY=VALUE]...
+dvbtx channel source CHANNEL SOURCE... [--backup SRC | --no-backup] [--cache MS|auto] [--option KEY=VALUE]...
 dvbtx channel set CHANNEL KEY=VALUE...
 ```
 
@@ -55,6 +55,33 @@ its name (`"France 24"`, any case; a name made of digits is taken as a number).
 
 The service_id and the multiplex of a channel cannot be changed: remove it and add it again.
 
+### Several sources, in order of preference
+
+Several `SOURCE`s (a TOML list in the file: `source = ["first", "second", ...]`, one per line on
+the web page, a JSON list in the API), as many as needed. The first one plays. When the source
+playing has delivered nothing for `failover_s` (10 s), or has not started within `source_start_s`
+(30 s), it is stopped and the next one started (after the last, the first again); the channel plays
+its backup meanwhile. While not on the first one, the preferred ones are tried again, in order,
+every `preferred_retry_s` (300 s; 0: never), beside the one playing: as soon as one delivers for
+2 s, the channel goes back to it without a cut. When none works, the backup clip (`backup`) plays.
+`list`, the web page and the alerts say which one plays (`*2`, `source 2/3`).
+
+A failed source is stopped before the next one starts, so an IPTV account allowing one connection
+can be given several of its streams. Trying a preferred source while another plays opens a second
+connection for a few seconds (start, 2 s of stream, the switch, then the other is closed): most
+accounts tolerate it, as when zapping; otherwise the provider refuses it (nothing changes) or drops
+the other (a few seconds of backup, then the preferred one); `preferred_retry_s = 0` avoids these
+trials.
+
+### Cache
+
+`--cache MS` (`buffer_ms`, 100 to 30000) is the delay accepted between the arrival of the source and
+its transmission. Larger, an irregular source goes through without lost packets nor switch to the
+backup, the channel being later than live. `auto` (default): 6000 ms for sources delivered in
+segments (YouTube, Twitch, `.m3u8`: at the live edge of the playlist they arrive in bursts, one per
+segment of 2 to 5 s), 1000 ms otherwise. A source is only taken as down once its cache has played
+out. A change of cache restarts the source beside the old one (no cut).
+
 ### Numbers, service_id and PIDs stay where they are
 
 By default the service_id, the number and the PIDs of a channel follow its position in the file.
@@ -89,8 +116,8 @@ by hand, or the following ones change service_id.
 : the channels: number, service_id, name, multiplex, what is on air (`primary`, `backup`, `none`),
   source and backup. From the file when dvbtx is not running.
 
-`add NAME SOURCE`
-: `SOURCE` is any source dvbtx reads (file, `dir:`, URL, HLS, `ytdlp:`, `twitch://`, `m3u:`,
+`add NAME SOURCE...`
+: `SOURCE` is any source dvbtx reads (several: in order of preference, see above) (file, `dir:`, URL, HLS, `ytdlp:`, `twitch://`, `m3u:`,
   `udp://`, `rtmp://`, `srt://`, `v4l2:`, `lavfi:`...). `--number N` (default: the first free one),
   `--mux MUX` (index or name of the multiplex; required when there are several), `--sid SID`,
   `--backup SRC` (default: `defaults.backup`) or `--no-backup`, `--option KEY=VALUE` for any
@@ -105,8 +132,8 @@ by hand, or the following ones change service_id.
 `renumber CHANNEL NUMBER [--swap]`
 : refused if the number is taken, unless `--swap`: the other channel then gets the old number.
 
-`source CHANNEL SOURCE [--backup SRC | --no-backup] [--option KEY=VALUE]...`
-: plays another source on the channel without cutting it. `--option` sets the service settings
+`source CHANNEL SOURCE... [--backup SRC | --no-backup] [--cache MS|auto] [--option KEY=VALUE]...`
+: plays another source (or list of sources) on the channel without cutting it. `--option` sets the service settings
   that go with the new source (`KEY=` with nothing removes one, e.g. a `ytdlp_format` that does not
   apply to the new source).
 
@@ -133,17 +160,18 @@ by hand, or the following ones change service_id.
 ## WEB PAGE AND API
 
 The web page has a **+ Ajouter une chaîne** button per multiplex and **Modifier** / **✕** buttons
-per channel (name, number with swap, source, backup); the result of each change is shown, and
+per channel (name, number with swap, sources, cache, backup); the result of each change is shown, and
 whether it was written to the file.
 
 ```
 GET    /api/channels                  [{"lcn", "sid", "name", "source", "backup", "carrier", "on", ...}]
 POST   /api/channels                  {"name", "source", "carrier"?, "lcn"?, "sid"?, "backup"?, options...}
-PATCH  /api/channels/<channel>        {"name"?, "lcn"?, "swap"?, "source"?, "backup"?, options...}
+PATCH  /api/channels/<channel>        {"name"?, "lcn"?, "swap"?, "source"?, "backup"?, "buffer_ms"?, options...}
 DELETE /api/channels/<channel>
 ```
 
-`<channel>` as CHANNEL above, URL-encoded. `"backup": ""` (or `false`) removes the backup, an option
+`<channel>` as CHANNEL above, URL-encoded. `"source"`: a string or a list (in order of
+preference); `"buffer_ms": null` back to auto. `"backup": ""` (or `false`) removes the backup, an option
 set to `null` is removed. Answer `{"ok": true, "sid", "changes": [text], "detail": [{"what", "name",
 "from", "to"}], "saved", "warning"?}`, or `{"ok": false, "error"}` with status 400 (403, 401, 415:
 see below).
@@ -179,6 +207,9 @@ dvbtx channel add "France 24" "http://provider.example/live/user/pass/976" --num
 dvbtx channel add "Sky News" "ytdlp:https://www.youtube.com/@SkyNews/live" \
       --option 'ytdlp_format=bv*[vcodec^=avc1][height<=720]+ba/b[height<=720]'
 dvbtx channel source "Sky News" "https://example.org/sky/index.m3u8" --option ytdlp_format=
+dvbtx channel source "France 24" http://provider.example/u/p/289 http://provider.example/u/p/319 \
+      http://provider.example/u/p/976          # FHD, then HD, then Caribbean, then the backup clip
+dvbtx channel source "Seismic" twitch://dynamicearthcommunitylive --cache 8000
 dvbtx channel rename 3 "France 24 FR"
 dvbtx channel renumber "France 24 FR" 1 --swap
 dvbtx channel set 3 epg_id=France24.fr
