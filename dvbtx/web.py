@@ -206,6 +206,7 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             p = sup.proc_of(int(m.group(1)))
             if p:
+                logging.getLogger("dvbtx").info("input %s: restarted from the web page", p.inp.name)
                 p.restart()
                 return self._send(200, {"ok": True})
             return self._send(404, {"error": "no such input"})
