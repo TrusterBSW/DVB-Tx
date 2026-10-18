@@ -153,6 +153,7 @@ class Recipe:
         self.maps = None           # stream selection forced by the recipe
         self.probe = []            # URLs/paths whose codecs may be checked before copying
         self.network = False       # fetched over HTTP: -re must be able to catch up after a slow fetch
+        self.copyts = False        # separate video and audio inputs: their own timestamps keep them in sync
 
 
 def recipe_for(src, opts, ing, work_dir, pl_index=0):
@@ -198,6 +199,9 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
         if len(urls) == 2:                     # separate video and audio (YouTube DASH)
             r.inputs += http_input(urls[1])
             r.maps = ["0:v:0", "1:a:0"]
+            # the two live playlists do not start at the same moment (seen: audio one 5 s segment
+            # ahead): ffmpeg would start each one at 0 and the sound would be off by that much
+            r.copyts = True
     elif src.startswith("m3u:"):
         u = resolve_m3u(src)
         r.inputs = http_input(u)
@@ -390,7 +394,7 @@ def build_command(inp, plan, pl_index=0):
     ff = [ing["ffmpeg"], "-hide_banner", "-loglevel", ing.get("loglevel", "warning"), "-nostats"]
     if not rec.use_stdin and not rec.producer:
         ff.append("-nostdin")
-    ff += ["-fflags", "+genpts+discardcorrupt"] + rec.inputs
+    ff += ["-fflags", "+genpts+discardcorrupt"] + (["-copyts"] if rec.copyts else []) + rec.inputs
     maps = list(rec.maps or o.get("map") or [])
     extra = _audio_input(rec.extra_audio) if rec.extra_audio else None
     if extra:
