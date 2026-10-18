@@ -178,6 +178,26 @@ function marginPill(v) {
 }
 
 let last = null;
+/* re-renders a block every second without closing the logs opened in it (details[data-key]) nor
+ * moving their scroll; left as it is while text is selected in it (to copy a log line) */
+function keepOpen(el, fn) {
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed && sel.rangeCount && el.contains(sel.getRangeAt(0).commonAncestorContainer)) return;
+  const st = {};
+  el.querySelectorAll("details[data-key]").forEach((d) => {
+    const pre = d.querySelector("pre");
+    st[d.dataset.key] = { open: d.open, top: pre ? pre.scrollTop : 0,
+                          bottom: pre ? pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4 : true };
+  });
+  fn();
+  el.querySelectorAll("details[data-key]").forEach((d) => {
+    const v = st[d.dataset.key];
+    if (!v || !v.open) return;
+    d.open = true;
+    const pre = d.querySelector("pre");
+    if (pre) pre.scrollTop = v.bottom ? pre.scrollHeight : v.top;
+  });
+}
 function render(s) {
   last = s;
   if (s.thresholds) marginMin = s.thresholds.margin_min_ms;
@@ -272,18 +292,23 @@ function render(s) {
     </div>`;
   }).join("");
 
-  $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
+  keepOpen($("#inputs"), () => $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
     s.inputs.map((p) => {
       const live = p.live || {};
       const cls = p.state === "running" ? "ok" : p.state === "error" ? "critical" : p.kind === "direct" ? "info" : "warning";
       return `<tr><td>${p.index}</td><td><b>${esc(p.name)}</b> <span class="muted">${p.role === "backup" ? "(secours)" : ""}</span><div class="muted" style="font-size:11px;word-break:break-all">${esc(p.source)}</div></td>
         <td><span class="pill ${cls}">${p.kind === "direct" ? "UDP direct" : esc(p.state)}</span>${p.error ? `<div class="err" style="font-size:11px">${esc(p.error)}</div>` : ""}</td>
         <td class="num">${p.restarts}</td><td class="num">${mbps(live.rate)}</td><td class="num">${live.idle_ms != null && live.idle_ms >= 0 ? ms(live.idle_ms) + " ms" : "–"}</td>
-        <td><details><summary>${p.log.length} ligne(s)</summary><pre>${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td>
+        <td><details data-key="in${p.index}${p.role === "trial" ? "t" : ""}"><summary>${p.log.length} ligne(s)</summary><pre>${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td>
         <td>${p.kind === "ffmpeg" ? `<button onclick="restartInput(${p.index})">Relancer</button>` : ""}</td></tr>`;
-    }).join("");
+    }).join(""));
 
-  $("#englog").textContent = (s.engine.log || []).join("\n");
+  const el = $("#englog"), txt = (s.engine.log || []).join("\n"), sel = window.getSelection();
+  if (el.textContent !== txt && !(sel && !sel.isCollapsed && el.contains(sel.anchorNode))) {
+    const bottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4, top = el.scrollTop;
+    el.textContent = txt;
+    el.scrollTop = bottom ? el.scrollHeight : top;
+  }
   $("#ahist").innerHTML = `<tr><th>Heure</th><th>Événement</th><th>Niveau</th><th>Message</th></tr>` +
     s.alert_history.map((a) => `<tr><td>${new Date(a.time * 1000).toLocaleTimeString()}</td><td>${a.event === "clear" ? "fin" : a.event === "raise" ? "début" : "rappel"}</td>
       <td><span class="pill ${a.level}">${a.level}</span></td><td>${esc(a.message)}</td></tr>`).join("");
