@@ -568,6 +568,6 @@ class IngestProc:
         return {"index": self.inp.index, "name": self.inp.name, "kind": self.inp.kind, "role": self.inp.role,
                 "source": self.inp.source, "addr": self.inp.addr, "state": self.state, "restarts": self.restarts,
                 "uptime": round(time.monotonic() - self.started_at) if self.state == "running" else 0,
-                "last_exit": self.last_exit, "error": self.error, "log": list(self.lines)[-12:],
+                "last_exit": self.last_exit, "error": self.error, "log": list(self.lines)[-50:],
                 "playing": self.playlist[self.pl_index % len(self.playlist)] if self.playlist else None,
                 "cmd": self.cmdline}

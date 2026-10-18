@@ -166,7 +166,10 @@ When the source playing has delivered nothing for `failover_s` (10 s), or has no
 `source_start_s` (30 s), the next one is started (after the last, the first again), the channel
 playing its backup meanwhile. While not on the first one, the preferred ones are tried again in
 order every `preferred_retry_s` (300 s, 0: never), beside the one playing: the channel goes back
-to one without a cut as soon as it delivers. None works: the general `backup`. A failed source is
+to one without a cut as soon as it delivers. An unstable source is left too: the channel fell back
+to its backup `unstable_switches` times (3) within `unstable_window_s` (10 min), or stayed on it
+`failover_s` + `return_ms` (20 s); a source left is tried again later each time (5 min, 10, 20...
+up to 1 h), forgiven once it has held 30 min. None works: the general `backup`. A failed source is
 stopped before the next one starts (IPTV accounts limited to one connection).
 `dvbtx channel source 3 URL1 URL2 URL3`, or one source per line on the web page.
 

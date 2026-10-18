@@ -344,7 +344,11 @@ Chaque multiplex est aussi copié en UDP sur `127.0.0.1:20900+n` (et sur les adr
 
 Si la source qui joue ne livre plus rien pendant `failover_s` (10 s), ou n'a pas démarré en
 `source_start_s` (30 s), la suivante est lancée (après la dernière : la première) ; la chaîne joue
-son secours pendant ce temps, puis repart sur la nouvelle source. Tant qu'elle n'est pas sur la
+son secours pendant ce temps, puis repart sur la nouvelle source. Une source instable est aussi
+quittée : la chaîne est retombée sur son secours `unstable_switches` fois (3) en
+`unstable_window_s` (10 min), ou y est restée `failover_s` + `return_ms` (20 s). Une source
+quittée est réessayée de plus en plus tard (5 min, puis 10, 20... jusqu'à 1 h), délai oublié
+quand elle a tenu 30 min. Tant qu'elle n'est pas sur la
 première, les sources préférées sont réessayées dans l'ordre toutes les `preferred_retry_s` (300 s,
 0 : jamais), à côté de celle qui joue : la chaîne y revient sans coupure dès que l'une livre de
 nouveau. Si aucune ne marche, c'est le secours général (`backup`). Une source en panne est arrêtée

@@ -61,7 +61,10 @@ Several `SOURCE`s (a TOML list in the file: `source = ["first", "second", ...]`,
 the web page, a JSON list in the API), as many as needed. The first one plays. When the source
 playing has delivered nothing for `failover_s` (10 s), or has not started within `source_start_s`
 (30 s), it is stopped and the next one started (after the last, the first again); the channel plays
-its backup meanwhile. While not on the first one, the preferred ones are tried again, in order,
+its backup meanwhile. A source is also left when it is unstable: the channel fell back to its
+backup `unstable_switches` times (3) within `unstable_window_s` (600 s), or stayed on it
+`failover_s` + `return_ms` (20 s). A source left is tried again later each time (5 min, then 10,
+20... up to an hour), forgiven once it has held 30 min. While not on the first one, the preferred ones are tried again, in order,
 every `preferred_retry_s` (300 s; 0: never), beside the one playing: as soon as one delivers for
 2 s, the channel goes back to it without a cut. When none works, the backup clip (`backup`) plays.
 `list`, the web page and the alerts say which one plays (`*2`, `source 2/3`).

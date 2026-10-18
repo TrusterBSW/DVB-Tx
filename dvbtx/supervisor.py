@@ -463,6 +463,7 @@ class Supervisor:
         self.replies = {}
         self.reply_cv = threading.Condition()
         self.fo = {}                # service_id -> state of the choice among its sources (see _failover)
+        self.fo_wait = {}           # service_id -> {source k: [retry interval, not before]} of sources left
 
     # ---------------------------------------------------------------- engine
 
@@ -992,10 +993,14 @@ class Supervisor:
         has delivered nothing for failover_s (or has not started within source_start_s), the next one
         is used (after the last, the first again), the channel playing its backup meanwhile; while on
         another than the first, the preferred ones are tried every preferred_retry_s in order, beside
-        the source in use, and the channel goes back to one as soon as it delivers (without a cut)."""
+        the source in use, and the channel goes back to one as soon as it delivers (without a cut).
+        A source is also left when it is unstable: the channel fell back to its backup unstable_switches
+        times within unstable_window_s, or stayed on it failover_s + return_ms. Each time a source is
+        left, it is tried again twice later than the previous time (up to an hour)."""
         if not self.stats or time.time() - self.stats_at > 5 or not (self.engine and self.engine.poll() is None):
             return
         ins = {i["index"]: i for i in self.stats.get("inputs", [])}
+        live = {x["sid"]: x.get("source") for c in self.stats.get("carriers", []) for x in c.get("services", [])}
         now = time.monotonic()
         for svc in list(self.plan.services):
             n = len(svc.sources or ())
@@ -1008,14 +1013,39 @@ class Supervisor:
             st = self.fo.setdefault(svc.sid, {"since": now, "next_probe": now + retry_s, "probe_k": 0})
             i = ins.get(svc.input.index)
             idle = i.get("idle_ms", -1) if i else -1
+            why = None
             if i and i.get("streams") and 0 <= idle:
-                down = idle > fail_ms
+                if idle > fail_ms:
+                    why = f"nothing for {idle / 1000:.0f} s"
+            elif now - st["since"] > start_s:                # never delivered: given source_start_s
+                why = f"not started within {start_s:.0f} s"
+            # unstable: back and forth to the backup
+            on = live.get(svc.sid)
+            drops = st.setdefault("drops", [])
+            if st.get("on") == "primary" and on == "backup":
+                drops.append(now)
+            st["on"] = on
+            win = float(o.get("unstable_window_s", 600))
+            drops[:] = [t for t in drops if now - t <= win]
+            if on == "backup":
+                st.setdefault("bk_since", now)
             else:
-                down = now - st["since"] > start_s          # never delivered: given source_start_s
-            if down:
+                st.pop("bk_since", None)
+            stay = fail_ms / 1000 + float(o.get("return_ms", 10000)) / 1000
+            if why is None and len(drops) >= int(o.get("unstable_switches", 3)) > 0:
+                why = f"unstable: {len(drops)} falls to the backup within {win / 60:.0f} min"
+            elif why is None and st.get("bk_since") and now - st["bk_since"] >= stay and now - st["since"] > start_s:
+                why = f"on the backup for {now - st['bk_since']:.0f} s"
+            if now - st["since"] > 1800:                     # stable for 30 min: forgiven
+                self.fo_wait.get(svc.sid, {}).pop(svc.active, None)
+            if why:
                 k = (svc.active + 1) % n
-                log.warning("%s: source %d of %d down (%s), now on source %d: %s", svc.name, svc.active + 1, n,
-                            svc.source, k + 1, svc.sources[k])
+                w = self.fo_wait.setdefault(svc.sid, {}).get(svc.active, [retry_s / 2, 0])
+                w[0] = min(max(w[0] * 2, retry_s), 3600)
+                w[1] = now + w[0]
+                self.fo_wait[svc.sid][svc.active] = w
+                log.warning("%s: source %d of %d left (%s: %s), now on source %d: %s", svc.name, svc.active + 1, n,
+                            svc.source, why, k + 1, svc.sources[k])
                 self._fo_drop(svc.sid)
                 self._use_source(svc, k, old_down=True)
                 continue
@@ -1034,13 +1064,18 @@ class Supervisor:
                     st["cand"] = None
                     self._use_source(svc, c["k"], c["inp"], c["proc"])
                 elif (c["ok_since"] is None and now - c["started"] > start_s) or now - c["started"] > start_s + 15:
-                    self._fo_drop(svc.sid)
+                    self._fo_drop(svc.sid, forget=False)
                     st["probe_k"] = c["k"] + 1
                     if st["probe_k"] >= svc.active:
                         st["probe_k"], st["next_probe"] = 0, now + retry_s
                 continue
             if svc.active and retry_s > 0 and now >= st["next_probe"]:
-                self._fo_try(svc, min(st["probe_k"], svc.active - 1))
+                waits = self.fo_wait.get(svc.sid, {})
+                due = [j for j in range(st["probe_k"], svc.active) if now >= waits.get(j, [0, 0])[1]]
+                if due:
+                    self._fo_try(svc, due[0])
+                else:
+                    st["probe_k"], st["next_probe"] = 0, now + retry_s
 
     def _fo_try(self, svc, k):
         """starts source k of svc beside the one in use (an input the engine receives, used by no service)"""
@@ -1053,11 +1088,12 @@ class Supervisor:
         self.fo[svc.sid]["cand"] = {"k": k, "inp": inp, "proc": proc, "started": time.monotonic(), "ok_since": None}
         log.info("%s: trying its source %d again (%s)", svc.name, k + 1, svc.sources[k])
 
-    def _fo_drop(self, sid):
-        """abandons the source being tried for a channel (and forgets its state)"""
-        st = self.fo.pop(sid, None)
+    def _fo_drop(self, sid, forget=True):
+        """abandons the source being tried for a channel (forget: and the state of the channel)"""
+        st = self.fo.pop(sid, None) if forget else self.fo.get(sid)
         c = st and st.get("cand")
         if c:
+            st["cand"] = None
             self.engine_request(f"input del id={c['inp'].index}")
             c["proc"].stop()
 
@@ -1122,7 +1158,7 @@ class Supervisor:
         out = {"version": __import__("dvbtx").__version__, "uptime": round(time.time() - self.started),
                "stats_age": round(time.time() - self.stats_at, 1) if self.stats_at else None,
                "engine": {"running": self.engine is not None and self.engine.poll() is None,
-                          "restarts": self.engine_restarts, "log": list(self.engine_lines)[-15:]},
+                          "restarts": self.engine_restarts, "log": list(self.engine_lines)[-50:]},
                "radios": [], "carriers": [], "inputs": [p.status() for p in self.ingest] +
                                                        [dict(f["cand"]["proc"].status(), role="trial")
                                                         for f in self.fo.values() if f.get("cand")],

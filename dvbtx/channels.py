@@ -32,7 +32,7 @@ SI_KEYS = {"name", "lcn", "provider", "visible", "type", "epg_id"}
 ENGINE_KEYS = {"sid", "pid_base", "switch_timeout_ms", "return_ms", "max_late_ms", "early_ms", "pcr_max_ms",
                "pmt_period_ms", "priority"}
 # keys read by the supervisor only (choice among the sources of a service): applied without touching anything
-SUPERVISOR_KEYS = {"failover_s", "source_start_s", "preferred_retry_s"}
+SUPERVISOR_KEYS = {"failover_s", "source_start_s", "preferred_retry_s", "unstable_switches", "unstable_window_s"}
 # sources that run a command or read the transmitter's own input: refused from the web API unless
 # web.allow_exec_sources (the configuration file and the offline CLI may use them)
 EXEC_RE = re.compile(r"^(exec:|pipe:|stdin:?$|-$)")

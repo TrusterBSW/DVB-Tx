@@ -79,7 +79,10 @@ switch_timeout_ms = 3000                # silence before switching to the backup
 failover_s = 10                         # several sources: the next one when the one playing has delivered
                                         # nothing for this long
 source_start_s = 30                     # ... or has not started within this time
-preferred_retry_s = 300                 # not on the first source: the preferred ones tried this often (0: never)
+preferred_retry_s = 300                 # not on the first source: the preferred ones tried this often (0: never);
+                                        # a source left is tried twice later each time (up to 1 h)
+unstable_switches = 3                   # a source is also left when its channel fell to the backup this many times
+unstable_window_s = 600                 # ... within this time (0 switches: never)
 return_ms = 10000                       # primary stable for this long before switching back
 max_late_ms = 600                       # packets later than this are dropped
 early_ms = 100                          # packets may leave this much in advance to smooth the peaks
