@@ -12,6 +12,7 @@
  * name= takes the rest of the line. Any command may start with seq=N: the answer is a JSON line
  * {"type":"reply","seq":N,"ok":true} or {..."ok":false,"error":"..."}. */
 #define _GNU_SOURCE
+#include <sched.h>
 #include <errno.h>
 #include <poll.h>
 #include <signal.h>
@@ -287,6 +288,82 @@ static void inputs_reap(void)
     }
 }
 
+/* Keeps every thread of the engine (the ones libhackrf / libusb start later included: the affinity
+ * is inherited) off the cores that take the interrupts of the USB host controllers. A real-time
+ * thread of ours on such a core delays the USB softirq work (ksoftirqd runs at normal priority):
+ * the transfers reach the radio late and its FIFO runs dry, a gap on air (the lesson of the CMTS
+ * bench on the same host). cpus: "auto" (default), "all", or a list such as "1-5". */
+static void place_threads(const char *spec)
+{
+    cpu_set_t allowed, keep, irq;
+    if (sched_getaffinity(0, sizeof allowed, &allowed))
+        return;
+    CPU_ZERO(&keep);
+    CPU_ZERO(&irq);
+    if (spec && !strcmp(spec, "all"))
+        return;
+    if (spec && strcmp(spec, "auto")) {
+        for (const char *p = spec; *p;) {
+            char *e;
+            long a = strtol(p, &e, 10), b = a;
+            if (e == p)
+                break;
+            if (*e == '-')
+                b = strtol(e + 1, &e, 10);
+            for (long c = a; c <= b && c < CPU_SETSIZE; c++)
+                CPU_SET((int)c, &keep);
+            p = *e == ',' ? e + 1 : e;
+        }
+        if (CPU_COUNT(&keep) && !sched_setaffinity(0, sizeof keep, &keep))
+            LOGI("threads on CPU %s (cpus)", spec);
+        return;
+    }
+    FILE *f = fopen("/proc/interrupts", "r");
+    if (!f)
+        return;
+    char line[4096], cpus[64] = "";
+    while (fgets(line, sizeof line, f)) {
+        if (!strstr(line, "xhci") && !strstr(line, "ehci"))
+            continue;
+        int n = atoi(line);
+        char path[64], buf[256];
+        snprintf(path, sizeof path, "/proc/irq/%d/effective_affinity_list", n);
+        FILE *g = fopen(path, "r");
+        if (!g)
+            continue;
+        if (fgets(buf, sizeof buf, g)) {
+            for (const char *p = buf; *p && *p != '\n';) {
+                char *e;
+                long a = strtol(p, &e, 10), b = a;
+                if (e == p)
+                    break;
+                if (*e == '-')
+                    b = strtol(e + 1, &e, 10);
+                for (long c = a; c <= b && c < CPU_SETSIZE; c++)
+                    CPU_SET((int)c, &irq);
+                p = *e == ',' ? e + 1 : e;
+            }
+        }
+        fclose(g);
+    }
+    fclose(f);
+    int nk = 0;
+    for (int c = 0; c < CPU_SETSIZE; c++) {
+        if (CPU_ISSET(c, &allowed) && !CPU_ISSET(c, &irq)) {
+            CPU_SET(c, &keep);
+            nk++;
+        } else if (CPU_ISSET(c, &irq) && strlen(cpus) < sizeof cpus - 6) {
+            snprintf(cpus + strlen(cpus), sizeof cpus - strlen(cpus), "%s%d", *cpus ? "," : "", c);
+        }
+    }
+    if (!CPU_COUNT(&irq) || nk < 2) {
+        LOGI("threads on every CPU (USB interrupts on %s)", *cpus ? cpus : "?");
+        return;
+    }
+    if (!sched_setaffinity(0, sizeof keep, &keep))
+        LOGI("threads kept off CPU %s (USB interrupts)", cpus);
+}
+
 int main(int argc, char **argv)
 {
     const char *cfg = NULL;
@@ -316,6 +393,7 @@ int main(int argc, char **argv)
     if (ll && g_log_level < LOG_DEBUG)
         g_log_level = !strcmp(ll, "debug") ? LOG_DEBUG : !strcmp(ll, "warn") ? LOG_WARN : !strcmp(ll, "error") ? LOG_ERR : LOG_INFO;
     int stats_ms = (int)conf_int(eng, "stats_interval_ms", 1000);
+    place_threads(conf_str(eng, "cpus", "auto"));
 
     /* inputs by id: removals while the supervisor runs leave gaps in the numbering */
     for (int si = 0; si < cf->nsec; si++) {

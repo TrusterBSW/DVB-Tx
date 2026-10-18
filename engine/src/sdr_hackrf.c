@@ -5,6 +5,7 @@
 #include <hackrf.h>
 #include <math.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,11 @@ struct sdr_dev {
     uint64_t underruns;
     uint64_t shortfalls;            /* reported by the firmware: its FIFO ran dry (USB too slow) */
     int64_t m0_at;                  /* last read of the M0 state; -1: not supported */
+    int64_t m0_period;              /* ns between two reads (args "m0_poll=S", default 1 s; 0: never) */
+    int rt;                         /* args "rt=N": SCHED_FIFO priority of the USB thread (default 60, 0: none) */
+    int rt_done;
+    pthread_t writer;               /* the radio thread: libhackrf calls tx_cb from it for the first transfers */
+    int have_writer;
 };
 
 static int64_t now_ns(void)
@@ -36,6 +42,15 @@ static int64_t now_ns(void)
 static int tx_cb(hackrf_transfer *t)
 {
     sdr_dev *d = t->tx_ctx;
+    if (!d->rt_done && !(d->have_writer && pthread_equal(pthread_self(), d->writer))) {
+        /* runs in the libusb event thread of libhackrf: a late transfer empties the firmware FIFO */
+        d->rt_done = 1;
+        if (d->rt > 0) {
+            struct sched_param sp = {.sched_priority = d->rt};
+            int e = pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
+            fprintf(stderr, "hackrf: USB thread SCHED_FIFO %d: %s\n", d->rt, e ? strerror(e) : "ok");
+        }
+    }
     size_t want = (size_t)t->valid_length, got = 0;
     pthread_mutex_lock(&d->lock);
     while (got < want && d->used) {
@@ -152,6 +167,10 @@ static sdr_dev *hk_open(const sdr_params *p, char *err, int errlen)
         hk_close(d);
         return NULL;
     }
+    char v[32];
+    d->m0_period = arg_value(p->args, "m0_poll", v, sizeof v) ? (int64_t)(strtod(v, NULL) * 1e9) : 1000000000LL;
+    /* the libusb thread above our own real-time threads (radio 50, carriers 40): never delayed by them */
+    d->rt = arg_value(p->args, "rt", v, sizeof v) ? atoi(v) : 60;
     int ms = p->buffer_ms > 0 ? p->buffer_ms : 40;
     size_t bytes = (size_t)(p->rate * 2 * ms / 1000.0);
     bytes = (bytes + 262143) / 262144 * 262144;
@@ -184,6 +203,8 @@ static int hk_write(sdr_dev *d, const float complex *const *bufs, int n, float s
             if (!d->started) {
                 /* libhackrf fills the first transfers by calling tx_cb from here: unlock */
                 d->started = 1;
+                d->writer = pthread_self();
+                d->have_writer = 1;
                 pthread_mutex_unlock(&d->lock);
                 int r = hackrf_start_tx(d->dev, tx_cb, d);
                 if (r != HACKRF_SUCCESS) {
@@ -230,7 +251,7 @@ static int hk_write(sdr_dev *d, const float complex *const *bufs, int n, float s
 static void read_m0(sdr_dev *d)
 {
     int64_t now = now_ns();
-    if (d->m0_at < 0 || now - d->m0_at < 1000000000LL || !d->started)
+    if (d->m0_at < 0 || d->m0_period <= 0 || now - d->m0_at < d->m0_period || !d->started)
         return;
     d->m0_at = now;
     hackrf_m0_state st;

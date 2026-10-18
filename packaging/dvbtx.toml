@@ -70,6 +70,9 @@ discontinuity_restart = 10              # an ffmpeg reporting this many timestam
 binary = ""                             # default: /usr/lib/dvbtx/dvbtx-engine
 log_level = "info"
 stats_interval_ms = 1000
+cpus = "auto"                           # auto: every engine thread kept off the cores that take the USB
+                                        # interrupts (a real-time thread there delays the USB work: gaps on
+                                        # air); "all", or a list such as "1-5"
 
 # Defaults of every service (each key can be set per service too)
 [defaults]
@@ -125,7 +128,9 @@ deinterlace = false
 [[radio]]
 name = "hackrf"
 driver = "hackrf"                       # hackrf, uhd (USRP B200/B210...), soapy (LimeSDR, Pluto...), null (no radio)
-args = ""                               # hackrf: "serial=..."; uhd: "serial=...,type=b200"; soapy: "driver=lime"
+args = ""                               # hackrf: "serial=...", "rt=60" (SCHED_FIFO priority of its USB thread,
+                                        # default 60, 0: none), "m0_poll=1" (s between reads of its gap counter);
+                                        # uhd: "serial=...,type=b200"; soapy: "driver=lime"
 gain = 30                               # hackrf: TX VGA 0-47 dB; uhd: 0-89.75 dB
 amp = false                             # hackrf +14 dB amplifier
 ppm = 0.0                               # oscillator correction
