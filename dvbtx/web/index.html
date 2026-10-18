@@ -415,7 +415,7 @@ function chOpen(mode, c, sv) {
   $("#ch_source").value = srcs;
   $("#ch_cache").value = cache;
   $("#ch_cache").placeholder = sv && sv.buffer_ms_used ? `auto (${sv.buffer_ms_used})` : "auto";
-  $("#ch_backup").value = sv ? (sv.backup || "") : "";
+  $("#ch_backup").value = sv ? (sv.backup || "") : (last.default_backup || "");   // a new channel: the default backup
   $("#ch_err").textContent = "";
   $("#ch_saved").textContent = last.config_path ? `Appliqué tout de suite à cette chaîne seulement, et enregistré dans ${last.config_path}.`
     : "Appliqué tout de suite à cette chaîne seulement (pas de fichier de configuration : non enregistré).";
@@ -435,7 +435,7 @@ async function chSubmit(ev) {
     if (chMode.mode === "add") {
       const body = { carrier: Number($("#ch_carrier").value), name, source: srcBody };
       if (lcn) body.lcn = Number(lcn);
-      if (bk) body.backup = bk;
+      body.backup = bk || false;               // emptied: no backup
       if (cache) body.buffer_ms = Number(cache);
       r = await api("POST", "/api/channels", body);
     } else {

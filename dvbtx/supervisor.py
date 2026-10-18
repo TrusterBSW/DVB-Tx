@@ -1130,7 +1130,8 @@ class Supervisor:
                "network": {k: plan.cfg["network"][k] for k in ("name", "network_id", "onid", "country", "provider")},
                "thresholds": {"margin_min_ms": self.cfg["alerts"]["margin_min_ms"]},
                "si": dict(self.si.stats), "epg_errors": self.store.errors[-5:] if self.store else [],
-               "config_path": plan.config_path}
+               "config_path": plan.config_path,
+               "default_backup": "" if plan.cfg["defaults"].get("backup") is False else str(plan.cfg["defaults"].get("backup") or "")}
         rst = {r["index"]: r for r in (st or {}).get("radios", [])}
         for r in plan.radios:
             if r.carriers:
