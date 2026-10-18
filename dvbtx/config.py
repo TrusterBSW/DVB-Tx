@@ -28,6 +28,7 @@ DEFAULTS = {
                "webhook": "", "command": "", "repeat_s": 300},
     "ingest": {"base_port": 20100, "monitor_base_port": 20900, "ffmpeg": "ffmpeg", "streamlink": "streamlink",
                "ytdlp": "yt-dlp", "restart_min_s": 1, "restart_max_s": 30, "stall_restart_s": 20,
+               "discontinuity_restart": 10,
                "loglevel": "warning"},
     "engine": {"binary": "", "log_level": "info", "stats_interval_ms": 1000},
     "defaults": {

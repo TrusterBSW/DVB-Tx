@@ -458,12 +458,15 @@ class IngestProc:
         self._stop = False
         self.pl_index = 0
         self.playlist = None
+        self.disc_times = collections.deque(maxlen=100)   # "timestamp discontinuity" lines of ffmpeg
 
     def _reader(self, stream, tag):
         for raw in iter(stream.readline, b""):
             line = raw.decode("utf-8", "replace").rstrip()
             if line:
                 self.lines.append(f"{time.strftime('%H:%M:%S')} {tag}{line}")
+                if "timestamp discontinuity" in line:
+                    self.disc_times.append(time.monotonic())
         stream.close()
 
     def start(self):

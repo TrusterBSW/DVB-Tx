@@ -62,6 +62,9 @@ ytdlp = "yt-dlp"
 loglevel = "warning"
 restart_min_s = 1
 restart_max_s = 30
+stall_restart_s = 20                    # an ffmpeg that sends nothing for this long is restarted
+discontinuity_restart = 10              # an ffmpeg reporting this many timestamp discontinuities within 30 s is
+                                        # replaced by a new one, beside it, without a cut (0: never)
 
 [engine]
 binary = ""                             # default: /usr/lib/dvbtx/dvbtx-engine

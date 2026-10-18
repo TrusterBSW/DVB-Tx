@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import queue
+import re
 import shutil
 import signal
 import socket
@@ -566,6 +567,33 @@ class Supervisor:
                 p.restarts += 1
                 p.restart()
 
+    def restart_discontinuous(self):
+        """an ffmpeg that sees a timestamp discontinuity again and again (seen after a reconnection of an
+        IPTV stream: one every 0.3 s for an hour, each one making the picture jump 170 ms): it does not
+        recover by itself, so its source is started again beside it and swapped in without a cut"""
+        n = int(self.cfg["ingest"].get("discontinuity_restart", 10) or 0)
+        if n <= 0:
+            return
+        now = time.monotonic()
+        for p in list(self.ingest):
+            if p.state != "running" or now - p.started_at < 30:
+                continue
+            recent = sum(1 for t in p.disc_times if now - t <= 30)
+            if recent < n:
+                continue
+            p.disc_times.clear()
+            svc = p.inp.service
+            log.warning("input %s: %d timestamp discontinuities in 30 s, starting its source again", p.inp.name, recent)
+            if p.inp.role == "primary" and svc is not None and svc.input is p.inp:
+                self._fo_drop(svc.sid, forget=False)
+                # a source received on a local port (udp://, rtp://, srt:// in listen mode, rtmp ?listen) can not
+                # be opened twice: the old one is stopped first (a short cut)
+                listen = bool(re.match(r"(udp|rtp|srt)://", svc.source)) or "listen" in svc.source
+                self._use_source(svc, svc.active, old_down=listen)
+            else:
+                p.restarts += 1
+                p.restart()
+
     # ---------------------------------------------------------------- alerts
 
     def check_alerts(self):
@@ -671,6 +699,7 @@ class Supervisor:
             for p in self.ingest:
                 p.poll()
             self.restart_stalled()
+            self.restart_discontinuous()
             self._failover()
             self._retire()
             for an in self.analyzers:
@@ -1111,7 +1140,7 @@ class Supervisor:
         it may hold what the next one needs, a UDP port, the only connection an IPTV account allows)"""
         if inp is None:
             inp = cfgmod.primary_input(self._new_input_index(), svc, int(self.cfg["ingest"]["base_port"]),
-                                       src=svc.sources[k])
+                                       src=(svc.sources or [svc.source])[k])
             if not self._engine_input_add(inp):
                 self.fo[svc.sid] = {"since": time.monotonic(), "next_probe": 0, "probe_k": 0}
                 return
@@ -1132,7 +1161,7 @@ class Supervisor:
             else:
                 self.retiring.append([p, old.index, time.monotonic() + 30])
         self.ingest.append(proc)
-        svc.input, svc.source, svc.active = inp, svc.sources[k], k
+        svc.input, svc.source, svc.active = inp, (svc.sources or [svc.source])[k], k
         inp.service = svc
         self.plan.inputs = sorted([i for i in self.plan.inputs if i.index != old.index] + [inp], key=lambda i: i.index)
         now = time.monotonic()
