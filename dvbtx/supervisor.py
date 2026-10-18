@@ -122,7 +122,10 @@ class SiManager:
             ts_list.append({"tsid": car.tsid, "onid": car.onid, "delivery": self._delivery(car),
                             "services": [(s.sid, self._stype(s), s.lcn, s.visible) for s in car.services]})
         nit0 = si.nit_sections(self.net["network_id"], self.net["name"], ts_list, 0, self.charset, self.net["lcn_pds"])
-        v = self.ver.get("nit", _digest(nit0))
+        # the names are in the SDT, but many TVs only look for changes when the NIT version changes:
+        # a rename (or a new provider name) bumps it too
+        names = hashlib.sha1("|".join(f"{s.sid}:{s.name}:{s.provider}" for s in plan.services).encode()).hexdigest()
+        v = self.ver.get("nit", _digest(nit0) + names)
         nit = si.nit_sections(self.net["network_id"], self.net["name"], ts_list, v, self.charset, self.net["lcn_pds"])
         nit_b = b"".join(nit)
         for car in plan.carriers:
