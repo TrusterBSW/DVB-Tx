@@ -73,6 +73,8 @@ stats_interval_ms = 1000
 cpus = "auto"                           # auto: every engine thread kept off the cores that take the USB
                                         # interrupts (a real-time thread there delays the USB work: gaps on
                                         # air); "all", or a list such as "1-5"
+cpu_latency_us = 0                      # processor wake-up latency allowed while transmitting (/dev/cpu_dma_latency):
+                                        # deep C-states delay the USB DMA and empty the radio's FIFO (-1: no request)
 
 # Defaults of every service (each key can be set per service too)
 [defaults]

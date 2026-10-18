@@ -13,6 +13,8 @@
  * {"type":"reply","seq":N,"ok":true} or {..."ok":false,"error":"..."}. */
 #define _GNU_SOURCE
 #include <sched.h>
+#include <stdint.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <poll.h>
 #include <signal.h>
@@ -364,6 +366,31 @@ static void place_threads(const char *spec)
         LOGI("threads kept off CPU %s (USB interrupts)", cpus);
 }
 
+/* Deep C-states of the processor while transmitting: the package's exit latency (up to ~1 ms, C10)
+ * delays the USB controller's DMA, and the HackRF's FIFO (about 1 ms at 16 MS/s) runs dry: gaps
+ * on air. Measured on the PVE host with the stock hackrf_transfer and the engine running beside it:
+ * 3 gaps in 90 s at 16.46 MS/s, 8 a minute at 18.29 MS/s; none with /dev/cpu_dma_latency held at 0
+ * (as the CMTS bench does). The request lasts as long as the file stays open. cpu_latency_us: the
+ * latency allowed (default 0), -1: no request. */
+static int g_lat_fd = -1;
+
+static void hold_cpu_latency(long us)
+{
+    if (us < 0)
+        return;
+    int fd = open("/dev/cpu_dma_latency", O_WRONLY | O_CLOEXEC);
+    int32_t v = (int32_t)us;
+    if (fd < 0 || write(fd, &v, sizeof v) != (ssize_t)sizeof v) {
+        LOGW("deep C-states not blocked (/dev/cpu_dma_latency: %s): gaps on air are likely at high rates; "
+             "give the service CAP_SYS_ADMIN or run it as root", strerror(errno));
+        if (fd >= 0)
+            close(fd);
+        return;
+    }
+    g_lat_fd = fd;
+    LOGI("processor wake-up latency held at %ld us while transmitting", us);
+}
+
 int main(int argc, char **argv)
 {
     const char *cfg = NULL;
@@ -394,6 +421,7 @@ int main(int argc, char **argv)
         g_log_level = !strcmp(ll, "debug") ? LOG_DEBUG : !strcmp(ll, "warn") ? LOG_WARN : !strcmp(ll, "error") ? LOG_ERR : LOG_INFO;
     int stats_ms = (int)conf_int(eng, "stats_interval_ms", 1000);
     place_threads(conf_str(eng, "cpus", "auto"));
+    hold_cpu_latency(conf_int(eng, "cpu_latency_us", 0));
 
     /* inputs by id: removals while the supervisor runs leave gaps in the numbering */
     for (int si = 0; si < cf->nsec; si++) {
