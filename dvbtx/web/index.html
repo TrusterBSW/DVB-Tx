@@ -363,7 +363,8 @@ function render(s) {
         <span style="flex:1"></span>
         <span class="muted">capacité</span><span class="big">${mbps(cap)}</span><span class="muted">Mbit/s</span>
         <span class="muted">occupé</span><span class="big" style="color:${occ > 98 ? "var(--crit)" : occ > 90 ? "var(--warn)" : "inherit"}">${occ == null ? "–" : occ.toFixed(1) + " %"}</span>
-        ${l && l.cpu != null ? `<span class="muted">CPU ${l.cpu.toFixed(1)} %</span>` : ""}
+        ${l && l.cpu != null ? `<span class="muted" title="modulation de ce multiplex (100 % = un cœur)">CPU ${l.cpu.toFixed(1)} %</span>` : ""}
+        ${loadPills(c.sources_load)}
       </div>
       <div class="bar">${bar}</div><div class="legend">${legend}</div>`;
     const summary = `<div class="card">${head}
@@ -414,6 +415,14 @@ function render(s) {
       <td><span class="pill ${a.level}">${a.level}</span></td><td>${esc(a.message)}</td></tr>`).join("");
 }
 
+/* load of the sources of a multiplex's channels: their ffmpeg CPU, and the GPU of the re-encoded ones */
+function loadPills(ld) {
+  if (!ld) return "";
+  const det = (ld.gpu_channels || []).map((x) => `${x.name} : GPU ${x.gpu} %, CPU ${x.cpu ?? "–"} %`).join("\n");
+  const eng = Object.entries(ld.gpu_engines || {}).map(([k, v]) => `${k} ${v} %`).join(", ");
+  return `<span class="muted" title="processus ffmpeg des chaînes de ce multiplex (100 % = un cœur)">sources CPU ${ld.cpu} %</span>` +
+    (ld.gpu != null ? `<span class="muted" title="${esc((eng ? "moteurs : " + eng + "\n" : "") + det)}">GPU ${ld.gpu} %</span>` : "");
+}
 /* what the ffmpeg of a source does: copy, CPU or GPU transcode, with its speed and load */
 function procCells(p) {
   if (p.kind !== "ffmpeg") return '<td class="muted">–</td><td></td><td></td><td></td><td></td>';

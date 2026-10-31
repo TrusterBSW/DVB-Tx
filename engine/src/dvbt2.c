@@ -1485,6 +1485,18 @@ const char *dvbt2_group_error(int err)
     }
 }
 
+int dvbt2_group_members(const dvbt2_group *g) { return g->n; }
+
+int dvbt2_group_worker(const dvbt2_group *g, int member, pthread_t *th, int *sharing)
+{
+    if (!g->nthreads || member < 0 || member >= g->n)
+        return 0;
+    int w = member % g->nthreads;
+    *th = g->tid[w];
+    *sharing = (g->n - 1 - w) / g->nthreads + 1;      /* members w, w + nthreads, ... */
+    return 1;
+}
+
 static void group_job(dvbt2_group *g, int w);
 
 static void *group_worker(void *arg)

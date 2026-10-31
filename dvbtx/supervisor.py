@@ -1441,10 +1441,22 @@ class Supervisor:
                                               "duration": pres["duration"]},
                              "next": fol and {"title": fol.get("title"), "start": fol["start"].isoformat()},
                              "epg_events": len(evs)})
+            # load of the sources of its channels: GPU per engine summed (the busiest shown), CPU summed
+            eng, cpu, per = {}, 0, []
+            for sv in c.services:
+                p = self.proc_of(sv.input.index) if sv.input else None
+                u = (p.usage if p and p.state == "running" else None) or {}
+                for k, v in (u.get("gpu") or {}).items():
+                    eng[k] = eng.get(k, 0) + v
+                cpu += u.get("cpu") or 0
+                if u.get("gpu"):
+                    per.append({"name": sv.name, "gpu": max(u["gpu"].values()), "cpu": u.get("cpu")})
             an = next((a for a in self.analyzers if a.car is c), None)
             out["carriers"].append({"index": c.index, "name": c.name, "standard": c.standard, "frequency": c.frequency,
                                     "offset": c.offset, "params": c.params, "tsid": c.tsid, "capacity": c.ts_rate,
                                     "radio": c.radio.name if c.radio else None, "live": live, "services": svcs,
                                     "tsduck": an.summary() if an else None,
+                                    "sources_load": {"gpu": max(eng.values()) if eng else None, "gpu_engines": eng,
+                                                     "cpu": cpu, "gpu_channels": per},
                                     "monitor": f"udp://127.0.0.1:{int(plan.cfg['ingest']['monitor_base_port']) + c.index}"})
         return out

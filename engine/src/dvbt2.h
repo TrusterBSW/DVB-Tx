@@ -13,6 +13,7 @@
 #define DVBTX_DVBT2_H
 
 #include <complex.h>
+#include <pthread.h>
 #include <stdint.h>
 
 #ifndef DVBTX_TS_PULL_FN
@@ -113,5 +114,9 @@ const char *dvbt2_group_error(int err);
  * 2048 k samples or one symbol of k (fft + guard)); pulls like dvbt2_samples for each member. */
 int dvbt2_group_samples(dvbt2_group *g, float complex *out, int max);
 void dvbt2_group_free(dvbt2_group *g);
+/* members in the group; the worker thread that codes a member (0: none, the caller's thread does it)
+ * and how many members share it (CPU per carrier) */
+int dvbt2_group_members(const dvbt2_group *g);
+int dvbt2_group_worker(const dvbt2_group *g, int member, pthread_t *th, int *sharing);
 
 #endif

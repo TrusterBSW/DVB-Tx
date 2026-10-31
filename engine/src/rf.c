@@ -73,6 +73,8 @@ typedef struct carrier {
     int t2n, t2pos;
     dvbt2_group *t2g;             /* this pseudo-carrier synthesises DVB-T2 carriers at k x their rate */
     int in_group;                 /* member of such a group (no thread of its own) */
+    struct carrier *group;        /* that group (its pseudo-carrier) and the member number in it */
+    int member;
     int ncar;                     /* elements per ring slot: OFDM carriers, or samples of a block */
     float complex *ring;
     uint64_t wr, rd;
@@ -491,6 +493,8 @@ static int t2_groups(radio *r, carrier **sc, int nsc, double wtot, char *err, in
         LOGD("radio %d: DVB-T2 group %d member %d: carrier %d at %d bins (FFT %d x %d)", r->idx, g, rc, c->idx, bins,
              t.fft, k);
         c->in_group = 1;
+        c->group = grp[g];
+        c->member = rc;
         nmem[g]++;
         r->ncarriers++;
     }
@@ -1090,6 +1094,15 @@ int rf_stats_json(char *buf, int len, double dt)
     for (int i = 0; i < g_ncarriers && n < len - 4096; i++) {
         carrier *c = g_carriers[i];
         double cpu = c->started ? thread_cpu(c->th) : 0;
+        if (c->in_group && c->group && c->group->t2g) {
+            /* a DVB-T2 group member has no thread: its worker (shared by n members) and its share of the
+             * group thread (summing the members, IFFT) */
+            pthread_t th;
+            int sharing = 1, n = dvbt2_group_members(c->group->t2g);
+            cpu = dvbt2_group_worker(c->group->t2g, c->member, &th, &sharing) ? thread_cpu(th) / sharing : 0;
+            if (c->group->started)
+                cpu += thread_cpu(c->group->th) / (n > 0 ? n : 1);
+        }
         double load = dt > 0 ? (cpu - prev_cpu[MAX_RADIOS + i]) / dt * 100 : 0;
         prev_cpu[MAX_RADIOS + i] = cpu;
         if (i)
