@@ -160,9 +160,11 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
 - what each source does (copy, CPU or GPU transcode and on which card), its frames per second, speed
   against real time, dropped/duplicated frames, CPU and GPU engine load;
 - channel previews: thumbnails shown by default (`web.preview_thumbnails`; the eye of the preview
-  column hides them), key frames only, one picture every 4 s while a page shows them; and a live
-  view in the browser (fragmented MP4, H.264 copied, AAC sound), taken from what goes on air (the
-  engine opens a copy of the multiplex for the preview: `monitor add`);
+  column hides them), key frames only, one picture every 4 s while a page shows them; a live view
+  in the browser (the picture as on air, H.264 copied; only the container, TS -> MP4, and the sound,
+  MP2/AC-3 -> AAC, change; `#live=<sid>` opens one); and **VLC** beside each channel: the multiplex
+  exactly as on air (`/api/mux/<n>.ts`, relayed without ffmpeg) opened on that channel. The engine
+  opens a copy of the multiplex for the preview (`monitor add`), nothing runs when nobody looks;
 - configuration from the page: radios, multiplexes (frequency, standard, modulation, with the useful
   rate computed live), channels. Every change is validated and saved in the file at once (comments
   kept), nothing changes on air until **Apply** in the banner listing the pending changes: channels
