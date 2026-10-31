@@ -145,7 +145,12 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
 
 ## Monitoring, alerts, TSDuck export
 
-- web page: radios (buffer, CPU, underruns), multiplexes (occupancy per service, 10-minute graph,
+- web page in tabs (dashboard, channels, sources, configuration, logs; `#chaines`, `#config`... in the
+  address): network settings with the ONID picked by country (terrestrial: 0x2000 + ISO 3166 numeric
+  code), per-channel priority (who loses first when the multiplex is full) and, for re-encoded
+  channels, a share of the bit rate (`bitrate_weight`: SD 1, HD 2, Full HD 3, 4K 6) up to
+  `max_bitrate`;
+- radios (buffer, CPU, underruns), multiplexes (occupancy per service, 10-minute graph,
   TSDuck), services (active source, input/output rates, **decoding margin**, lateness, input CC
   errors, now/next), sources (ffmpeg state, restarts, log, restart button), alerts;
 - the **decoding margin** is, for every frame, the time between its emission and its decoding time

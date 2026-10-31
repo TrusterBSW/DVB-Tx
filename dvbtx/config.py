@@ -36,6 +36,7 @@ DEFAULTS = {
     "defaults": {
         "backup": "", "buffer_ms": "auto", "switch_timeout_ms": 3000, "return_ms": 10000, "max_late_ms": 600,
         "early_ms": 100, "pcr_max_ms": 35, "priority": 5, "pmt_period_ms": 100, "mux_delay": 0.7, "ring_pkts": "auto",
+        "bitrate_weight": 1, "max_bitrate": "",
         "readrate": "auto", "map": ["0:v:0?", "0:a?"], "loop": True,
         "failover_s": 10, "source_start_s": 30, "preferred_retry_s": 300, "unstable_switches": 3,
         "unstable_window_s": 600,
@@ -636,10 +637,13 @@ def _bitrate(v):
 
 
 def auto_video_bitrate(svc):
-    """share of the carrier capacity for an encoder with video_bitrate = auto"""
+    """share of the carrier capacity for an encoder with video_bitrate = auto: what the copied channels
+    and the fixed rates leave, split by bitrate_weight (a 4K channel 6, a Full HD one 3...), each one
+    at most its max_bitrate (else encode.max_auto_bitrate); what a capped channel does not take goes
+    to the others"""
     car = svc.carrier
     budget = car.ts_rate * (1 - car.si_reserve) * 0.97
-    fixed, nauto = 0.0, 0
+    fixed, autos = 0.0, []
     for s in car.services:
         enc = s.opts["encode"]
         is_enc = s.opts.get("encode_on") or _needs_encode(s.source)
@@ -648,11 +652,22 @@ def auto_video_bitrate(svc):
             continue
         fixed += _bitrate(enc.get("audio_bitrate")) + 20e3
         if enc.get("video_bitrate") in (None, "", "auto"):
-            nauto += 1
+            cap = _bitrate(s.opts.get("max_bitrate") or enc.get("max_auto_bitrate", "8M")) or 8e6
+            autos.append((s.sid, max(0.1, float(s.opts.get("bitrate_weight", 1) or 1)), cap))
         else:
             fixed += _bitrate(enc.get("video_bitrate"))
-    cap = _bitrate(svc.opts["encode"].get("max_auto_bitrate", "8M")) or 8e6
-    return min(cap, max(500e3, (budget - fixed) / max(1, nauto)))
+    left, share = max(0.0, budget - fixed), {}
+    while autos:                         # water-filling: the capped ones first, the rest shared again
+        total = sum(w for _, w, _ in autos)
+        capped = [a for a in autos if left * a[1] / total > a[2]]
+        if not capped:
+            share.update({sid: left * w / total for sid, w, _ in autos})
+            break
+        for a in capped:
+            share[a[0]] = a[2]
+            left -= a[2]
+            autos.remove(a)
+    return max(500e3, share.get(svc.sid, 500e3))
 
 
 def _needs_encode(src):

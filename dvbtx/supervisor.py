@@ -855,6 +855,8 @@ class Supervisor:
             caps = {c.index: c.ts_rate for c in plan.carriers}
         except cfgmod.ConfigError as e:
             out["error"], caps = str(e), {}
+        out["network"] = dict(cfgmod.DEFAULTS["network"], **doc.get("network", {}))
+        out["network_keys"] = list(confedit.NETWORK_KEYS)
         out["radios"] = doc.get("radio", [])
         out["carriers"] = [dict({k: v for k, v in c.items() if k != "service"}, services=len(c.get("service", [])),
                                 capacity=caps.get(i)) for i, c in enumerate(doc.get("carrier", []))]
@@ -913,6 +915,13 @@ class Supervisor:
             len(cur.get("carrier", [])) == len(want.get("carrier", []))
         if not lines_ok:
             raise chmod.ChannelError("radios or multiplexes were added or removed: load a profile, or edit them back")
+        for sec in sorted(set(cur) | set(want)):            # [network] and the other plain tables
+            a, b = cur.get(sec, {}), want.get(sec, {})
+            if sec in ("radio", "carrier") or a == b or not isinstance(a, dict) or not isinstance(b, dict):
+                continue
+            if any(isinstance(v, dict) for v in list(a.values()) + list(b.values())):
+                raise chmod.ChannelError(f"[{sec}] changed in sub-tables: load a profile, or edit it back")
+            t.set_section_keys(sec, {k: v for k, v in b.items() if a.get(k) != v}, [k for k in a if k not in b])
         for kind in ("radio", "carrier"):
             for i, (a, b) in enumerate(zip(cur.get(kind, []), want.get(kind, []))):
                 a2 = {k: v for k, v in a.items() if k != "service"}
@@ -1372,6 +1381,13 @@ class Supervisor:
                 p.stop()
                 self.retiring.remove(r)
 
+    def _transcoded(self, s):
+        """the channel is re-encoded: what its ffmpeg does, else what its settings ask"""
+        p = self.proc_of(s.input.index) if s.input else None
+        if p and p.mode:
+            return p.mode.get("kind") in ("cpu", "gpu")
+        return bool(s.opts.get("encode_on") or cfgmod._needs_encode(s.source))
+
     def status(self):
         """everything the web page shows"""
         with self.lock:
@@ -1411,6 +1427,12 @@ class Supervisor:
                 svcs.append({"name": s.name, "sid": s.sid, "lcn": s.lcn, "source": s.source, "backup": s.backup,
                              "sources": list(s.sources or [s.source]), "active": s.active,
                              "buffer_ms": s.opts.get("buffer_ms", "auto"),
+                             "priority": int(s.opts.get("priority", 5)),
+                             "bitrate_weight": s.opts.get("bitrate_weight", 1), "max_bitrate": s.opts.get("max_bitrate") or "",
+                             "transcoded": self._transcoded(s),
+                             "auto_bitrate": round(cfgmod._bitrate(s.opts["encode"].get("video_bitrate"))
+                                                   if s.opts["encode"].get("video_bitrate") not in (None, "", "auto")
+                                                   else cfgmod.auto_video_bitrate(s)),
                              "buffer_ms_used": s.input.options.get("buffer_ms") if s.input else None,
                              "trying": (self.fo.get(s.sid) or {}).get("cand", {}).get("k") if (self.fo.get(s.sid) or {}).get("cand") else None,
                              "type": self.si._stype(s), "live": ls,

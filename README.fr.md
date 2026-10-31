@@ -240,7 +240,10 @@ pas `127.0.0.1`), et les sources `exec:`, `pipe:`, `stdin:` comme les arguments 
 La NIT contient pour chaque multiplex le `private_data_specifier` EACEM (0x28) suivi du
 `logical_channel_descriptor` (0x83), comme la TNT française. **Beaucoup de téléviseurs ignorent les
 LCN si l'`original_network_id` ne correspond pas à leur pays** : par défaut `onid` et `network_id`
-valent `0x20FA` (France). Pour un autre pays, mettre son ONID dans `[network]`. La NIT décrit tous
+valent `0x20FA` (France). Pour un autre pays, mettre son ONID dans `[network]`, ou le choisir dans
+l'onglet Configuration de la page (le pays remplit ONID, network_id et code) : en terrestre, ONID =
+0x2000 + code pays ISO 3166 numérique (Belgique 56 → 0x2038, Suisse 756 → 0x22F4) ; liste
+officielle : registre DVB des `original_network_id` (dvbservices.com). La NIT décrit tous
 les multiplex du réseau avec leur vraie fréquence (`frequency_in_nit = false` met 0xFFFFFFFF comme
 la TNT).
 
@@ -294,7 +297,10 @@ alerte quand la somme des sources dépasse ce que le modulateur peut envoyer.
 ## Supervision, alertes, export TSDuck
 
 **Page web** (`[web] listen`, `127.0.0.1:8080` par défaut ; sans authentification, à n'ouvrir que
-sur un réseau de confiance) :
+sur un réseau de confiance), en onglets : Tableau de bord (radios, occupation des multiplex),
+Chaînes (aperçus, marges, priorités, ajout et modification), Sources (ffmpeg, transcodage, GPU),
+Configuration (réseau et ONID, radios, multiplex, profils, calculateur), Journaux. L'onglet est dans
+l'adresse (`#chaines`, `#config`...) :
 
 - radios : fréquence, échantillonnage, remplissage du tampon, CPU, sous-débits ;
 - multiplex : capacité, occupation par chaîne / PSI-SI / libre, courbe sur 10 minutes, analyse TSDuck ;
@@ -332,6 +338,12 @@ modifications » remet le fichier comme ce qui tourne.
 `dvbtx.toml.test`...). « Enregistrer la configuration actuelle comme profil » copie le fichier ;
 « Charger » copie le profil sur le fichier (l'ancien gardé en `.bak`), à appliquer ensuite. Seul
 `dvbtx.toml` est jamais appliqué.
+
+**Débit des chaînes réencodées** : ce que laissent les chaînes copiées est partagé selon
+`bitrate_weight` (SD 1, HD 2, Full HD 3, 4K 6), chaque chaîne plafonnée à `max_bitrate` (sinon
+`encode.max_auto_bitrate`, 8 Mbit/s) ; ce qu'une chaîne plafonnée ne prend pas va aux autres. Une
+chaîne copiée garde le débit de sa source : pour elle seule la priorité joue. Réglable par chaîne
+dans « Modifier ».
 
 **Priorités** : quand un multiplex est saturé (sources copiées dont le débit dépasse la capacité),
 `priority` (1 à 10, 5 par défaut) décide qui garde la marge : les chaînes prioritaires restent à

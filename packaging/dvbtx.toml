@@ -101,6 +101,10 @@ return_ms = 10000                       # primary stable for this long before sw
 max_late_ms = 600                       # packets later than this are dropped
 early_ms = 100                          # packets may leave this much in advance to smooth the peaks
 priority = 5                            # 1-10: when a multiplex is overloaded, higher priorities are served first
+bitrate_weight = 1                      # share of the bit rate of a re-encoded channel (video_bitrate = "auto"):
+                                        # what the copied channels leave is split by weight (SD 1, HD 2, Full HD 3,
+                                        # 4K 6); a copied channel keeps its source's rate whatever its weight
+max_bitrate = ""                        # at most this for a re-encoded channel ("" = encode.max_auto_bitrate)
                                         # and the lower ones get the delays (then the losses)
 pcr_max_ms = 35                         # a PCR is inserted if the source leaves a longer gap
 mux_delay = 0.7                         # ffmpeg -muxdelay: decoding margin given to the receiver (s)

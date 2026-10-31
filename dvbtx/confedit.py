@@ -21,6 +21,8 @@ from .channels import ChannelError, TomlFile, _HDR, _key, toml_value
 RADIO_KEYS = ("name",) + tuple(cfgmod.RADIO_DEFAULTS)
 CARRIER_KEYS = set(cfgmod.CARRIER_COMMON_KEYS) | {k for ks in cfgmod.STD_KEYS.values() for k in ks}
 PROFILE_RE = re.compile(r"[A-Za-z0-9_-]{1,40}")
+# [network] settings the page edits (the others stay in the file)
+NETWORK_KEYS = ("name", "provider", "onid", "network_id", "country", "timezone")
 
 
 class Tables(TomlFile):
@@ -98,6 +100,35 @@ class Tables(TomlFile):
         if at < len(lines) and lines[at].strip():
             block.append("")
         lines[at:at] = block
+        self.text = "\n".join(lines)
+
+    def set_section_keys(self, name, values, remove=()):
+        """keys of a plain [name] table (created before the first [[radio]] when missing)"""
+        lines = self.text.split("\n")
+        start = next((i for i, l in enumerate(lines) if (m := _HDR.match(l)) and m.group(1) == "[" and
+                      re.sub(r"\s+", "", m.group(2)) == name), None)
+        if start is None:
+            at = next((i for i, l in enumerate(lines) if _HDR.match(l)), len(lines))
+            lines[at:at] = [f"[{name}]", ""]
+            start = at
+        end = next((i for i in range(start + 1, len(lines)) if _HDR.match(lines[i])), len(lines))
+        b = self._trim(lines, start, end)
+        for k, v in values.items():
+            pat = re.compile(rf"^\s*{re.escape(_key(k))}\s*=")
+            hit = next((j for j in range(start + 1, b) if pat.match(lines[j])), None)
+            new = f"{_key(k)} = {toml_value(v, k)}"
+            if hit is None:
+                lines.insert(b, new)
+                b += 1
+            else:
+                c = re.search(r"\s+#[^\"']*$", lines[hit])
+                lines[hit] = new + (c.group(0) if c else "")
+        for k in remove:
+            pat = re.compile(rf"^\s*{re.escape(_key(k))}\s*=")
+            for j in range(b - 1, start, -1):
+                if pat.match(lines[j]):
+                    del lines[j]
+                    b -= 1
         self.text = "\n".join(lines)
 
     def doc(self):
@@ -206,6 +237,22 @@ class Draft:
         t.delete_table(name, i)
         want = [x for j, x in enumerate(tabs) if j != i]
         return self._commit(t, lambda d: d.get(name, []) == want)
+
+    def update_network(self, changes):
+        bad = [k for k in changes if k not in NETWORK_KEYS]
+        if bad:
+            raise ChannelError(f"unknown network setting(s): {', '.join(bad)}")
+        cur = self.doc().get("network", {})
+        sets = {k: v for k, v in changes.items() if v is not None and cur.get(k) != v}
+        rem = [k for k, v in changes.items() if v is None and k in cur]
+        if not sets and not rem:
+            return {"saved": False, "unchanged": True}
+        t = Tables(self.path)
+        t.set_section_keys("network", sets, rem)
+        want = dict(cur, **sets)
+        for k in rem:
+            want.pop(k, None)
+        return self._commit(t, lambda d: d.get("network", {}) == want)
 
     # ------------------------------------------------------------ channels (on the file only)
 

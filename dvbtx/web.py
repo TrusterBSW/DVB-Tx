@@ -28,6 +28,7 @@ DELETE /api/channels/<channel>          remove it
 The configuration file (each change checked and saved at once, applied on demand):
 GET    /api/config                      radios, multiplexes, validity, pending changes, profiles
 PATCH  /api/config/radio|carrier/<n>    change settings: {"key": value, "key": null (removed)}
+PATCH  /api/config/network              name, provider, onid, network_id, country, timezone
 POST   /api/config/radio|carrier        add one: {"name", ...}
 DELETE /api/config/radio|carrier/<n>    remove one (a multiplex with its channels)
 POST   /api/config/apply                apply the file (channels one by one, else restart of the transmission)
@@ -334,7 +335,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.partition("?")[0]
         m = re.fullmatch(r"/api/channels/([^/?]+)", path)
         mc = re.fullmatch(r"/api/config/(radio|carrier)/(\d+)", path)
-        if not m and not mc:
+        if not m and not mc and path != "/api/config/network":
             return self._send(404, {"error": "not found"})
         if not self._allowed(True):
             return
@@ -342,6 +343,8 @@ class Handler(BaseHTTPRequestHandler):
             changes = self._body()
         except ValueError as e:
             return self._send(400, {"error": str(e)})
+        if path == "/api/config/network":
+            return self._change(lambda: sup.draft().update_network(changes))
         if mc:
             return self._change(lambda: sup.draft().update(mc.group(1), int(mc.group(2)), changes))
         ref = unquote(m.group(1))

@@ -243,7 +243,7 @@ def update(cfg, plan, ref, changes, allow_exec=True):
 
 # written 482_000_000 like in the sample configuration
 GROUPED_KEYS = {"frequency", "bandwidth", "symbol_rate", "rate", "center", "lnb_lo", "ts_rate"}
-HEX_KEYS = {"sid", "pid_base"}
+HEX_KEYS = {"sid", "pid_base", "onid", "network_id"}
 
 
 def toml_value(v, key=None):
