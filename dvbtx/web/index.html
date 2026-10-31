@@ -389,14 +389,16 @@ function render(s) {
 
   keepOpen($("#inputs"), () => $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th>Traitement</th><th class="num" title="images par seconde, vitesse par rapport au temps réel">Img/s · vitesse</th><th class="num" title="images perdues / dupliquées par ffmpeg">Perdues</th><th class="num" title="CPU des processus de la source (100 % = un cœur) ; GPU : moteur le plus occupé">CPU · GPU</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
     s.inputs.map((p) => {
-      const live = p.live || {};
+      const live = p.live || {}, key = `in${p.index}${p.role === "trial" ? "t" : ""}`;
       const cls = p.state === "running" ? "ok" : p.state === "error" ? "critical" : p.kind === "direct" ? "info" : "warning";
       return `<tr><td>${p.index}</td><td><b>${esc(p.name)}</b> <span class="muted">${p.role === "backup" ? "(secours)" : ""}</span><div class="muted" style="font-size:11px;word-break:break-all">${esc(p.source)}</div></td>
         <td><span class="pill ${cls}">${p.kind === "direct" ? "UDP direct" : esc(p.state)}</span>${p.error ? `<div class="err" style="font-size:11px">${esc(p.error)}</div>` : ""}</td>
         ${procCells(p)}
         <td class="num">${p.restarts}</td><td class="num">${mbps(live.rate)}</td><td class="num">${live.idle_ms != null && live.idle_ms >= 0 ? ms(live.idle_ms) + " ms" : "–"}</td>
-        <td><details data-key="in${p.index}${p.role === "trial" ? "t" : ""}"><summary>${p.log.length} ligne(s)</summary><pre>${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td>
-        <td>${p.kind === "ffmpeg" ? `<button onclick="restartInput(${p.index})">Relancer</button>` : ""}</td></tr>`;
+        <td style="white-space:nowrap"><button onclick="logToggle('${key}')" title="commande et dernières lignes de ffmpeg">${openLogs.has(key) ? "▾" : "▸"} ${p.log.length} ligne(s)</button></td>
+        <td>${p.kind === "ffmpeg" ? `<button onclick="restartInput(${p.index})">Relancer</button>` : ""}</td></tr>` +
+        // the log opened under its source, across the whole table
+        (openLogs.has(key) ? `<tr><td colspan="12" style="padding-top:0"><details data-key="${key}" open style="display:block"><summary style="display:none"></summary><pre style="max-height:360px;margin:0">${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td></tr>` : "");
     }).join(""));
 
   renderGpu(s.gpu);
@@ -741,6 +743,11 @@ async function chRemove(sid) {
   if (!sv || !confirm(`Supprimer la chaîne ${sv.lcn} « ${sv.name} » ? Les autres chaînes ne sont pas touchées.`)) return;
   report(await api("DELETE", `/api/channels/${hex(sid)}?apply=0`));
   refresh();
+}
+const openLogs = new Set();
+function logToggle(key) {
+  openLogs.has(key) ? openLogs.delete(key) : openLogs.add(key);
+  if (last) render(last);
 }
 async function restartInput(i) { const r = await api("POST", `/api/input/${i}/restart`); r.ok ? toast("source relancée") : report(r); refresh(); }
 async function reloadSi() { const r = await api("POST", "/api/reload"); r.ok ? toast("EPG et tables SI rechargés") : report(r); refresh(); }
