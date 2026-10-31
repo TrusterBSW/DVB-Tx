@@ -30,6 +30,8 @@ struct sdr_dev {
     int rt_done;
     pthread_t writer;               /* the radio thread: libhackrf calls tx_cb from it for the first transfers */
     int have_writer;
+    int64_t cb_log_ns;              /* args "cb_log_ms=N": log a USB callback later than N ms after the previous one */
+    int64_t cb_last_ns;
 };
 
 static int64_t now_ns(void)
@@ -70,9 +72,14 @@ static int tx_cb(hackrf_transfer *t)
             d->underruns++;
     }
     d->consumed += want / 2;
-    d->at_ns = now_ns();
+    int64_t now = d->at_ns = now_ns();
     pthread_cond_signal(&d->cond);
     pthread_mutex_unlock(&d->lock);
+    if (d->cb_log_ns > 0 && !(d->have_writer && pthread_equal(pthread_self(), d->writer))) {
+        if (d->cb_last_ns && now - d->cb_last_ns > d->cb_log_ns)
+            fprintf(stderr, "hackrf: USB callback %.1f ms after the previous one\n", (now - d->cb_last_ns) / 1e6);
+        d->cb_last_ns = now;
+    }
     return 0;
 }
 
@@ -171,6 +178,7 @@ static sdr_dev *hk_open(const sdr_params *p, char *err, int errlen)
     d->m0_period = arg_value(p->args, "m0_poll", v, sizeof v) ? (int64_t)(strtod(v, NULL) * 1e9) : 1000000000LL;
     /* the libusb thread above our own real-time threads (radio 50, carriers 40): never delayed by them */
     d->rt = arg_value(p->args, "rt", v, sizeof v) ? atoi(v) : 60;
+    d->cb_log_ns = arg_value(p->args, "cb_log_ms", v, sizeof v) ? (int64_t)(strtod(v, NULL) * 1e6) : 0;
     int ms = p->buffer_ms > 0 ? p->buffer_ms : 40;
     size_t bytes = (size_t)(p->rate * 2 * ms / 1000.0);
     bytes = (bytes + 262143) / 262144 * 262144;
@@ -260,8 +268,12 @@ static void read_m0(sdr_dev *d)
         return;
     }
     pthread_mutex_lock(&d->lock);
+    uint64_t prev = d->shortfalls;
     d->shortfalls = st.num_shortfalls;
     pthread_mutex_unlock(&d->lock);
+    if (d->cb_log_ns > 0 && st.num_shortfalls > prev)
+        fprintf(stderr, "hackrf: firmware FIFO ran dry %llu time(s), longest %u bytes\n",
+                (unsigned long long)(st.num_shortfalls - prev), (unsigned)st.longest_shortfall);
 }
 
 static void hk_stats(sdr_dev *d, sdr_stats *s)
