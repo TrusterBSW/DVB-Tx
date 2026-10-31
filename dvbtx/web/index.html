@@ -387,7 +387,7 @@ function render(s) {
   $("#carriers").innerHTML = views.map((v) => v.summary).join("");
   $("#channels").innerHTML = views.map((v) => v.channels).join("");
 
-  keepOpen($("#inputs"), () => $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th>Traitement</th><th class="num" title="images par seconde, vitesse par rapport au temps réel">Img/s · vitesse</th><th class="num" title="images perdues / dupliquées par ffmpeg">Perdues</th><th class="num" title="CPU des processus de la source (100 % = un cœur) ; GPU : moteur le plus occupé">CPU · GPU</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
+  keepOpen($("#inputs"), () => $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th>Traitement</th><th class="num" title="images par seconde, vitesse par rapport au temps réel">Img/s · vitesse</th><th class="num" title="images perdues / dupliquées par ffmpeg">Perdues</th><th class="num" title="CPU des processus de la source (100 % = un cœur)">CPU</th><th class="num" title="occupation du GPU par cette source : son moteur le plus chargé (le détail au survol)">GPU</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
     s.inputs.map((p) => {
       const live = p.live || {}, key = `in${p.index}${p.role === "trial" ? "t" : ""}`;
       const cls = p.state === "running" ? "ok" : p.state === "error" ? "critical" : p.kind === "direct" ? "info" : "warning";
@@ -398,7 +398,7 @@ function render(s) {
         <td style="white-space:nowrap"><button onclick="logToggle('${key}')" title="commande et dernières lignes de ffmpeg">${openLogs.has(key) ? "▾" : "▸"} ${p.log.length} ligne(s)</button></td>
         <td>${p.kind === "ffmpeg" ? `<button onclick="restartInput(${p.index})">Relancer</button>` : ""}</td></tr>` +
         // the log opened under its source, across the whole table
-        (openLogs.has(key) ? `<tr><td colspan="12" style="padding-top:0"><details data-key="${key}" open style="display:block"><summary style="display:none"></summary><pre style="max-height:360px;margin:0">${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td></tr>` : "");
+        (openLogs.has(key) ? `<tr><td colspan="13" style="padding-top:0"><details data-key="${key}" open style="display:block"><summary style="display:none"></summary><pre style="max-height:360px;margin:0">${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td></tr>` : "");
     }).join(""));
 
   renderGpu(s.gpu);
@@ -416,7 +416,7 @@ function render(s) {
 
 /* what the ffmpeg of a source does: copy, CPU or GPU transcode, with its speed and load */
 function procCells(p) {
-  if (p.kind !== "ffmpeg") return '<td class="muted">–</td><td></td><td></td><td></td>';
+  if (p.kind !== "ffmpeg") return '<td class="muted">–</td><td></td><td></td><td></td><td></td>';
   const m = p.mode || {}, pr = p.progress || {}, u = p.usage || {};
   const what = m.kind === "gpu" ? `<span class="pill info">GPU</span> ${esc(m.codec)}<div class="muted" style="font-size:11px">${esc(m.device)}</div>`
     : m.kind === "cpu" ? `<span class="pill warning">CPU</span> ${esc(m.codec)}`
@@ -430,7 +430,8 @@ function procCells(p) {
   return `<td>${what}</td>
     <td class="num"${slow ? ' style="color:var(--crit)" title="plus lent que le temps réel"' : ""}>${fps}${speed}</td>
     <td class="num">${pr.drop || pr.dup ? `${pr.drop || 0} / ${pr.dup || 0}` : '<span class="muted">0</span>'}</td>
-    <td class="num"${gpuTitle ? ` title="${esc(gpuTitle)}"` : ""}>${u.cpu != null ? u.cpu + " %" : "–"}${gpuBusy != null ? ` · ${gpuBusy} %` : ""}</td>`;
+    <td class="num">${u.cpu != null ? u.cpu + " %" : "–"}</td>
+    <td class="num"${gpuTitle ? ` title="${esc(gpuTitle)}"` : ""}>${gpuBusy != null ? gpuBusy + " %" : '<span class="muted">–</span>'}</td>`;
 }
 
 function renderGpu(g) {
