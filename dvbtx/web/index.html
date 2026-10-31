@@ -94,8 +94,6 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
   <nav id="tabs">
     <a href="#etat" data-tab="etat">Tableau de bord</a><a href="#chaines" data-tab="chaines">Chaînes</a><a href="#sources" data-tab="sources">Sources</a><a href="#config" data-tab="config">Configuration</a><a href="#journaux" data-tab="journaux">Journaux</a>
   </nav>
-  <span style="flex:1"></span>
-  <button onclick="reloadSi()">Recharger EPG / SI</button>
 </header>
 <main>
   <section id="alerts"></section>
@@ -105,6 +103,7 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
     <section><h2>Multiplex</h2><div id="carriers"></div></section>
   </div>
   <div class="tab" data-tab="chaines">
+    <div class="row" style="margin-bottom:10px"><span class="muted" style="font-size:12px">Guide des programmes et tables SI relus depuis le dossier EPG et les URL.</span><span style="flex:1"></span><button onclick="reloadSi()">Recharger EPG / SI</button></div>
     <div id="channels"></div>
   </div>
   <div class="tab" data-tab="sources">
