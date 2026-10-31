@@ -23,7 +23,7 @@
 #define PCR_ONLY_PID_OFF 31
 
 enum { CK_FILE, CK_PAT, CK_PMT, CK_TDT, CK_TOT, CK_FREE };
-enum { OP_ADD, OP_DEL, OP_SET };
+enum { OP_ADD, OP_DEL, OP_SET, OP_MON_ADD, OP_MON_DEL };
 #define PRIMARY_SWAP_NS 15000000000LL   /* a new primary source that does not come is used anyway */
 
 typedef struct carousel {
@@ -93,6 +93,7 @@ typedef struct mux_op {
     input *primary, *backup;     /* OP_SET */
     int no_backup, set_name;
     char name[64];
+    struct sockaddr_in sa;       /* OP_MON_ADD, OP_MON_DEL */
     int result;
     char err[160];
     _Atomic int state;           /* 0 queued, 1 done, 2 abandoned by the caller (the multiplexer frees it) */
@@ -126,7 +127,7 @@ struct mux {
     pthread_mutex_t lock;
 
     int mon_fd, nmon;
-    struct sockaddr_in mon_sa[8];
+    struct sockaddr_in mon_sa[MAX_MON];
     uint8_t mon_buf[7 * TS_PKT];
     int mon_n;
 
@@ -511,6 +512,29 @@ static void pcr_only(mux *m, svc *s, uint8_t *out, int64_t now)
 
 /* ---- public ---- */
 
+/* "udp://host:port" (or "host:port") -> address; 0 ok */
+static int monitor_addr(const char *spec, struct sockaddr_in *sa)
+{
+    const char *a = !strncmp(spec, "udp://", 6) ? spec + 6 : spec;
+    char host[128];
+    const char *colon = strrchr(a, ':');
+    if (!colon)
+        return -1;
+    snprintf(host, sizeof host, "%.*s", (int)(colon - a), a);
+    memset(sa, 0, sizeof *sa);
+    sa->sin_family = AF_INET;
+    sa->sin_port = htons((uint16_t)atoi(colon + 1));
+    return inet_pton(AF_INET, host, &sa->sin_addr) == 1 && sa->sin_port ? 0 : -1;
+}
+
+static void monitor_socket(mux *m)
+{
+    m->mon_fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    int snd = 8 << 20, ttl = 4;
+    setsockopt(m->mon_fd, SOL_SOCKET, SO_SNDBUF, &snd, sizeof snd);
+    setsockopt(m->mon_fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof ttl);
+}
+
 mux *mux_new(const mux_cfg *c, mux_clock_fn clock, void *clock_ctx)
 {
     mux *m = xcalloc(1, sizeof *m);
@@ -524,28 +548,14 @@ mux *mux_new(const mux_cfg *c, mux_clock_fn clock, void *clock_ctx)
     m->mon_fd = -1;
     char list[sizeof c->monitor];
     snprintf(list, sizeof list, "%s", c->monitor);
-    for (char *save = NULL, *tok = strtok_r(list, ",", &save); tok && m->nmon < 8; tok = strtok_r(NULL, ",", &save)) {
-        const char *a = !strncmp(tok, "udp://", 6) ? tok + 6 : tok;
-        char host[128];
-        const char *colon = strrchr(a, ':');
-        struct sockaddr_in *sa = &m->mon_sa[m->nmon];
-        if (!colon)
-            continue;
-        snprintf(host, sizeof host, "%.*s", (int)(colon - a), a);
-        sa->sin_family = AF_INET;
-        sa->sin_port = htons((uint16_t)atoi(colon + 1));
-        if (inet_pton(AF_INET, host, &sa->sin_addr) != 1) {
+    for (char *save = NULL, *tok = strtok_r(list, ",", &save); tok && m->nmon < MAX_MON; tok = strtok_r(NULL, ",", &save)) {
+        if (monitor_addr(tok, &m->mon_sa[m->nmon]))
             LOGW("carrier %d: bad monitor address %s", c->carrier, tok);
-            continue;
-        }
-        m->nmon++;
+        else
+            m->nmon++;
     }
-    if (m->nmon) {
-        m->mon_fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-        int snd = 8 << 20, ttl = 4;
-        setsockopt(m->mon_fd, SOL_SOCKET, SO_SNDBUF, &snd, sizeof snd);
-        setsockopt(m->mon_fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof ttl);
-    }
+    if (m->nmon)
+        monitor_socket(m);
     if (c->tot_desc_path[0]) {
         FILE *f = fopen(c->tot_desc_path, "rb");
         if (f) {
@@ -763,11 +773,38 @@ static void unref(input *in)
         atomic_fetch_sub(&in->refs, 1);
 }
 
+static int mon_find(mux *m, const struct sockaddr_in *sa)
+{
+    for (int i = 0; i < m->nmon; i++)
+        if (m->mon_sa[i].sin_port == sa->sin_port && m->mon_sa[i].sin_addr.s_addr == sa->sin_addr.s_addr)
+            return i;
+    return -1;
+}
+
 static int op_apply(mux *m, mux_op *op, int64_t now)
 {
     int idx;
     svc *s = svc_by_sid(m, op->sid, &idx);
     switch (op->kind) {
+    case OP_MON_ADD:
+        if (mon_find(m, &op->sa) >= 0)
+            return 0;
+        if (m->nmon == MAX_MON) {
+            snprintf(op->err, sizeof op->err, "%d monitor copies already", MAX_MON);
+            break;
+        }
+        if (m->mon_fd < 0)
+            monitor_socket(m);
+        m->mon_sa[m->nmon++] = op->sa;
+        return 0;
+    case OP_MON_DEL:
+        idx = mon_find(m, &op->sa);
+        if (idx < 0) {
+            snprintf(op->err, sizeof op->err, "no such monitor copy");
+            break;
+        }
+        m->mon_sa[idx] = m->mon_sa[--m->nmon];
+        return 0;
     case OP_ADD:
         if (s) {
             snprintf(op->err, sizeof op->err, "service_id %d already on this carrier", op->sid);
@@ -931,6 +968,19 @@ int mux_service_set(mux *m, int sid, input *primary, input *backup, int no_backu
         op->set_name = 1;
         snprintf(op->name, sizeof op->name, "%s", name);
     }
+    return op_submit(m, op, timeout_ms, err, errlen);
+}
+
+int mux_monitor(mux *m, int add, const char *addr, int timeout_ms, char *err, int errlen)
+{
+    mux_op *op = xcalloc(1, sizeof *op);
+    if (monitor_addr(addr, &op->sa)) {
+        snprintf(err, errlen, "bad address %s (udp://host:port)", addr);
+        free(op);
+        return -1;
+    }
+    op->kind = add ? OP_MON_ADD : OP_MON_DEL;
+    op->sid = -1;
     return op_submit(m, op, timeout_ms, err, errlen);
 }
 

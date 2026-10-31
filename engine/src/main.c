@@ -265,6 +265,16 @@ static void command(char *line, int *quit, int *reload)
         } else {
             snprintf(err, sizeof err, "service %s: unknown", w2);
         }
+    } else if (!strcmp(w1, "monitor") && w2) {
+        /* monitor add|del carrier=N addr=udp://127.0.0.1:PORT: copy of a carrier's output (previews) */
+        mux *m = rf_carrier_mux((int)kv_int(&o, "carrier", -1));
+        const char *addr = kv_str(&o, "addr");
+        if (!m || !addr)
+            snprintf(err, sizeof err, "monitor: carrier and addr required");
+        else if (strcmp(w2, "add") && strcmp(w2, "del"))
+            snprintf(err, sizeof err, "monitor %s: unknown", w2);
+        else
+            r = mux_monitor(m, !strcmp(w2, "add"), addr, OP_TIMEOUT_MS, err, sizeof err);
     } else {
         snprintf(err, sizeof err, "unknown command '%s'", w1);
     }

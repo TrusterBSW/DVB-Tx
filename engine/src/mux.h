@@ -41,6 +41,8 @@ typedef struct mux_cfg {
     char monitor[1024];             /* udp://host:port[,udp://...] copies of the output, "" = none */
 } mux_cfg;
 
+#define MAX_MON 16                  /* copies of a carrier's output (monitor) */
+
 mux *mux_new(const mux_cfg *c, mux_clock_fn clock, void *clock_ctx);
 int mux_add_service(mux *m, const mux_svc_cfg *s);
 int mux_add_table(mux *m, const mux_table_cfg *t);
@@ -57,6 +59,8 @@ int mux_service_del(mux *m, int sid, int timeout_ms, char *err, int errlen);
  * at most); backup: NULL = unchanged unless no_backup; name: NULL = unchanged */
 int mux_service_set(mux *m, int sid, input *primary, input *backup, int no_backup, const char *name,
                     int timeout_ms, char *err, int errlen);
+/* adds (add=1) or removes a copy of the output sent to udp://host:port (previews of the web page) */
+int mux_monitor(mux *m, int add, const char *addr, int timeout_ms, char *err, int errlen);
 /* JSON object with the carrier and service statistics since the previous call */
 int mux_stats_json(mux *m, char *buf, int len, double interval_s);
 double mux_ts_rate(const mux *m);
