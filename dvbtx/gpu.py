@@ -5,11 +5,12 @@ driver and render node; an adapter without a usable driver is listed with the re
 passed through to a VM, nouveau without NVENC).
 
 Learning: for each usable adapter, every way ffmpeg can use it (VAAPI with each installed VA driver,
-with or without the low-power encoder; QSV; NVENC; the whole chain on the GPU, or decoding and
-scaling on the CPU and only the encoding on it) transcodes a 1080p H.264 test clip to 720p at a
-constant bit rate, for each codec (H.264, HEVC, MPEG-2). A way counts if ffmpeg succeeds, the output
-has the codec and size asked for, and its bit rate stays near the target: DVB needs a capped rate,
-an encoder that only does constant quality (Intel without its HuC firmware) is refused. The speed
+with or without the low-power encoder; QSV; NVENC; the whole chain on the GPU, decoding on it with
+the frames copied to memory, or only the encoding on it) transcodes a 1080p H.264 test clip to 720p at a
+capped bit rate, for each codec (H.264, HEVC, MPEG-2). A way counts if ffmpeg succeeds, the output
+has the codec and size asked for, and its bit rate stays under the cap: a multiplex takes any rate
+under a channel's share, not above it, so an encoder without rate control (constant quality only,
+Intel without its HuC firmware) is refused. The speed
 (frames per second) ranks them.
 
 The results are kept with a fingerprint of the adapters, their drivers and ffmpeg: the learning
@@ -37,6 +38,7 @@ FAMILIES = {"libx264": "h264", "h264": "h264", "libx265": "hevc", "hevc": "hevc"
 PROBE_CODEC = {"h264": "h264", "hevc": "hevc", "mpeg2": "mpeg2video"}
 TEST_RATE = {"h264": 4_000_000, "hevc": 3_000_000, "mpeg2": 6_000_000}
 TEST_SECONDS = 8
+LEARN_VERSION = 3               # a change of the tests makes every machine learn again
 CPU_VALUES = ("off", "none", "cpu", "no", "false")
 
 MANAGER = None          # set by the supervisor: the ingest asks it for a GPU
@@ -142,7 +144,7 @@ def fingerprint(devs, ffmpeg):
     """what the learning depends on: adapters, drivers (and their firmware options), VA drivers, ffmpeg"""
     parts = [[d["pci"], d["pci_id"], d["driver"], d["driver_version"], d["render"]] for d in devs]
     params = {m: _read(f"/sys/module/{m}/parameters/enable_guc") for m in ("i915", "xe")}
-    doc = {"devs": parts, "va": _va_drivers(), "ffmpeg": _ffmpeg_version(ffmpeg), "kernel": os.uname().release,
+    doc = {"learning": LEARN_VERSION, "devs": parts, "va": _va_drivers(), "ffmpeg": _ffmpeg_version(ffmpeg), "kernel": os.uname().release,
            "nvidia": (_read("/proc/driver/nvidia/version").splitlines() or [""])[0], "guc": params}
     return hashlib.sha1(json.dumps(doc, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -150,23 +152,31 @@ def fingerprint(devs, ffmpeg):
 class Way:
     """one way of using one adapter for one codec family"""
 
-    def __init__(self, dev, api, full, va=None, low_power=False):
-        self.dev, self.api, self.full, self.va, self.low_power = dev, api, full, va, low_power
+    # mode: "full" decoding, filters and encoding on the GPU, the frames never leave it; "dec" decoded on
+    # the GPU and copied to memory (a change of the input, such as a file looping, only re-creates
+    # filters on frames in memory: ffmpeg 7.1 cannot do it on GPU frames), filters and encoding on it;
+    # "enc" decoding and filters on the CPU, only the encoding on the GPU
+    MODES = {"full": "GPU decode+scale", "dec": "GPU decode (copied), GPU scale", "enc": "CPU decode, GPU encode"}
+
+    def __init__(self, dev, api, mode, va=None, low_power=False):
+        self.dev, self.api, self.mode, self.va, self.low_power = dev, api, mode, va, low_power
 
     @property
     def key(self):
-        return ":".join([self.api, self.dev["id"], "full" if self.full else "enc", self.va or "-",
+        return ":".join([self.api, self.dev["id"], self.mode, self.va or "-",
                          "lp" if self.low_power else "-"])
 
     @classmethod
     def from_key(cls, key, devs):
         parts = key.split(":")          # the device id may contain ':' (cuda:0)
-        api, full, va, lp = parts[0], parts[-3], parts[-2], parts[-1]
+        api, mode, va, lp = parts[0], parts[-3], parts[-2], parts[-1]
         dev_id = ":".join(parts[1:-3])
         dev = next((d for d in devs if d["id"] == dev_id), None)
         if dev is None:
             return None
-        return cls(dev, api, full == "full", None if va == "-" else va, lp == "lp")
+        if mode not in cls.MODES:
+            return None
+        return cls(dev, api, mode, None if va == "-" else va, lp == "lp")
 
     def label(self):
         """for the web page and the logs: 'Intel UHD 630 (VAAPI iHD, whole chain)'"""
@@ -175,7 +185,7 @@ class Way:
             api += f" {self.va}"
         if self.low_power:
             api += " low-power"
-        return f"{self.dev['name']} ({api}, {'GPU decode+scale' if self.full else 'CPU decode, GPU encode'})"
+        return f"{self.dev['name']} ({api}, {self.MODES[self.mode]})"
 
     def env(self):
         e = {}
@@ -189,22 +199,29 @@ class Way:
         """options before the -i of the video input (and global device options)"""
         r = self.dev["render"]
         if self.api == "vaapi":
-            if self.full:
+            if self.mode == "full":
                 return ["-hwaccel", "vaapi", "-hwaccel_device", r, "-hwaccel_output_format", "vaapi"]
+            if self.mode == "dec":
+                return ["-init_hw_device", f"vaapi=va:{r}", "-hwaccel", "vaapi", "-hwaccel_device", "va",
+                        "-filter_hw_device", "va"]
             return ["-vaapi_device", r]
         if self.api == "qsv":
             return ["-init_hw_device", f"vaapi=va:{r}", "-init_hw_device", "qsv=qs@va", "-filter_hw_device", "qs"]
         n = str(self.dev["cuda"])
-        if self.full:
+        if self.mode == "full":
             return ["-init_hw_device", f"cuda=cu:{n}", "-filter_hw_device", "cu", "-hwaccel", "cuda",
                     "-hwaccel_device", "cu", "-hwaccel_output_format", "cuda"]
+        if self.mode == "dec":
+            return ["-init_hw_device", f"cuda=cu:{n}", "-filter_hw_device", "cu", "-hwaccel", "cuda",
+                    "-hwaccel_device", "cu"]
         return []
 
     def filters(self, deinterlace=False, size=None, fps=None):
-        """video filter chain (size: (w, h) or None); frames decoded on the CPU are uploaded (hwupload
-        lets frames already on the GPU through, so a codec the GPU does not decode still works)"""
+        """video filter chain (size: (w, h) or None); frames in memory are uploaded (hwupload lets frames
+        already on the GPU through, so a codec the GPU does not decode still works)"""
         vf = []
-        if self.full and self.api == "vaapi":
+        gpu_filters = self.mode in ("full", "dec")
+        if gpu_filters and self.api == "vaapi":
             vf += ["format=nv12|vaapi", "hwupload"]
             if deinterlace:
                 vf.append("deinterlace_vaapi")
@@ -214,7 +231,7 @@ class Way:
                 vf.append(f"pad_vaapi=w={w}:h={h}:x=(ow-iw)/2:y=(oh-ih)/2")
             else:
                 vf.append("scale_vaapi=format=nv12")
-        elif self.full and self.api == "nvenc":
+        elif gpu_filters and self.api == "nvenc":
             vf += ["format=nv12|cuda", "hwupload"]
             if deinterlace:
                 vf.append("yadif_cuda")
@@ -240,12 +257,13 @@ class Way:
         return f"{family}_{'nvenc' if self.api == 'nvenc' else self.api}"
 
     def rate_args(self):
-        """options for a capped bit rate (-b:v / -maxrate / -bufsize are added by the caller)"""
+        """options for a capped variable bit rate, like libx264's (-b:v / -maxrate / -bufsize given by the
+        caller): the multiplex takes any rate under its share, not one above it"""
         if self.api == "vaapi":
-            return ["-rc_mode", "CBR"] + (["-low_power", "1"] if self.low_power else [])
+            return ["-rc_mode", "VBR"] + (["-low_power", "1"] if self.low_power else [])
         if self.api == "qsv":
             return ["-look_ahead", "0"]
-        return ["-preset", "p4", "-rc", "cbr"]
+        return ["-preset", "p4", "-rc", "vbr"]
 
 
 def ways(dev, family, va_drivers):
@@ -255,22 +273,24 @@ def ways(dev, family, va_drivers):
         vas = [v for v in (("iHD", "i965") if dev["vendor"] == "intel" else ("radeonsi",)) if v in va_drivers] or [None]
         for va in vas:
             for lp in ((False, True) if dev["vendor"] == "intel" and family != "mpeg2" else (False,)):
-                out += [Way(dev, "vaapi", True, va, lp), Way(dev, "vaapi", False, va, lp)]
+                out += [Way(dev, "vaapi", m, va, lp) for m in Way.MODES]
         if dev["vendor"] == "intel":
-            out.append(Way(dev, "qsv", False))
+            out.append(Way(dev, "qsv", "enc"))
     if dev["vendor"] == "nvidia" and dev["driver"] == "nvidia" and family in ("h264", "hevc"):
-        out += [Way(dev, "nvenc", True), Way(dev, "nvenc", False)]
+        out += [Way(dev, "nvenc", m) for m in Way.MODES]
     return out
 
 
 def _test_clip(ffmpeg, folder):
-    path = os.path.join(folder, "gpu-test-1080p.ts")
+    # like a broadcast: High profile, CABAC, B frames (an ultrafast clip decodes too cheaply on the CPU
+    # and hides what decoding on the GPU saves)
+    path = os.path.join(folder, "gpu-test-1080p-high.ts")
     if not os.path.exists(path):
         tmp = path + ".tmp"
         subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-f", "lavfi", "-i",
                         "testsrc2=size=1920x1080:rate=25", "-t", str(TEST_SECONDS), "-c:v", "libx264", "-preset",
-                        "ultrafast", "-pix_fmt", "yuv420p", "-g", "25", "-f", "mpegts", tmp], check=True,
-                       capture_output=True, timeout=120)
+                        "veryfast", "-profile:v", "high", "-bf", "2", "-b:v", "8M", "-pix_fmt", "yuv420p", "-g", "25",
+                        "-f", "mpegts", tmp], check=True, capture_output=True, timeout=300)
         os.replace(tmp, path)
     return path
 
@@ -288,7 +308,9 @@ def test(way, family, clip, ffmpeg, ffprobe, folder):
     target = TEST_RATE[family]
     out = os.path.join(folder, "gpu-test-out.ts")
     vf = way.filters(size=(1280, 720))
-    cmd = ([ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y"] + way.input_args() +
+    # the clip twice (-stream_loop 1): a source that loops or changes re-creates the filters, a way that
+    # breaks there (ffmpeg 7.1 with the frames kept on the GPU) is refused
+    cmd = ([ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-stream_loop", "1"] + way.input_args() +
            ["-i", clip, "-an", "-vf", ",".join(vf), "-c:v", way.encoder(family)] + way.rate_args() +
            ["-b:v", str(target), "-maxrate", str(target), "-bufsize", str(target // 2), "-g", "25",
             "-f", "mpegts", out])
@@ -307,7 +329,9 @@ def test(way, family, clip, ffmpeg, ffprobe, folder):
                 marks.append((time.monotonic(), int(line.split("=", 1)[1] or 0)))
             if time.monotonic() - t0 > 60:
                 p.kill()
-        rc = p.wait(10)
+        _, status, ru = os.wait4(p.pid, 0)            # its own CPU time (the GPU should spare it)
+        rc = p.returncode = os.waitstatus_to_exitcode(status)
+        cpu_s = ru.ru_utime + ru.ru_stime
     except (OSError, subprocess.SubprocessError) as e:
         return {"ok": False, "error": str(e)}
     t_end = time.monotonic()
@@ -322,7 +346,10 @@ def test(way, family, clip, ffmpeg, ffprobe, folder):
         return {"ok": False, "error": re.sub(r"^\[[^\]]*@ 0x[0-9a-f]+\]\s*", "", err)[:200]}
     try:
         s = _probe(ffprobe, out)
-        size = os.path.getsize(out)
+        pk = subprocess.run([ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,size",
+                             "-of", "csv=p=0", out], capture_output=True, text=True, timeout=30).stdout
+        pkts = sorted((float(t), int(z)) for t, z in (l.split(",")[:2] for l in pk.splitlines() if l.count(",") >= 1)
+                      if t not in ("", "N/A"))
     except (OSError, ValueError, subprocess.SubprocessError) as e:
         return {"ok": False, "error": f"output unreadable: {e}"}
     finally:
@@ -336,17 +363,28 @@ def test(way, family, clip, ffmpeg, ffprobe, folder):
     if not (1200 <= w <= 1280 and 660 <= h <= 720):
         return {"ok": False, "error": f"output size {w}x{h}"}
     frames = int(s.get("nb_read_packets") or 0)
-    rate = size * 8 / TEST_SECONDS
-    if not 0.3 * target < rate < 1.6 * target:
-        return {"ok": False, "error": f"bit rate not held: {rate / 1e6:.1f} Mbit/s for {target / 1e6:.0f}"}
-    if frames < TEST_SECONDS * 25 * 0.9:
-        return {"ok": False, "error": f"{frames} frames out of {TEST_SECONDS * 25}"}
+    # the rate must stay under its cap (an encoder without rate control, constant quality only, ignores
+    # it): the average, and the busiest second
+    rate = sum(z for _, z in pkts) * 8 / (2 * TEST_SECONDS)
+    peak, j, acc = 0, 0, 0
+    for t, z in pkts:
+        acc += z
+        while pkts[j][0] <= t - 1.0:
+            acc -= pkts[j][1]
+            j += 1
+        peak = max(peak, acc * 8)
+    if rate > 1.25 * target or peak > 1.75 * target or rate < 0.05 * target:
+        return {"ok": False, "error": f"bit rate not held: {rate / 1e6:.1f} Mbit/s on average, {peak / 1e6:.1f} at most "
+                                      f"for a cap of {target / 1e6:.0f}"}
+    # a GOP or so is lost where the clip loops (B frames), even on the CPU; a way that stops there gives half
+    if frames < 2 * TEST_SECONDS * 25 * 0.85:
+        return {"ok": False, "error": f"{frames} frames out of {2 * TEST_SECONDS * 25} (stopped where the clip loops?)"}
     first = next(((t, f) for t, f in marks if f > 0), None)
     if first and frames - first[1] >= 25 and t_end - first[0] > 0.2:
         fps = (frames - first[1]) / (t_end - first[0])
     else:
         fps = frames / (t_end - t0)
-    return {"ok": True, "fps": round(fps, 1), "rate": round(rate)}
+    return {"ok": True, "fps": round(fps, 1), "rate": round(rate), "cpu_ms": round(1000 * cpu_s / max(1, frames), 2)}
 
 
 def learn(devs, ffmpeg, ffprobe, folder, progress=None):
@@ -367,9 +405,21 @@ def learn(devs, ffmpeg, ffprobe, folder, progress=None):
                 rows.append(r)
                 if progress:
                     progress(d, fam, r)
-            rows.sort(key=lambda x: -x.get("fps", 0))
-            res[d["id"]][fam] = rows
+            res[d["id"]][fam] = rank(rows)
     return res
+
+
+def rank(rows):
+    """the way used first: the one that costs the CPU least, among those at least half as fast as the
+    fastest (and 2x real time at 25 frames/s); then by speed"""
+    ok = [r for r in rows if r.get("ok")]
+    if not ok:
+        return rows
+    top = max(r["fps"] for r in ok)
+    fast = [r for r in ok if r["fps"] >= max(0.5 * top, 50)] or ok
+    first = min(fast, key=lambda r: (r.get("cpu_ms", 0), -r["fps"]))
+    rest = sorted((r for r in rows if r is not first), key=lambda r: (not r.get("ok"), -r.get("fps", 0)))
+    return [first] + rest
 
 
 def default_cache():
@@ -498,7 +548,7 @@ class Manager:
                 log.info("GPU %s: %s (%s)", d["name"], ", ".join(ok), best.get("h264", {}).get("label", "") if best.get("h264") else "")
             else:
                 why = _why(fams)
-                log.warning("GPU %s: no way to encode with a held bit rate (%s): transcodes on the CPU%s", d["name"],
+                log.warning("GPU %s: no way to encode under a capped bit rate (%s): transcodes on the CPU%s", d["name"],
                             why, "; Intel: the HuC firmware (options i915 enable_guc=2) or the non-free VA driver "
                             "(intel-media-va-driver-non-free) are often missing" if d["vendor"] == "intel" else "")
 

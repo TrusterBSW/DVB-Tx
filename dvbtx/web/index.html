@@ -398,7 +398,7 @@ function renderGpu(g) {
     const fams = Object.entries(d.results || {}).map(([f, rows]) => {
       const b = rows.find((r) => r.ok);
       const why = rows.find((r) => !r.ok && /RC mode|entrypoint|bit rate|MFX|Assertion/.test(r.error || "")) || rows[0] || {};
-      return `<tr><td>${FAM[f] || f}</td><td>${b ? `<span class="pill ok">${Math.round(b.fps)} img/s</span>` : '<span class="pill">non</span>'}</td>
+      return `<tr><td>${FAM[f] || f}</td><td>${b ? `<span class="pill ok">${Math.round(b.fps)} img/s</span> <span class="muted" style="font-size:12px" title="temps CPU par image (1080p → 720p)">CPU ${(b.cpu_ms ?? 0).toFixed(1)} ms/img</span>` : '<span class="pill">non</span>'}</td>
         <td class="muted" style="font-size:12px">${b ? esc(b.label) : esc(why.error || "")}</td></tr>`;
     }).join("");
     return `<div style="margin-top:8px"><b>${esc(d.name)}</b> <span class="muted">${esc(d.id)} · pilote ${esc(d.driver || "aucun")}</span>

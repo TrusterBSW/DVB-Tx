@@ -174,12 +174,17 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
 Sources that must be re-encoded go through a GPU when one works, else libx264 on the CPU
 (`[ingest] gpu = "auto" | "off" | list of devices`; per channel `encode = { hwaccel = "cpu" }`).
 The cards (Intel, AMD, NVIDIA, integrated or not) are detected at every start; every way to use them
-(VAAPI per VA driver, low power or not, QSV, NVENC, the whole chain on the GPU or only the encoding)
-is tested once on a 1080p→720p constant-rate transcode in H.264, HEVC and MPEG-2: kept if the codec,
-size and **bit rate** are right, ranked by speed. The learning runs again (in the background, CPU
+(VAAPI per VA driver, low power or not, QSV, NVENC; the whole chain on the GPU, decoding on it with frames copied to memory, or only the encoding)
+is tested once on a 1080p→720p capped-rate transcode in H.264, HEVC and MPEG-2: kept if the codec and
+size are right and the **bit rate stays under its cap** (no rate control: refused), ranked by speed. The learning runs again (in the background, CPU
 meanwhile) only when the cards, their drivers or ffmpeg change (`/var/lib/dvbtx/gpu.json`);
 `dvbtx gpu` shows it, `dvbtx gpu learn` or the web button redoes it. New transcodes go to the card
 with the most speed left; one that fails twice moves to another way, then to the CPU.
+The clip (H.264 High, like a broadcast) is played twice: a way that breaks where the source loops is
+refused (ffmpeg 7.1 with the frames kept on the GPU); among the ways at least half as fast as the
+fastest, the one using the least CPU is chosen. Measured, 1080p→720p H.264, CPU per frame: libx264
+veryfast 18.3 ms, Intel UHD 630 7.1 ms (219 frames/s), NVIDIA RTX A5500 6.6 ms (243 frames/s). Intel
+up to gen 9: Debian's free VA driver has no scaling nor rate control there, the non-free one is enough.
 
 ## Several sources per channel, cache
 

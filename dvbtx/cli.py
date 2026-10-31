@@ -181,8 +181,8 @@ def cmd_gpu(a):
         print(f"learning (test clip and results in {m.folder})...")
 
         def prog(d, fam, r):
-            print(f"  {fam:5s} {r['label']}: " + (f"{r['fps']:.0f} img/s" if r["ok"] else f"no - {r['error']}"),
-                  flush=True)
+            print(f"  {fam:5s} {r['label']}: " + (f"{r['fps']:.0f} img/s, CPU {r['cpu_ms']:.1f} ms/img" if r["ok"]
+                                                  else f"no - {r['error']}"), flush=True)
         m.save(gpu.learn(m.devices, m.ffmpeg, m.ffprobe, m.folder, prog))
         print(f"saved in {m.cache_path} (a running dvbtx reads it at its next start, or learns again "
               "from its web page)")
@@ -200,7 +200,8 @@ def cmd_gpu(a):
     for d in m.devices:
         for fam, rows in m.results.get(d["id"], {}).items():
             best = next((r for r in rows if r.get("ok")), None)
-            print(f"{d['id']:22s} {fam:5s} " + (f"{best['fps']:.0f} img/s with {best['label']}" if best else
+            print(f"{d['id']:22s} {fam:5s} " + (f"{best['fps']:.0f} img/s, CPU {best.get('cpu_ms', 0):.1f} ms/img, "
+                                                  f"with {best['label']}" if best else
                                                   f"unusable ({gpu._why({fam: rows})})"))
 
 

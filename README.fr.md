@@ -368,12 +368,14 @@ n'utiliser que ce type), et un codec explicite (`video_codec = "h264_vaapi"`) es
 - **Détection** à chaque démarrage, instantanée : cartes Intel, AMD et NVIDIA, intégrées ou non, leur
   pilote ; une carte sans pilote, confiée à une VM (vfio) ou sous nouveau est signalée et écartée.
 - **Apprentissage** : chaque façon d'utiliser chaque carte (VAAPI avec chaque pilote VA installé,
-  avec ou sans l'encodeur basse consommation ; QSV ; NVENC ; toute la chaîne sur le GPU, ou
-  décodage et mise à l'échelle sur le CPU et seulement l'encodage sur le GPU) encode une mire 1080p
-  en 720p à débit constant, en H.264, HEVC et MPEG-2. Une façon est retenue si ffmpeg réussit, que
-  la sortie a le bon codec et la bonne taille et que **le débit est tenu** (un encodeur qui ne sait
-  faire que de la qualité constante est refusé : le multiplex DVB a besoin d'un débit plafonné) ; la
-  vitesse les classe. Quelques secondes par carte.
+  avec ou sans l'encodeur basse consommation ; QSV ; NVENC ; toute la chaîne sur le GPU, décodage
+  sur le GPU avec les images copiées en mémoire, ou seulement l'encodage sur le GPU) encode deux
+  fois de suite une mire 1080p (H.264 High comme une diffusion) en 720p, en H.264, HEVC et MPEG-2.
+  Une façon est retenue si ffmpeg passe le bouclage, que la sortie a le bon codec et la bonne
+  taille, et que **le débit reste sous son plafond** (moyenne et seconde la plus chargée : variable
+  comme les sources copiées, jamais au-dessus de la part de la chaîne ; un encodeur qui ne fait que
+  de la qualité constante n'a pas de contrôle de débit et est refusé). Parmi celles qui vont au
+  moins à la moitié de la plus rapide, la moins gourmande en CPU est choisie. Moins d'une minute.
 - L'apprentissage ne se refait que si les cartes, leurs pilotes ou ffmpeg changent (empreinte gardée
   avec les résultats dans `/var/lib/dvbtx/gpu.json`), en tâche de fond : le démarrage n'attend pas,
   les transcodages passent par le CPU en attendant. `dvbtx gpu` montre les cartes et les résultats,
@@ -382,10 +384,17 @@ n'utiliser que ce type), et un codec explicite (`video_codec = "h264_vaapi"`) es
   (vitesse apprise ÷ transcodages en cours). Un transcodage qui échoue deux fois sur une carte passe
   à une autre façon, puis au CPU.
 
-Intel jusqu'à la 9ᵉ génération (UHD 630...) avec les pilotes libres de Debian : le pilote iHD n'y
-fait ni la mise à l'échelle ni le débit constant sans le firmware HuC (`options i915
-enable_guc=2`, puis redémarrage) ou le pilote non libre (`intel-media-va-driver-non-free`, section
-non-free) ; dvbtx le dit et reste sur le CPU.
+Mesuré (1080p → 720p H.264, CPU par image) : libx264 veryfast 18,3 ms ; Intel UHD 630 (i5-9500)
+7,1 ms à 219 images/s ; NVIDIA RTX A5500 (vGPU) 6,6 ms à 243 images/s. Une chaîne 25 images/s
+réencodée, désentrelacée, avec son AAC : 11 % d'un cœur sur l'UHD 630. Toute la chaîne sur le GPU
+irait plus vite encore, mais ffmpeg 7.1 casse quand la source boucle ou change (filtres recréés
+sur des images restées dans le GPU) : l'apprentissage l'écarte, et la reprendra si une version de
+ffmpeg le corrige.
+
+Intel jusqu'à la 9ᵉ génération (UHD 630...) : le pilote VA libre de Debian n'y fait ni la mise à
+l'échelle ni le contrôle de débit ; le pilote non libre suffit (`intel-media-va-driver-non-free`,
+section non-free, sans redémarrage). Le firmware HuC (`options i915 enable_guc=2`, redémarrage)
+n'est utile qu'en plus, pour l'encodeur basse consommation.
 
 ## Plusieurs sources par chaîne, cache
 
