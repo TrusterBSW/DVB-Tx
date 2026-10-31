@@ -65,6 +65,8 @@ dialog input[type=text], dialog input[type=number], dialog select, dialog textar
 dialog .hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 button.primary { background: var(--info); border-color: var(--info); color: #fff; }
+button.icon { padding: 2px 5px; line-height: 0; vertical-align: middle; color: var(--muted); }
+button.icon:hover { color: var(--ink); }
 button.danger { color: var(--crit); }
 #toast { position: fixed; right: 16px; bottom: 16px; max-width: min(520px, calc(100vw - 32px)); z-index: 5; }
 #toast > div { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 8px; padding: 10px 12px;
@@ -159,6 +161,7 @@ button.danger { color: var(--crit); }
 <dialog id="livedlg">
   <h3 id="live_title">Direct</h3>
   <video id="live_video" controls playsinline style="width:100%;background:#000;border-radius:6px;aspect-ratio:16/9"></video>
+  <div class="hint">Dans la page : vidéo telle qu'émise, son converti en AAC (les navigateurs ne lisent ni le MPEG-TS ni le MP2 / AC-3). Flux exact, sans aucune conversion : <a id="live_vlc" href="#" download>ouvrir dans VLC</a>.</div>
   <div class="hint" id="live_hint">Ce qui part à l'antenne, avec quelques secondes de retard. Rien ne tourne quand la fenêtre est fermée.</div>
   <div class="actions"><label style="margin:0 auto 0 0;display:flex;gap:6px;align-items:center;color:inherit"><input type="checkbox" id="live_tc" onchange="liveStart()"> réencoder (si l'image ne s'affiche pas)</label>
     <button type="button" onclick="livedlg.close()">Fermer</button></div>
@@ -247,7 +250,12 @@ function keepOpen(el, fn) {
   });
 }
 function render(s) {
+  const first = last === null;
   last = s;
+  if (thumbsPref === null) thumbsOn = !s.web || s.web.preview_thumbnails !== false;
+  if (first && thumbsOn) setTimeout(refreshThumbs, 0);
+  const m = first && /live=(\d+)/.exec(location.hash);          // link to a channel's live picture: #live=257
+  if (m) setTimeout(() => liveOpen(Number(m[1])), 0);
   if (s.thresholds) marginMin = s.thresholds.margin_min_ms;
   $("#title").textContent = s.network.name || "dvbtx";
   document.title = (s.network.name || "dvbtx") + " – dvbtx";
@@ -313,8 +321,9 @@ function render(s) {
         <td class="num">${marginPill(lv.audio_margin_min_ms)}</td>
         <td class="num">${lv.late_max_ms != null && lv.late_max_ms < 0 ? `<span class="muted">${ms(-lv.late_max_ms)} d'avance</span>` : ms(lv.late_max_ms)}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
         <td class="num hide-sm">${inp.cc_errors ?? "–"}</td>
-        <td class="hide-sm" style="white-space:nowrap">${thumbsOn ? `<img data-thumb="${sv.sid}" alt="" src="${thumbUrl[sv.sid] || ""}" onclick="liveOpen(${sv.sid})" title="regarder en direct" style="width:96px;height:54px;object-fit:cover;background:#000;border-radius:4px;cursor:pointer;vertical-align:middle">` : ""}
-          <button onclick="liveOpen(${sv.sid})" title="regarder en direct">▶</button></td>
+        <td class="hide-sm" style="white-space:nowrap">${thumbsOn ? `<img data-thumb="${sv.sid}" alt="" src="${thumbUrl[sv.sid] || BLANK}" onclick="liveOpen(${sv.sid})" title="regarder en direct" style="width:96px;height:54px;object-fit:cover;background:#000;border-radius:4px;cursor:pointer;vertical-align:middle">` : ""}
+          <button onclick="liveOpen(${sv.sid})" title="regarder en direct dans la page">▶</button>
+          <a href="/api/mux/${c.index}.m3u?program=${sv.sid}" download="${esc(sv.name)}.m3u" title="ouvrir dans VLC le flux exact qui part à l'antenne (multiplex entier, sur cette chaîne)" style="font-size:12px">VLC</a></td>
         <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
         <td style="white-space:nowrap"><button onclick="chEdit(${sv.sid})">Modifier</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
       </tr>`;
@@ -335,11 +344,11 @@ function render(s) {
         <span>débit ${mbps(ts.bitrate)} Mbit/s</span><span>erreurs transport ${ts.transport_errors ?? 0}</span>
         <span>discontinuités ${ts.pids.reduce((a, p) => a + (p.discontinuities || 0), 0)}</span><span class="muted">il y a ${ts.age_s} s</span>
         <a href="/api/analysis/${c.index}" target="_blank">rapport complet</a></div>` : ""}
-      <div class="row" style="margin-top:10px"><span style="flex:1"></span><button onclick="thumbsToggle()" title="images des chaînes, rafraîchies toutes les 4 s tant que la page est ouverte">${thumbsOn ? "Masquer les aperçus" : "Afficher les aperçus"}</button> <button onclick="chAdd(${c.index})">+ Ajouter une chaîne</button></div>
+      <div class="row" style="margin-top:10px"><span style="flex:1"></span><button onclick="chAdd(${c.index})">+ Ajouter une chaîne</button></div>
       <div class="scroll" style="margin-top:6px"><table>
         <tr><th class="num">LCN</th><th>Chaîne</th><th>Source</th><th class="num">Entrée Mbit/s</th><th class="num">Sortie Mbit/s</th>
         <th class="num" title="Temps entre l'émission d'une image et le moment où le récepteur doit la décoder (minimum sur 1 s)">Marge vidéo</th><th class="hide-sm">10 min</th>
-        <th class="num">Marge audio</th><th class="num" title="Retard maximal d'envoi par rapport à l'instant idéal">Retard ms</th><th class="num hide-sm">CC entrée</th><th class="hide-sm">Aperçu <button onclick="thumbsToggle()" title="images des chaînes, rafraîchies toutes les 4 s tant que la page est ouverte" style="margin-left:4px">${thumbsOn ? "masquer les images" : "voir les images"}</button></th><th class="hide-sm">En cours</th><th></th></tr>
+        <th class="num">Marge audio</th><th class="num" title="Retard maximal d'envoi par rapport à l'instant idéal">Retard ms</th><th class="num hide-sm">CC entrée</th><th class="hide-sm" style="white-space:nowrap">Aperçu <button class="icon" onclick="thumbsToggle()" title="${thumbsOn ? "masquer les images des chaînes" : "afficher les images des chaînes (une toutes les 4 s)"}" aria-label="${thumbsOn ? "masquer les images" : "afficher les images"}">${thumbsOn ? EYE : EYE_OFF}</button></th><th class="hide-sm">En cours</th><th></th></tr>
         ${rows}</table></div>
     </div>`;
   }).join("");
@@ -414,12 +423,19 @@ function renderGpu(g) {
 async function gpuLearn() { const r = await api("POST", "/api/gpu/learn"); r.ok ? toast("apprentissage des GPU lancé") : report(r); refresh(); }
 
 /* previews: thumbnails (on demand, remembered by the browser) and the live picture of a channel */
-let thumbsOn = false;
-try { thumbsOn = localStorage.getItem("dvbtx_thumbs") === "1"; } catch (e) { /* private window */ }
+/* shown by default (web.preview_thumbnails of the configuration); the eye of the column hides or shows
+ * them, and this browser remembers it */
+const EYE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7c1.9 0 3.6-.6 5-1.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
+const BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";   // until the first picture
+let thumbsPref = null;
+try { thumbsPref = localStorage.getItem("dvbtx_thumbs"); } catch (e) { /* private window */ }
+let thumbsOn = thumbsPref === "1";
 const thumbUrl = {};
 function thumbsToggle() {
   thumbsOn = !thumbsOn;
-  try { localStorage.setItem("dvbtx_thumbs", thumbsOn ? "1" : "0"); } catch (e) { /* not kept */ }
+  thumbsPref = thumbsOn ? "1" : "0";
+  try { localStorage.setItem("dvbtx_thumbs", thumbsPref); } catch (e) { /* not kept */ }
   if (last) render(last);
   refreshThumbs();
 }
@@ -444,44 +460,90 @@ function liveOpen(sid) {
   const [, sv] = svcBySid(sid);
   liveSid = sid;
   $("#live_title").textContent = sv ? `${sv.lcn} · ${sv.name}` : "Direct";
+  const [c] = svcBySid(sid);
+  $("#live_vlc").href = `/api/mux/${c ? c.index : 0}.m3u?program=${sid}`;
+  $("#live_vlc").download = `${sv ? sv.name : sid}.m3u`;
   $("#live_tc").checked = false;
   $("#livedlg").showModal();
   liveStart();
 }
-/* a small playout buffer: the stream comes at the pace of the broadcast, so playing as soon as the
- * first frame is there stalls at every hiccup; start with LIVE_LEAD s ahead, wait again when it runs
- * dry, catch up when it lags more than LIVE_MAX s */
-const LIVE_LEAD = 1.0, LIVE_MAX = 3.5;
-let liveTimer = null;
-function liveStart() {
-  const v = $("#live_video");
-  const q = new URLSearchParams({ t: Date.now() });
+/* live picture through Media Source Extensions: the page reads the fragmented MP4 itself and feeds the
+ * decoder, so the browser does not treat it as a file being downloaded (stalls). The delay is held
+ * near LIVE_TARGET s by nudging the playback rate (no pause, no jump unless far behind). */
+const LIVE_TARGET = 1.2;
+let live = null;
+function liveCodecs(buf) {
+  // codec string from the init segment: avcC holds profile, compatibility, level
+  const find = (tag) => { for (let i = 0; i + 4 <= buf.length; i++) if (buf[i] === tag.charCodeAt(0) && buf[i + 1] === tag.charCodeAt(1) && buf[i + 2] === tag.charCodeAt(2) && buf[i + 3] === tag.charCodeAt(3)) return i; return -1; };
+  const c = [], a = find("avcC");
+  if (a >= 0) c.push("avc1." + [buf[a + 5], buf[a + 6], buf[a + 7]].map((x) => x.toString(16).padStart(2, "0")).join(""));
+  if (find("mp4a") >= 0) c.push("mp4a.40.2");
+  return c.join(", ");
+}
+async function liveStart() {
+  liveStop();
+  const v = $("#live_video"), q = new URLSearchParams({ t: Date.now() });
   if ($("#live_tc").checked) q.set("transcode", "1");
+  const url = `/api/preview/${liveSid}/live.mp4?${q}`;
   $("#live_hint").textContent = "Chargement…";
-  v.src = `/api/preview/${liveSid}/live.mp4?${q}`;
-  clearInterval(liveTimer);
-  let waiting = true;
-  liveTimer = setInterval(() => {
-    if (!v.buffered.length) return;
-    const end = v.buffered.end(v.buffered.length - 1), ahead = end - v.currentTime;
-    if (ahead > LIVE_MAX) v.currentTime = end - LIVE_LEAD;
-    if (waiting && ahead >= LIVE_LEAD) {
-      waiting = false;
-      v.play().catch(() => { /* autoplay refused: the controls are there */ });
-      $("#live_hint").textContent = "Ce qui part à l'antenne, avec quelques secondes de retard. Rien ne tourne quand la fenêtre est fermée.";
-    } else if (!waiting && !v.paused && ahead < 0.1) {
-      waiting = true;
-      v.pause();
-      $("#live_hint").textContent = "Mise en mémoire…";
+  if (!window.MediaSource) { v.src = url; v.play().catch(() => {}); return; }      // old browsers: plain download
+  const ctl = new AbortController(), ms = new MediaSource();
+  const st = live = { ctl, ms, timer: null, queue: [], sb: null };
+  v.src = URL.createObjectURL(ms);
+  v.onwaiting = () => { st.stalls = (st.stalls || 0) + (st.started ? 1 : 0); };
+  await new Promise((r) => ms.addEventListener("sourceopen", r, { once: true }));
+  const pump = () => {
+    if (st.sb && !st.sb.updating && st.queue.length && ms.readyState === "open") {
+      try { st.sb.appendBuffer(st.queue.shift()); } catch (e) { /* quota: the cleanup below frees room */ }
     }
-  }, 100);
+  };
+  st.timer = setInterval(() => {
+    if (live !== st || !v.buffered.length) return;
+    const end = v.buffered.end(v.buffered.length - 1), ahead = end - v.currentTime;
+    if (v.paused && ahead >= LIVE_TARGET && !st.started) {
+      st.started = true;
+      v.play().catch(() => {});
+      $("#live_hint").textContent = "Ce qui part à l'antenne, avec quelques secondes de retard. Rien ne tourne quand la fenêtre est fermée.";
+    }
+    if (/stats/.test(location.hash)) console.log(`live t=${v.currentTime.toFixed(2)} ahead=${ahead.toFixed(2)} ranges=${[...Array(v.buffered.length).keys()].map((i) => v.buffered.start(i).toFixed(1) + "-" + v.buffered.end(i).toFixed(1)).join(",")} err=${v.error ? v.error.code + ":" + v.error.message : ""} ms=${ms.readyState} rate=${v.playbackRate} paused=${v.paused} stalls=${st.stalls || 0} frames=${(v.getVideoPlaybackQuality && v.getVideoPlaybackQuality().totalVideoFrames) || 0} dropped=${(v.getVideoPlaybackQuality && v.getVideoPlaybackQuality().droppedVideoFrames) || 0}`);
+    if (ahead > 6) v.currentTime = end - LIVE_TARGET;               // far behind (tab in the background)
+    else v.playbackRate = ahead > LIVE_TARGET + 1.5 ? 1.05 : ahead < LIVE_TARGET - 0.6 ? 0.95 : 1;
+    const start = v.buffered.start(0);
+    if (st.sb && !st.sb.updating && v.currentTime - start > 20) st.sb.remove(start, v.currentTime - 10);
+  }, 250);
+  try {
+    const resp = await fetch(url, { signal: ctl.signal });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || resp.statusText);
+    const reader = resp.body.getReader();
+    let head = new Uint8Array(0);
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done || live !== st) break;
+      if (!st.sb) {
+        const h = new Uint8Array(head.length + value.length);
+        h.set(head); h.set(value, head.length); head = h;
+        const codecs = liveCodecs(head);
+        if (!codecs.startsWith("avc1") && head.length < 2e6) continue;    // init segment not complete yet
+        st.sb = ms.addSourceBuffer(`video/mp4; codecs="${codecs || "avc1.640028, mp4a.40.2"}"`);
+        st.sb.addEventListener("updateend", pump);
+        st.queue.push(head);
+      } else st.queue.push(value);
+      pump();
+    }
+  } catch (e) {
+    if (live === st && e.name !== "AbortError") $("#live_hint").textContent = "Aperçu impossible : " + e.message;
+  }
 }
 function liveStop() {
-  const v = $("#live_video");
-  clearInterval(liveTimer);
+  const v = $("#live_video"), st = live;
+  live = null;
+  if (st) {
+    st.ctl.abort();                 // closes the connection: the server stops its ffmpeg
+    clearInterval(st.timer);
+  }
   v.pause();
   v.removeAttribute("src");
-  v.load();                       // closes the connection: the server stops its ffmpeg
+  v.load();
 }
 
 async function refresh() {

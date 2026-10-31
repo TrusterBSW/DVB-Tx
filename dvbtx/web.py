@@ -13,6 +13,8 @@ GET  /api/gpu                the graphics adapters, how each one transcodes (lea
 GET  /api/preview/<sid>.jpg  last picture of a channel (204 while the first one comes); keeps the
                              thumbnails of its multiplex going for 30 s
 GET  /api/preview/<sid>/live.mp4[?transcode=1]   the channel live (fragmented MP4) while it is read
+GET  /api/mux/<n>.ts          multiplex n exactly as it goes on air (MPEG-TS, every channel), while read
+GET  /api/mux/<n>.m3u?program=<sid>   playlist opening that stream in VLC on one channel
 POST /api/gpu/learn          learn the adapters again (in the background)
 GET    /api/channels                    the channels (number, service_id, name, source, backup, ...)
 POST   /api/channels                    add one: {"name", "source", "carrier"?, "lcn"?, "sid"?, "backup"?, options}
@@ -182,12 +184,40 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/preview/(\d+)/live\.mp4", path)
             if m:
                 return self._live(int(m.group(1)), q.get("transcode") == "1")
+            m = re.fullmatch(r"/api/mux/(\d+)\.ts", path)
+            if m:
+                return self._raw(int(m.group(1)))
+            m = re.fullmatch(r"/api/mux/(\d+)\.m3u", path)
+            if m:
+                sid = int(q["program"]) if q.get("program", "").isdigit() else None
+                svc = next((x for x in sup.plan.services if x.sid == sid), None)
+                host = self.headers.get("Host") or "127.0.0.1"
+                body = "#EXTM3U\n" + (f"#EXTINF:-1,{svc.lcn} {svc.name}\n#EXTVLCOPT:program={sid}\n" if svc else "") + \
+                    f"http://{host}/api/mux/{m.group(1)}.ts\n"
+                return self._send(200, body.encode(), "audio/x-mpegurl")
             if path == "/api/gpu":
                 from . import gpu
                 return self._send(200, gpu.MANAGER.status() if gpu.MANAGER else {"state": "off"})
             return self._send(404, {"error": "not found"})
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def _raw(self, carrier):
+        sup = self.sup
+        if sup.previews.live >= int(sup.cfg["web"].get("preview_max_live", 4)):
+            return self._send(503, {"error": "too many live previews at once (web.preview_max_live)"})
+        if not any(c.index == carrier for c in sup.plan.carriers):
+            return self._send(404, {"error": "no such multiplex"})
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp2t")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        try:
+            sup.previews.raw(carrier, self.wfile.write)
+        except (BrokenPipeError, ConnectionResetError, RuntimeError, KeyError) as e:
+            log.debug("raw stream %s: %s", carrier, e)
 
     def _live(self, sid, transcode):
         sup = self.sup

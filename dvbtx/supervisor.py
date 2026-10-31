@@ -1389,6 +1389,7 @@ class Supervisor:
                "thresholds": {"margin_min_ms": self.cfg["alerts"]["margin_min_ms"]},
                "si": dict(self.si.stats), "epg_errors": self.store.errors[-5:] if self.store else [],
                "config_path": plan.config_path, "gpu": gpu.MANAGER.status() if gpu.MANAGER else None,
+               "web": {"preview_thumbnails": bool(self.cfg["web"].get("preview_thumbnails", True))},
                "default_backup": "" if plan.cfg["defaults"].get("backup") is False else str(plan.cfg["defaults"].get("backup") or "")}
         rst = {r["index"]: r for r in (st or {}).get("radios", [])}
         for r in plan.radios:

@@ -26,6 +26,11 @@ log = logging.getLogger("dvbtx.preview")
 THUMB_IDLE_S = 30           # thumbnails of a multiplex kept up to date that long after the last request
 THUMB_EVERY_S = 4           # a new picture per channel every ...
 VIDEO_STREAM_TYPES = {0x01, 0x02, 0x10, 0x1B, 0x24}
+# ffmpeg stops probing once every stream is described; a source whose key frames (with the picture
+# size) come seconds apart needs that long: give up sooner and ffmpeg ends without output
+PROBE_US, PROBE_BYTES = "6000000", "40000000"
+# decoder messages of a stream joined in the middle (until its first key frame): not worth a log line
+NOISE = ("non-existing PPS", "no frame!", "decode_slice_header", "Last message repeated", "co located POCs")
 H264 = 0x1B
 
 
@@ -112,10 +117,10 @@ class Previews:
         except RuntimeError as e:
             log.warning("thumbnails of %s: %s", car.name, e)
             return None
-        cmd = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-skip_frame", "nokey",
-               "-analyzeduration", "1500000", "-probesize", "8000000", "-i", _udp(port)]
+        cmd = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-skip_frame", "nokey",
+               "-analyzeduration", PROBE_US, "-probesize", PROBE_BYTES, "-i", _udp(port)]
         # the first key frame at once, then one every THUMB_EVERY_S (fps=1/N would wait for its first window)
-        pick = f"select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{THUMB_EVERY_S})',scale=320:-2"
+        pick = f"select=isnan(prev_selected_t)+gte(t-prev_selected_t\\,{THUMB_EVERY_S}),scale=320:-2"   # "\\,": a comma inside the expression
         for sid in sids:
             cmd += ["-map", f"0:p:{sid}:v:0", "-an", "-vf", pick, "-fps_mode", "passthrough", "-q:v", "6",
                     "-update", "1", "-atomic_writing", "1", "-f", "image2", os.path.join(self.dir, f"thumb-{sid}.jpg")]
@@ -145,9 +150,14 @@ class Previews:
         """main loop, every second: thumbnails nobody asked for lately are stopped"""
         with self.lock:
             for ci, t in list(self.thumbs.items()):
-                if time.monotonic() - t["asked"] > THUMB_IDLE_S or t["proc"].poll() is not None:
+                died = t["proc"].poll() is not None
+                if time.monotonic() - t["asked"] > THUMB_IDLE_S or died:
                     self._stop_thumbs(ci)
-                    log.info("thumbnails of multiplex %d: stopped", ci)
+                    if died:
+                        log.warning("thumbnails of multiplex %d: ffmpeg stopped (%s)", ci,
+                                    " / ".join(getattr(t["proc"], "tail", [])) or f"exit {t['proc'].returncode}")
+                    else:
+                        log.info("thumbnails of multiplex %d: stopped (page closed)", ci)
 
     def stop(self):
         with self.lock:
@@ -155,10 +165,13 @@ class Previews:
                 self._stop_thumbs(ci)
 
     def _drain(self, p, what):
+        p.tail = []
         for raw in iter(p.stderr.readline, b""):
             line = raw.decode("utf-8", "replace").strip()
             if line:
                 log.debug("%s: %s", what, line)
+                if not any(x in line for x in NOISE):
+                    p.tail = (p.tail + [line])[-3:]
 
     # ------------------------------------------------------------ live
 
@@ -171,7 +184,7 @@ class Previews:
         port = _free_port()
         self._monitor(True, car.index, port)
         cmd = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-fflags", "nobuffer",
-               "-analyzeduration", "1000000", "-probesize", "5000000", "-i", _udp(port),
+               "-analyzeduration", PROBE_US, "-probesize", PROBE_BYTES, "-i", _udp(port),
                "-map", f"0:p:{sid}:v:0?", "-map", f"0:p:{sid}:a:0?"]
         if copy:
             cmd += ["-c:v", "copy"]
@@ -195,11 +208,44 @@ class Previews:
                     break
                 write(chunk)
         finally:
+            ended = p.poll() is not None
             _stop(p)
             self._monitor(False, car.index, port)
             with self.lock:
                 self.live -= 1
-            log.info("live preview of %s: stopped", svc.name)
+            if ended and p.returncode:
+                log.warning("live preview of %s: ffmpeg stopped (%s)", svc.name, " / ".join(getattr(p, "tail", [])))
+            else:
+                log.info("live preview of %s: stopped", svc.name)
+
+    def raw(self, carrier, write):
+        """the multiplex exactly as it goes on air (the engine's copy relayed as it comes, no ffmpeg),
+        while it is read: for VLC and the like"""
+        car = next((c for c in self.sup.plan.carriers if c.index == carrier), None)
+        if car is None:
+            raise KeyError(carrier)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)
+        sock.bind(("127.0.0.1", 0))
+        sock.settimeout(10)
+        port = sock.getsockname()[1]
+        self._monitor(True, car.index, port)
+        with self.lock:
+            self.live += 1
+        log.info("raw stream of %s: started", car.name)
+        buf = bytearray(65536)
+        try:
+            while True:
+                n = sock.recv_into(buf)
+                write(bytes(buf[:n]))
+        except socket.timeout:
+            pass
+        finally:
+            sock.close()
+            self._monitor(False, car.index, port)
+            with self.lock:
+                self.live -= 1
+            log.info("raw stream of %s: stopped", car.name)
 
     def status(self):
         return {"thumbnails": sorted(self.thumbs), "live": self.live}

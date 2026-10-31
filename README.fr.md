@@ -304,9 +304,10 @@ sur un réseau de confiance) :
   **traitement** de chaque source (copie, réencodage CPU ou GPU et sur quelle carte), images par
   seconde, vitesse par rapport au temps réel (en rouge sous 1×), images perdues ou dupliquées, CPU
   des processus et occupation du GPU (moteurs vidéo, lus dans `/proc/PID/fdinfo`) ;
-- **aperçu des chaînes**, seulement à la demande : vignettes (bouton « Afficher les aperçus », une
-  image par chaîne toutes les 4 s, prise sur les seules images clés : quelques % d'un cœur par
-  multiplex) et ▶ pour regarder une chaîne en direct dans le navigateur (vidéo H.264 copiée, son en
+- **aperçu des chaînes** : vignettes affichées par défaut (`web.preview_thumbnails`), l'œil de la
+  colonne « Aperçu » les masque ou les réaffiche (retenu par le navigateur) ; une image par chaîne
+  toutes les 4 s, prise sur les seules images clés (quelques % d'un cœur par multiplex, seulement
+  tant qu'une page les affiche) ; ▶ pour regarder une chaîne en direct dans le navigateur (vidéo H.264 copiée, son en
   AAC ; « réencoder » en 360p si l'image ne s'affiche pas). C'est ce qui part à l'antenne, vidéo de
   secours comprise : le moteur ouvre une copie du multiplex le temps de l'aperçu
   (`monitor add`), rien ne tourne quand personne ne regarde (`web.preview_max_live` directs à la fois) ;

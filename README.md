@@ -159,7 +159,8 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
   `/api/status` JSON; each multiplex is copied to `udp://127.0.0.1:20900+n` (and `carrier.monitor`);
 - what each source does (copy, CPU or GPU transcode and on which card), its frames per second, speed
   against real time, dropped/duplicated frames, CPU and GPU engine load;
-- channel previews on demand only: thumbnails (key frames only, one picture every 4 s) and a live
+- channel previews: thumbnails shown by default (`web.preview_thumbnails`; the eye of the preview
+  column hides them), key frames only, one picture every 4 s while a page shows them; and a live
   view in the browser (fragmented MP4, H.264 copied, AAC sound), taken from what goes on air (the
   engine opens a copy of the multiplex for the preview: `monitor add`);
 - configuration from the page: radios, multiplexes (frequency, standard, modulation, with the useful
