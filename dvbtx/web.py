@@ -10,8 +10,9 @@ GET  /metrics                Prometheus exposition
 POST /api/input/<n>/restart  restart one ingest process
 POST /api/reload             re-read the EPG and rebuild the SI tables
 GET  /api/gpu                the graphics adapters, how each one transcodes (learnt), their load
-GET  /api/channel/<sid>/rates?hours=6   bit rate of a channel over the last hours (24 at most): per
-                             bucket mean/min/max, and mean, min, max, median, 95th percentile
+GET  /api/channel/<sid>/rates?hours=6   a channel over the last hours (24 at most): bit rate, delay,
+                             video margin, input losses; per bucket mean/min/max (losses: counted), and
+                             mean, min, max, median, 5th and 95th percentiles
 GET  /api/preview/<sid>.jpg  last picture of a channel (204 while the first one comes); keeps the
                              thumbnails of its multiplex going for 30 s
 GET  /api/preview/<sid>/live.mp4[?transcode=1]   the channel live (fragmented MP4) while it is read

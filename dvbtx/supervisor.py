@@ -392,53 +392,74 @@ class Alerts:
 
 
 class RateHistory:
-    """bit rate of each channel, one value a second over 24 h: a ring of float32 per channel
-    (340 kB a day each) and one of times shared by all"""
+    """the health of each channel, one value a second over 24 h: output bit rate, delay of the sending,
+    video decoding margin, and the input's continuity errors (a counter); a ring of float32 per channel
+    and measure (340 kB a day each) and one of times shared by all"""
+    METRICS = ("rate", "late", "margin", "cc")
 
     def __init__(self, seconds=86400):
         import array
         self.n = seconds
         self._array = array.array
         self.times = array.array("d", [0.0]) * seconds
-        self.rates = {}
+        self.data = {}                  # (sid, metric) -> array
         self.last = 0.0
 
-    def add(self, t, rates):
+    def add(self, t, values):
+        """values: {sid: {metric: value or None}}"""
         slot = int(t) % self.n
         self.times[slot] = t
         self.last = t
-        for sid, v in rates.items():
-            a = self.rates.get(sid)
-            if a is None:
-                a = self.rates[sid] = self._array("f", [float("nan")]) * self.n
-            a[slot] = float("nan") if v is None else v
-        for sid, a in self.rates.items():
-            if sid not in rates:
-                a[slot] = float("nan")
+        nan = float("nan")
+        for sid, ms in values.items():
+            for m in self.METRICS:
+                a = self.data.get((sid, m))
+                if a is None:
+                    a = self.data[(sid, m)] = self._array("f", [nan]) * self.n
+                v = ms.get(m)
+                a[slot] = nan if v is None else v
+        for (sid, m), a in self.data.items():
+            if sid not in values:
+                a[slot] = nan
 
     def query(self, sid, seconds, points=360):
-        """{t, mean, min, max (per bucket), stats: mean, min, max, median, p95} over the last seconds"""
-        a = self.rates.get(sid)
-        if a is None or not self.last:
+        """per measure: bucket times and mean/min/max (cc: errors counted in each bucket), and statistics"""
+        if (sid, "rate") not in self.data or not self.last:
             return None
         lo = self.last - seconds
-        samples = sorted((self.times[i], a[i]) for i in range(self.n) if self.times[i] > lo and a[i] == a[i])
-        if not samples:
+        idx = sorted((self.times[i], i) for i in range(self.n) if self.times[i] > lo)
+        if not idx:
             return None
         width = max(1.0, seconds / points)
-        buckets = {}
-        for t, v in samples:
-            buckets.setdefault(int((t - lo) // width), []).append(v)
-        keys = sorted(buckets)
-        vals = sorted(v for _, v in samples)
-        n = len(vals)
+        out = {"from": idx[0][0], "to": idx[-1][0]}
+        for m in self.METRICS:
+            a = self.data[(sid, m)]
+            samples = [(t, a[i]) for t, i in idx if a[i] == a[i]]
+            if m == "cc":                # a counter: what it gained (a restart of the input sets it back)
+                inc, prev = [], None
+                for t, v in samples:
+                    inc.append((t, max(0.0, v - prev) if prev is not None and v >= prev else 0.0))
+                    prev = v
+                samples = inc
+            buckets = {}
+            for t, v in samples:
+                buckets.setdefault(int((t - lo) // width), []).append(v)
+            keys = sorted(buckets)
+            vals = sorted(v for _, v in samples)
+            n = len(vals)
+            if not n:
+                out[m] = None
+                continue
 
-        def pct(q):
-            return vals[min(n - 1, int(q * (n - 1) + 0.5))]
-        return {"t": [lo + (k + 0.5) * width for k in keys], "mean": [sum(buckets[k]) / len(buckets[k]) for k in keys],
-                "min": [min(buckets[k]) for k in keys], "max": [max(buckets[k]) for k in keys],
-                "stats": {"mean": sum(vals) / n, "min": vals[0], "max": vals[-1], "median": pct(0.5), "p95": pct(0.95),
-                          "samples": n, "from": samples[0][0], "to": samples[-1][0]}}
+            def pct(q):
+                return vals[min(n - 1, int(q * (n - 1) + 0.5))]
+            out[m] = {"t": [lo + (k + 0.5) * width for k in keys],
+                      "mean": [sum(buckets[k]) / len(buckets[k]) for k in keys],
+                      "min": [min(buckets[k]) for k in keys], "max": [max(buckets[k]) for k in keys],
+                      "sum": [sum(buckets[k]) for k in keys],
+                      "stats": {"mean": sum(vals) / n, "min": vals[0], "max": vals[-1], "median": pct(0.5),
+                                "p95": pct(0.95), "p5": pct(0.05), "total": sum(vals), "samples": n}}
+        return out
 
 
 class History:
@@ -601,7 +622,11 @@ class Supervisor:
         for r in st.get("radios", []):
             vals[f"r{r['index']}.cpu"] = r.get("cpu")
         self.history.add(st.get("time", time.time()), vals)
-        self.rates.add(time.time(), {x["sid"]: x["rate"] for c in st.get("carriers", []) for x in c.get("services", [])})
+        cc = {i["index"]: i.get("cc_errors") for i in st.get("inputs", [])}
+        prim = {sv.sid: sv.input.index for sv in self.plan.services if sv.input}
+        self.rates.add(time.time(), {x["sid"]: {"rate": x.get("rate"), "late": x.get("late_max_ms"),
+                                                "margin": x.get("video_margin_min_ms"), "cc": cc.get(prim.get(x["sid"]))}
+                                     for c in st.get("carriers", []) for x in c.get("services", [])})
         self.stats_exporter.send(dict(st, alerts=list(self.alerts.active.values())))
 
     def engine_poll(self):

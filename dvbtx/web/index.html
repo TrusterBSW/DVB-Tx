@@ -190,14 +190,13 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
       <button type="button" onclick="cardlg.close()">Annuler</button><button class="primary" id="cd_ok">Enregistrer</button></div>
   </form>
 </dialog>
-<dialog id="ratedlg" style="width:min(820px, calc(100vw - 32px))">
+<dialog id="ratedlg" style="width:min(820px, calc(100vw - 32px));max-height:92vh;overflow:auto">
   <h3 id="rt_title">Débit</h3>
   <div class="row"><span class="muted">Période</span>
-    <select id="rt_hours" onchange="rateLoad()"><option value="0.25">15 min</option><option value="1" selected>1 h</option><option value="6">6 h</option><option value="24">24 h</option></select>
+    <select id="rt_hours" onchange="rateLoad()" style="width:auto"><option value="0.25">15 min</option><option value="1" selected>1 h</option><option value="6">6 h</option><option value="24">24 h</option></select>
     <span class="muted" id="rt_span"></span></div>
-  <div id="rt_chart" style="margin-top:8px"></div>
-  <table id="rt_stats" style="margin-top:8px"></table>
-  <div class="hint">Débit en sortie du multiplexeur, une mesure par seconde (gardées 24 h, en mémoire : remises à zéro au redémarrage de dvbtx). Courbe : moyenne de chaque tranche, la bande montre son minimum et son maximum.</div>
+  <div id="rt_body" style="margin-top:8px"></div>
+  <div class="hint">Une mesure par seconde, gardées 24 h en mémoire (perdues au redémarrage de dvbtx). Débit : moyenne de chaque tranche, la bande va de son minimum à son maximum. Retard et marge : le pire de chaque tranche.</div>
   <div class="actions"><button type="button" onclick="ratedlg.close()">Fermer</button></div>
 </dialog>
 <dialog id="livedlg">
@@ -303,6 +302,8 @@ function render(s) {
   if (first && thumbsOn) setTimeout(refreshThumbs, 0);
   const m = first && /live=(\d+)/.exec(location.hash);          // link to a channel's live picture: #chaines&live=257
   if (m) setTimeout(() => liveOpen(Number(m[1])), 0);
+  const md = first && /detail=(\d+)/.exec(location.hash);       // a channel's details: #chaines&detail=257
+  if (md) setTimeout(() => rateOpen(Number(md[1])), 0);
   if (s.thresholds) marginMin = s.thresholds.margin_min_ms;
   $("#title").textContent = s.network.name || "dvbtx";
   document.title = (s.network.name || "dvbtx") + " – dvbtx";
@@ -372,7 +373,7 @@ function render(s) {
         <td class="num hide-sm">${inp.cc_errors ? `<span class="pill warning">${inp.cc_errors}</span>` : inp.cc_errors ?? "–"}</td>
         <td class="hide-sm" style="white-space:nowrap">${thumbsOn ? `<img data-thumb="${sv.sid}" alt="" src="${thumbUrl[sv.sid] || BLANK}" onclick="liveOpen(${sv.sid})" title="regarder en direct" style="width:96px;height:54px;object-fit:cover;background:#000;border-radius:4px;cursor:pointer;vertical-align:middle">` : ""}</td>
         <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
-        <td style="white-space:nowrap"><button onclick="rateOpen(${sv.sid})" title="débit de la chaîne sur les dernières heures">Détail</button> <button onclick="chEdit(${sv.sid})">Modifier</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
+        <td style="white-space:nowrap"><button class="icon" onclick="rateOpen(${sv.sid})" title="détails : débit, retard, marge, pertes sur les dernières heures" aria-label="détails">${ICON_INFO}</button> <button class="icon" onclick="chEdit(${sv.sid})" title="modifier la chaîne" aria-label="modifier">${ICON_EDIT}</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
       </tr>`;
     }).join("");
     const head = `<div class="row"><b style="font-size:16px">${esc(c.name)}</b>
@@ -488,6 +489,8 @@ async function gpuLearn() { const r = await api("POST", "/api/gpu/learn"); r.ok 
 /* previews: thumbnails (on demand, remembered by the browser) and the live picture of a channel */
 /* shown by default (web.preview_thumbnails of the configuration); the eye of the column hides or shows
  * them, and this browser remembers it */
+const ICON_INFO = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5"/><circle cx="12" cy="7.5" r=".6" fill="currentColor"/></svg>';
+const ICON_EDIT = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 const EYE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7c1.9 0 3.6-.6 5-1.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
 const BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";   // until the first picture
@@ -775,30 +778,61 @@ let rateSid = null;
 function rateOpen(sid) {
   const [, sv] = svcBySid(sid);
   rateSid = sid;
-  $("#rt_title").textContent = sv ? `Débit · ${sv.lcn} ${sv.name}` : "Débit";
+  $("#rt_title").textContent = sv ? `${sv.lcn} · ${sv.name}` : "Détails";
   $("#ratedlg").showModal();
   rateLoad();
+}
+/* one chart of the detail window: d = {t, mean, min, max, sum}; line: which of them; band: min-max */
+function detailChart(d, o) {
+  const W = 760, H = o.h || 130, P = 48, t0 = d.t[0], t1 = d.t[d.t.length - 1];
+  const ys = d[o.line].concat(o.band ? d.max.concat(d.min) : [], o.refs || []);
+  let lo = Math.min(0, ...ys), hi = Math.max(...ys);
+  if (hi - lo < 1e-9) hi = lo + 1;
+  hi += (hi - lo) * 0.08;
+  const x = (t) => P + (t1 > t0 ? (t - t0) / (t1 - t0) : 0) * (W - P - 6), y = (v) => H - 16 - ((v - lo) / (hi - lo)) * (H - 24);
+  const grid = [0, 0.5, 1].map((f) => { const v = lo + (hi - lo) * f; return `<line x1="${P}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
+    <text x="${P - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${o.fmt(v)}</text>`; }).join("");
+  const refs = (o.refs || []).map((v, k) => `<line x1="${P}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" stroke="${(o.refColors || [])[k] || "var(--crit)"}" stroke-dasharray="4 4"/>`).join("");
+  let body;
+  if (o.bars) {
+    const bw = Math.max(1, (W - P - 6) / d.t.length - 1);
+    body = d.t.map((t, i) => d[o.line][i] > 0 ? `<rect x="${(x(t) - bw / 2).toFixed(1)}" y="${y(d[o.line][i]).toFixed(1)}" width="${bw.toFixed(1)}" height="${(y(0) - y(d[o.line][i])).toFixed(1)}" fill="${o.color}"/>` : "").join("");
+  } else {
+    const band = o.band ? `<polygon points="${d.t.map((t, i) => `${x(t).toFixed(1)},${y(d.max[i]).toFixed(1)}`).join(" ")} ${d.t.map((t, i) => `${x(t).toFixed(1)},${y(d.min[i]).toFixed(1)}`).reverse().join(" ")}" fill="color-mix(in srgb, ${o.color} 18%, transparent)"/>` : "";
+    body = band + `<path d="${d.t.map((t, i) => `${i ? "L" : "M"}${x(t).toFixed(1)} ${y(d[o.line][i]).toFixed(1)}`).join("")}" fill="none" stroke="${o.color}" stroke-width="1.5"/>`;
+  }
+  return `<div style="margin-top:10px"><div class="row"><b style="font-size:13px">${o.title}</b><span class="muted" style="font-size:12px">${o.note || ""}</span></div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${refs}${body}</svg></div>`;
 }
 async function rateLoad() {
   const h = Number($("#rt_hours").value);
   const r = await (await fetch(`/api/channel/${rateSid}/rates?hours=${h}`)).json().catch(() => ({ error: "injoignable" }));
-  if (r.error) { $("#rt_chart").innerHTML = `<div class="muted">${esc(r.error)}</div>`; $("#rt_stats").innerHTML = ""; return; }
-  const W = 760, H = 220, P = 44, t0 = r.t[0], t1 = r.t[r.t.length - 1], top = Math.max(...r.max) * 1.08 || 1;
-  const x = (t) => P + (t1 > t0 ? (t - t0) / (t1 - t0) : 0) * (W - P - 6), y = (v) => H - 18 - (v / top) * (H - 26);
-  const band = r.t.map((t, i) => `${x(t).toFixed(1)},${y(r.max[i]).toFixed(1)}`).join(" ") + " " +
-    r.t.map((t, i) => `${x(t).toFixed(1)},${y(r.min[i]).toFixed(1)}`).reverse().join(" ");
-  const line = r.t.map((t, i) => `${i ? "L" : "M"}${x(t).toFixed(1)} ${y(r.mean[i]).toFixed(1)}`).join("");
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => `<line x1="${P}" x2="${W - 6}" y1="${y(top * f)}" y2="${y(top * f)}" stroke="var(--line)"/>
-    <text x="${P - 6}" y="${y(top * f) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${(top * f / 1e6).toFixed(1)}</text>`).join("");
-  const st = r.stats, hm = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const p95 = `<line x1="${P}" x2="${W - 6}" y1="${y(st.p95)}" y2="${y(st.p95)}" stroke="var(--warn)" stroke-dasharray="4 4"/>`;
-  $("#rt_chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${p95}
-    <polygon points="${band}" fill="color-mix(in srgb, var(--s0) 18%, transparent)"/><path d="${line}" fill="none" stroke="var(--s0)" stroke-width="1.5"/>
-    <text x="${P}" y="${H - 3}" font-size="11" fill="var(--muted)">${hm(t0)}</text><text x="${W - 6}" y="${H - 3}" text-anchor="end" font-size="11" fill="var(--muted)">${hm(t1)}</text>
-    <text x="${P + 4}" y="12" font-size="11" fill="var(--muted)">Mbit/s · pointillés : 95e centile</text></svg>`;
-  $("#rt_span").textContent = `${st.samples} mesures, de ${hm(st.from)} à ${hm(st.to)}`;
-  $("#rt_stats").innerHTML = `<tr><th class="num">Moyenne</th><th class="num">Minimum</th><th class="num">Médiane</th><th class="num">95e centile</th><th class="num">Maximum</th></tr>
-    <tr>${["mean", "min", "median", "p95", "max"].map((k) => `<td class="num big" style="font-size:18px">${mbps(st[k])}</td>`).join("")}</tr>`;
+  if (r.error || !r.rate) { $("#rt_body").innerHTML = `<div class="muted">${esc(r.error || "pas encore de mesure")}</div>`; return; }
+  const hm = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const st = r.rate.stats, cell = (v) => `<td class="num big" style="font-size:18px">${v}</td>`;
+  $("#rt_span").textContent = `de ${hm(r.from)} à ${hm(r.to)}, ${st.samples} mesures`;
+  let html = detailChart(r.rate, { title: "Débit", note: "Mbit/s · pointillés : 95e centile", line: "mean", band: true, color: "var(--s0)",
+    h: 190, refs: [st.p95], refColors: ["var(--warn)"], fmt: (v) => (v / 1e6).toFixed(1) }) +
+    `<table style="margin-top:4px"><tr><th class="num">Moyenne</th><th class="num">Minimum</th><th class="num">Médiane</th><th class="num">95e centile</th><th class="num">Maximum</th></tr>
+    <tr>${["mean", "min", "median", "p95", "max"].map((k) => cell(mbps(st[k]))).join("")}</tr></table>`;
+  if (r.late) {
+    const ls = r.late.stats, sg = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v));
+    html += detailChart(r.late, { title: "Retard d'envoi", note: `ms, le pire de chaque tranche · pire ${sg(ls.max)} · médiane ${sg(ls.median)} · − : en avance (normal)`,
+      line: "max", color: "var(--s2)", refs: [0], refColors: ["var(--muted)"], fmt: (v) => sg(v) });
+  }
+  if (r.margin) {
+    const ms_ = r.margin.stats;
+    html += detailChart(r.margin, { title: "Marge vidéo", note: `ms, la plus basse de chaque tranche · minimum ${Math.round(ms_.min)} · 5e centile ${Math.round(ms_.p5)} · médiane ${Math.round(ms_.median)} · pointillés : seuil d'alerte`,
+      line: "min", color: "var(--s1)", refs: [marginMin], fmt: (v) => Math.round(v) });
+  }
+  if (r.cc && !r.cc.stats.total) {
+    html += `<div style="margin-top:10px"><b style="font-size:13px">Pertes en entrée</b> <span class="pill ok">aucune sur la période</span></div>`;
+  } else if (r.cc) {
+    const tot = r.cc.stats.total;
+    html += detailChart(r.cc, { title: "Pertes en entrée", note: tot ? `${tot} erreur(s) de continuité sur la période : paquets perdus entre la source et dvbtx` : "aucune sur la période",
+      line: "sum", bars: true, color: "var(--warn)", h: 90, fmt: (v) => Math.round(v) });
+  }
+  $("#rt_body").innerHTML = html;
 }
 const openLogs = new Set();
 function logToggle(key) {
