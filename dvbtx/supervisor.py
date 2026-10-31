@@ -511,6 +511,9 @@ class Supervisor:
         self.si = SiManager(plan, self.si_dir, self.store, self.detected)
         self.ingest = [IngestProc(i, plan) for i in plan.inputs]
         gpu.MANAGER = gpu.Manager(self.cfg["ingest"])
+        from .sysload import SystemLoad
+        cards = []
+        self.sysload = SystemLoad(lambda: gpu.MANAGER.devices or cards or cards.extend(gpu.detect()) or cards)
         mon = self.cfg["monitoring"]
         self.exporter = Exporter(mon.get("export"))
         self.stats_exporter = Exporter(mon.get("stats_export"))
@@ -1483,6 +1486,7 @@ class Supervisor:
                "si": dict(self.si.stats), "epg_errors": self.store.errors[-5:] if self.store else [],
                "config_path": plan.config_path, "gpu": gpu.MANAGER.status() if gpu.MANAGER else None,
                "web": {"preview_thumbnails": bool(self.cfg["web"].get("preview_thumbnails", True))},
+               "system": self.sysload.status(),
                "default_backup": "" if plan.cfg["defaults"].get("backup") is False else str(plan.cfg["defaults"].get("backup") or "")}
         rst = {r["index"]: r for r in (st or {}).get("radios", [])}
         for r in plan.radios:

@@ -300,7 +300,9 @@ alerte quand la somme des sources dépasse ce que le modulateur peut envoyer.
 sur un réseau de confiance), en onglets : Tableau de bord (radios, occupation des multiplex),
 Chaînes (aperçus, marges, priorités, ajout et modification), Sources (ffmpeg, transcodage, GPU),
 Configuration (réseau et ONID, radios, multiplex, profils, calculateur), Journaux. L'onglet est dans
-l'adresse (`#chaines`, `#config`...) :
+l'adresse (`#chaines`, `#config`...). Le tableau de bord a des jauges de la machine entière : CPU de
+tous les cœurs et charge de chaque carte graphique (son moteur le plus occupé), tous processus
+confondus ; les CPU des radios, multiplex et sources sont, eux, en % d'un cœur :
 
 - radios : fréquence, échantillonnage, remplissage du tampon, CPU, sous-débits ;
 - multiplex : capacité, occupation par chaîne / PSI-SI / libre, courbe sur 10 minutes, analyse TSDuck ;

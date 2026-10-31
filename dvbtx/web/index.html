@@ -99,7 +99,8 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
   <section id="alerts"></section>
   <section id="pending"></section>
   <div class="tab" data-tab="etat">
-    <section><h2>Radios</h2><div id="radios" class="grid"></div></section>
+    <section><h2>Machine</h2><div class="card" id="machine"></div></section>
+    <section><h2>Radios</h2><div class="muted" style="font-size:12px;margin:-4px 0 8px">CPU des radios, des multiplex et des sources : en % d'un cœur (100 % = un cœur entier). La jauge Machine, elle, est en % de tous les cœurs.</div><div id="radios" class="grid"></div></section>
     <section><h2>Multiplex</h2><div id="carriers"></div></section>
   </div>
   <div class="tab" data-tab="chaines">
@@ -328,7 +329,7 @@ function render(s) {
       <span>Échantillonnage</span><span>${(r.rate / 1e6).toFixed(4)} MS/s</span>
       <span>Gain</span><span>${r.gain} dB${r.amp ? " + ampli" : ""}</span>
       <span>Tampon</span><span>${l.fill != null ? Math.round(l.fill * 100) + " %" : "–"}</span>
-      <span>CPU (synthèse + USB)</span><span>${l.cpu != null ? l.cpu.toFixed(1) + " %" : "–"}</span></div>
+      <span>CPU (synthèse + USB)</span><span>${l.cpu != null ? l.cpu.toFixed(1) + " % d'un cœur" : "–"}</span></div>
       ${spark(hist.series[`r${r.index}.cpu`], { min: 0, color: "var(--s3)" })}</div>`;
   }).join("") || '<div class="muted">aucune radio</div>';
 
@@ -381,7 +382,7 @@ function render(s) {
         <span style="flex:1"></span>
         <span class="muted">capacité</span><span class="big">${mbps(cap)}</span><span class="muted">Mbit/s</span>
         <span class="muted">occupé</span><span class="big" style="color:${occ > 98 ? "var(--crit)" : occ > 90 ? "var(--warn)" : "inherit"}">${occ == null ? "–" : occ.toFixed(1) + " %"}</span>
-        ${l && l.cpu != null ? `<span class="muted" title="modulation de ce multiplex (100 % = un cœur)">CPU ${l.cpu.toFixed(1)} %</span>` : ""}
+        ${l && l.cpu != null ? `<span class="muted" title="modulation de ce multiplex (100 % = un cœur)">modulation ${l.cpu.toFixed(1)} % d'un cœur</span>` : ""}
         ${loadPills(c.sources_load)}
       </div>
       <div class="bar">${bar}</div><div class="legend">${legend}</div>`;
@@ -421,6 +422,7 @@ function render(s) {
     }).join(""));
 
   renderGpu(s.gpu);
+  renderMachine(s.system);
 
   const el = $("#englog"), txt = (s.engine.log || []).join("\n"), sel = window.getSelection();
   if (el.textContent !== txt && !(sel && !sel.isCollapsed && el.contains(sel.anchorNode))) {
@@ -433,12 +435,39 @@ function render(s) {
       <td><span class="pill ${a.level}">${a.level}</span></td><td>${esc(a.message)}</td></tr>`).join("");
 }
 
+/* half-circle gauge: green, then orange from 70 %, red from 90 % */
+function gauge(pct, size, label, sub) {
+  const r = size / 2 - 8, cx = size / 2, cy = size / 2, v = Math.max(0, Math.min(100, pct ?? 0));
+  const pt = (f) => [cx - r * Math.cos(Math.PI * f), cy - r * Math.sin(Math.PI * f)];
+  const [x0, y0] = pt(0), [x1, y1] = pt(1), [xv, yv] = pt(v / 100);
+  const color = pct == null ? "var(--line)" : v >= 90 ? "var(--crit)" : v >= 70 ? "var(--warn)" : "var(--ok)";
+  const sw = Math.max(6, size / 12);
+  return `<div style="text-align:center;width:${size}px"><svg viewBox="0 0 ${size} ${size / 2 + 6}" width="${size}" height="${size / 2 + 6}">
+    <path d="M${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1}" fill="none" stroke="var(--line)" stroke-width="${sw}" stroke-linecap="round"/>
+    ${pct != null && v > 0 ? `<path d="M${x0} ${y0} A${r} ${r} 0 0 1 ${xv.toFixed(1)} ${yv.toFixed(1)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>` : ""}
+    <text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="${size / 5}" font-weight="650" fill="var(--ink)">${pct == null ? "–" : Math.round(v) + " %"}</text></svg>
+    <div style="font-size:${size > 120 ? 13 : 12}px;font-weight:600">${esc(label)}</div>${sub ? `<div class="muted" style="font-size:11px">${esc(sub)}</div>` : ""}</div>`;
+}
+function renderMachine(m) {
+  if (!m) return;
+  const ENG = { render: "rendu", video: "vidéo", "video-enhance": "traitement", copy: "copie", gpu: "calcul", encoder: "encodeur", decoder: "décodeur", gfx: "rendu", enc: "encodeur", dec: "décodeur" };
+  const gpus = (m.gpus || []).map((g) => {
+    const name = (/\[(.*)\]/.exec(g.name) || [null, g.name])[1].slice(0, 26);    // "UHD Graphics 630" rather than the chip
+    const eng = Object.entries(g.engines || {}).sort((a, b) => b[1] - a[1]);
+    const sub = eng.slice(0, 2).map(([k, v]) => `${ENG[k] || k} ${Math.round(v)} %`).join(" · ") || "pas de mesure";
+    return `<div title="${esc(g.name + "\n" + eng.map(([k, v]) => `${ENG[k] || k} : ${v} %`).join("\n"))}">${gauge(g.busy, 120, "GPU · " + name, sub)}</div>`;
+  }).join("");
+  $("#machine").innerHTML = `<div class="row" style="align-items:flex-end;gap:18px 34px">
+    ${gauge(m.cpu, 190, "CPU de la machine", `${m.cores} cœurs · tous les processus, dvbtx compris`)}
+    ${gpus ? `<div class="row" style="align-items:flex-end;gap:12px 22px">${gpus}</div>` : '<span class="muted">aucune carte graphique utilisable</span>'}
+  </div>`;
+}
 /* load of the sources of a multiplex's channels: their ffmpeg CPU, and the GPU of the re-encoded ones */
 function loadPills(ld) {
   if (!ld) return "";
   const det = (ld.gpu_channels || []).map((x) => `${x.name} : GPU ${x.gpu} %, CPU ${x.cpu ?? "–"} %`).join("\n");
   const eng = Object.entries(ld.gpu_engines || {}).map(([k, v]) => `${k} ${v} %`).join(", ");
-  return `<span class="muted" title="processus ffmpeg des chaînes de ce multiplex (100 % = un cœur)">sources CPU ${ld.cpu} %</span>` +
+  return `<span class="muted" title="processus ffmpeg des chaînes de ce multiplex (100 % = un cœur)">sources ${ld.cpu} % d'un cœur</span>` +
     (ld.gpu != null ? `<span class="muted" title="${esc((eng ? "moteurs : " + eng + "\n" : "") + det)}">GPU ${ld.gpu} %</span>` : "");
 }
 /* what the ffmpeg of a source does: copy, CPU or GPU transcode, with its speed and load */
