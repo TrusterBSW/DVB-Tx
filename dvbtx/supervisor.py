@@ -391,6 +391,56 @@ class Alerts:
                 log.debug("alert command: %s", e)
 
 
+class RateHistory:
+    """bit rate of each channel, one value a second over 24 h: a ring of float32 per channel
+    (340 kB a day each) and one of times shared by all"""
+
+    def __init__(self, seconds=86400):
+        import array
+        self.n = seconds
+        self._array = array.array
+        self.times = array.array("d", [0.0]) * seconds
+        self.rates = {}
+        self.last = 0.0
+
+    def add(self, t, rates):
+        slot = int(t) % self.n
+        self.times[slot] = t
+        self.last = t
+        for sid, v in rates.items():
+            a = self.rates.get(sid)
+            if a is None:
+                a = self.rates[sid] = self._array("f", [float("nan")]) * self.n
+            a[slot] = float("nan") if v is None else v
+        for sid, a in self.rates.items():
+            if sid not in rates:
+                a[slot] = float("nan")
+
+    def query(self, sid, seconds, points=360):
+        """{t, mean, min, max (per bucket), stats: mean, min, max, median, p95} over the last seconds"""
+        a = self.rates.get(sid)
+        if a is None or not self.last:
+            return None
+        lo = self.last - seconds
+        samples = sorted((self.times[i], a[i]) for i in range(self.n) if self.times[i] > lo and a[i] == a[i])
+        if not samples:
+            return None
+        width = max(1.0, seconds / points)
+        buckets = {}
+        for t, v in samples:
+            buckets.setdefault(int((t - lo) // width), []).append(v)
+        keys = sorted(buckets)
+        vals = sorted(v for _, v in samples)
+        n = len(vals)
+
+        def pct(q):
+            return vals[min(n - 1, int(q * (n - 1) + 0.5))]
+        return {"t": [lo + (k + 0.5) * width for k in keys], "mean": [sum(buckets[k]) / len(buckets[k]) for k in keys],
+                "min": [min(buckets[k]) for k in keys], "max": [max(buckets[k]) for k in keys],
+                "stats": {"mean": sum(vals) / n, "min": vals[0], "max": vals[-1], "median": pct(0.5), "p95": pct(0.95),
+                          "samples": n, "from": samples[0][0], "to": samples[-1][0]}}
+
+
 class History:
     """last 30 minutes, one point per engine stats line"""
 
@@ -446,6 +496,7 @@ class Supervisor:
         self.analyzers = self._make_analyzers()
         self.alerts = Alerts(self.cfg["alerts"])
         self.history = History()
+        self.rates = RateHistory()
         self.stats = None
         self.stats_at = 0
         self.engine = None
@@ -550,6 +601,7 @@ class Supervisor:
         for r in st.get("radios", []):
             vals[f"r{r['index']}.cpu"] = r.get("cpu")
         self.history.add(st.get("time", time.time()), vals)
+        self.rates.add(time.time(), {x["sid"]: x["rate"] for c in st.get("carriers", []) for x in c.get("services", [])})
         self.stats_exporter.send(dict(st, alerts=list(self.alerts.active.values())))
 
     def engine_poll(self):

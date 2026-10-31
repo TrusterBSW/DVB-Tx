@@ -10,6 +10,8 @@ GET  /metrics                Prometheus exposition
 POST /api/input/<n>/restart  restart one ingest process
 POST /api/reload             re-read the EPG and rebuild the SI tables
 GET  /api/gpu                the graphics adapters, how each one transcodes (learnt), their load
+GET  /api/channel/<sid>/rates?hours=6   bit rate of a channel over the last hours (24 at most): per
+                             bucket mean/min/max, and mean, min, max, median, 95th percentile
 GET  /api/preview/<sid>.jpg  last picture of a channel (204 while the first one comes); keeps the
                              thumbnails of its multiplex going for 30 s
 GET  /api/preview/<sid>/live.mp4[?transcode=1]   the channel live (fragmented MP4) while it is read
@@ -196,6 +198,11 @@ class Handler(BaseHTTPRequestHandler):
                 body = "#EXTM3U\n" + (f"#EXTINF:-1,{svc.lcn} {svc.name}\n#EXTVLCOPT:program={sid}\n" if svc else "") + \
                     f"http://{host}/api/mux/{m.group(1)}.ts\n"
                 return self._send(200, body.encode(), "audio/x-mpegurl")
+            m = re.fullmatch(r"/api/channel/(\d+)/rates", path)
+            if m:
+                hours = min(24.0, max(0.05, float(q.get("hours", "6") or 6)))
+                r = sup.rates.query(int(m.group(1)), hours * 3600)
+                return self._send(200 if r else 404, r or {"error": "no data for this channel yet"})
             if path == "/api/gpu":
                 from . import gpu
                 return self._send(200, gpu.MANAGER.status() if gpu.MANAGER else {"state": "off"})

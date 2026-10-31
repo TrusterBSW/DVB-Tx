@@ -190,6 +190,16 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
       <button type="button" onclick="cardlg.close()">Annuler</button><button class="primary" id="cd_ok">Enregistrer</button></div>
   </form>
 </dialog>
+<dialog id="ratedlg" style="width:min(820px, calc(100vw - 32px))">
+  <h3 id="rt_title">Débit</h3>
+  <div class="row"><span class="muted">Période</span>
+    <select id="rt_hours" onchange="rateLoad()"><option value="0.25">15 min</option><option value="1" selected>1 h</option><option value="6">6 h</option><option value="24">24 h</option></select>
+    <span class="muted" id="rt_span"></span></div>
+  <div id="rt_chart" style="margin-top:8px"></div>
+  <table id="rt_stats" style="margin-top:8px"></table>
+  <div class="hint">Débit en sortie du multiplexeur, une mesure par seconde (gardées 24 h, en mémoire : remises à zéro au redémarrage de dvbtx). Courbe : moyenne de chaque tranche, la bande montre son minimum et son maximum.</div>
+  <div class="actions"><button type="button" onclick="ratedlg.close()">Fermer</button></div>
+</dialog>
 <dialog id="livedlg">
   <h3 id="live_title">Direct</h3>
   <video id="live_video" controls playsinline style="width:100%;background:#000;border-radius:6px;aspect-ratio:16/9"></video>
@@ -254,6 +264,11 @@ function chart(carrier, capacity) {
     <path d="${d}" fill="none" stroke="var(--s0)" stroke-width="1.5"/></svg>`;
 }
 
+const AVG_S = 10;
+function avg(key, fallback) {
+  const v = (hist.series[key] || []).slice(-AVG_S).filter((x) => x != null);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : fallback;
+}
 function marginPill(v) {
   if (v == null) return '<span class="muted">–</span>';
   const cls = v < 0 ? "critical" : v < marginMin ? "warning" : "ok";
@@ -320,15 +335,17 @@ function render(s) {
     const l = c.live, cap = c.capacity;
     let bar = "", legend = "", used = 0;
     if (l) {
+      // rates averaged over the last AVG_S seconds (the engine reports every second: too jumpy to read)
       l.services.forEach((sv, i) => {
-        const w = (sv.rate / cap) * 100; used += sv.rate;
-        bar += `<div style="width:${w}%;background:${COLORS[i % COLORS.length]}" title="${esc(sv.name)} ${mbps(sv.rate)} Mbit/s"></div>`;
-        legend += `<span><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(sv.name)} ${mbps(sv.rate)}</span>`;
+        const r = avg(`s${c.index}.${sv.sid}.rate`, sv.rate), w = (r / cap) * 100; used += r;
+        bar += `<div style="width:${w}%;background:${COLORS[i % COLORS.length]}" title="${esc(sv.name)} ${mbps(r)} Mbit/s (moyenne ${AVG_S} s)"></div>`;
+        legend += `<span><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(sv.name)} ${mbps(r)}</span>`;
       });
-      bar += `<div style="width:${(l.si_rate / cap) * 100}%;background:var(--si)" title="PSI/SI"></div>`;
-      legend += `<span><i style="background:var(--si)"></i>PSI/SI ${mbps(l.si_rate)}</span><span><i style="background:var(--null)"></i>libre ${mbps(l.null_rate)}</span>`;
+      const si = avg(`c${c.index}.si`, l.si_rate);
+      bar += `<div style="width:${(si / cap) * 100}%;background:var(--si)" title="PSI/SI"></div>`;
+      legend += `<span><i style="background:var(--si)"></i>PSI/SI ${mbps(si)}</span><span><i style="background:var(--null)"></i>libre ${mbps(Math.max(0, cap - used - si))}</span><span class="muted">moyennes sur ${AVG_S} s</span>`;
     }
-    const occ = l ? ((l.rate - l.null_rate) / cap) * 100 : null;
+    const occ = l ? (avg(`c${c.index}.rate`, l.rate - l.null_rate) / cap) * 100 : null;
     const p = c.params;
     const std = c.standard === "dvbt" ? `DVB-T ${p.mode} ${p.constellation} ${p.code_rate} GI ${p.guard} ${(p.bandwidth / 1e6)} MHz`
       : c.standard === "dvbc" ? `DVB-C ${p.constellation} ${(p.symbol_rate / 1e6)} Msym/s`
@@ -351,11 +368,11 @@ function render(s) {
         <td class="num">${marginPill(lv.video_margin_min_ms)}<div class="muted" style="font-size:11px">moy ${ms(lv.video_margin_avg_ms)}</div></td>
         <td class="hide-sm">${spark(hist.series[k + ".vmargin"], { min: 0, max: 1000, ref: marginMin, color: "var(--s1)" })}</td>
         <td class="num">${marginPill(lv.audio_margin_min_ms)}</td>
-        <td class="num">${lv.late_max_ms != null && lv.late_max_ms < 0 ? `<span class="muted">${ms(-lv.late_max_ms)} d'avance</span>` : ms(lv.late_max_ms)}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
-        <td class="num hide-sm">${inp.cc_errors ?? "–"}</td>
+        <td class="num">${lv.late_max_ms == null ? "–" : lv.late_max_ms <= 0 ? `<span class="muted">−${ms(-lv.late_max_ms)}</span>` : `<b>+${ms(lv.late_max_ms)}</b>`}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
+        <td class="num hide-sm">${inp.cc_errors ? `<span class="pill warning">${inp.cc_errors}</span>` : inp.cc_errors ?? "–"}</td>
         <td class="hide-sm" style="white-space:nowrap">${thumbsOn ? `<img data-thumb="${sv.sid}" alt="" src="${thumbUrl[sv.sid] || BLANK}" onclick="liveOpen(${sv.sid})" title="regarder en direct" style="width:96px;height:54px;object-fit:cover;background:#000;border-radius:4px;cursor:pointer;vertical-align:middle">` : ""}</td>
         <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
-        <td style="white-space:nowrap"><button onclick="chEdit(${sv.sid})">Modifier</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
+        <td style="white-space:nowrap"><button onclick="rateOpen(${sv.sid})" title="débit de la chaîne sur les dernières heures">Détail</button> <button onclick="chEdit(${sv.sid})">Modifier</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
       </tr>`;
     }).join("");
     const head = `<div class="row"><b style="font-size:16px">${esc(c.name)}</b>
@@ -380,7 +397,7 @@ function render(s) {
       <div class="scroll" style="margin-top:6px"><table>
         <tr><th class="num">LCN</th><th>Chaîne</th><th>Source</th><th class="num">Entrée Mbit/s</th><th class="num">Sortie Mbit/s</th>
         <th class="num" title="Temps entre l'émission d'une image et le moment où le récepteur doit la décoder (minimum sur 1 s)">Marge vidéo</th><th class="hide-sm">10 min</th>
-        <th class="num">Marge audio</th><th class="num" title="Retard maximal d'envoi par rapport à l'instant idéal">Retard ms</th><th class="num hide-sm">CC entrée</th><th class="hide-sm" style="white-space:nowrap">Aperçu <button class="icon" onclick="thumbsToggle()" title="${thumbsOn ? "masquer les images des chaînes" : "afficher les images des chaînes (une toutes les 4 s)"}" aria-label="${thumbsOn ? "masquer les images" : "afficher les images"}">${thumbsOn ? EYE : EYE_OFF}</button></th><th class="hide-sm">En cours</th><th></th></tr>
+        <th class="num">Marge audio</th><th class="num" title="Écart entre l'envoi des paquets et leur instant idéal (le pire de chaque seconde) : − en avance (normal, jusqu'à early_ms = 100 ms), + en retard ; au-delà de max_late_ms (600 ms) les paquets sont perdus">Retard ms</th><th class="num hide-sm" title="Erreurs de continuité dans le flux reçu de la source : des paquets perdus entre la source et dvbtx (réseau, source défaillante), depuis le démarrage de l'entrée">Pertes entrée</th><th class="hide-sm" style="white-space:nowrap">Aperçu <button class="icon" onclick="thumbsToggle()" title="${thumbsOn ? "masquer les images des chaînes" : "afficher les images des chaînes (une toutes les 4 s)"}" aria-label="${thumbsOn ? "masquer les images" : "afficher les images"}">${thumbsOn ? EYE : EYE_OFF}</button></th><th class="hide-sm">En cours</th><th></th></tr>
         ${rows}</table></div>
     </div>`;
     return { summary, channels };
@@ -754,6 +771,35 @@ async function chRemove(sid) {
   report(await api("DELETE", `/api/channels/${hex(sid)}?apply=0`));
   refresh();
 }
+let rateSid = null;
+function rateOpen(sid) {
+  const [, sv] = svcBySid(sid);
+  rateSid = sid;
+  $("#rt_title").textContent = sv ? `Débit · ${sv.lcn} ${sv.name}` : "Débit";
+  $("#ratedlg").showModal();
+  rateLoad();
+}
+async function rateLoad() {
+  const h = Number($("#rt_hours").value);
+  const r = await (await fetch(`/api/channel/${rateSid}/rates?hours=${h}`)).json().catch(() => ({ error: "injoignable" }));
+  if (r.error) { $("#rt_chart").innerHTML = `<div class="muted">${esc(r.error)}</div>`; $("#rt_stats").innerHTML = ""; return; }
+  const W = 760, H = 220, P = 44, t0 = r.t[0], t1 = r.t[r.t.length - 1], top = Math.max(...r.max) * 1.08 || 1;
+  const x = (t) => P + (t1 > t0 ? (t - t0) / (t1 - t0) : 0) * (W - P - 6), y = (v) => H - 18 - (v / top) * (H - 26);
+  const band = r.t.map((t, i) => `${x(t).toFixed(1)},${y(r.max[i]).toFixed(1)}`).join(" ") + " " +
+    r.t.map((t, i) => `${x(t).toFixed(1)},${y(r.min[i]).toFixed(1)}`).reverse().join(" ");
+  const line = r.t.map((t, i) => `${i ? "L" : "M"}${x(t).toFixed(1)} ${y(r.mean[i]).toFixed(1)}`).join("");
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => `<line x1="${P}" x2="${W - 6}" y1="${y(top * f)}" y2="${y(top * f)}" stroke="var(--line)"/>
+    <text x="${P - 6}" y="${y(top * f) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${(top * f / 1e6).toFixed(1)}</text>`).join("");
+  const st = r.stats, hm = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const p95 = `<line x1="${P}" x2="${W - 6}" y1="${y(st.p95)}" y2="${y(st.p95)}" stroke="var(--warn)" stroke-dasharray="4 4"/>`;
+  $("#rt_chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${p95}
+    <polygon points="${band}" fill="color-mix(in srgb, var(--s0) 18%, transparent)"/><path d="${line}" fill="none" stroke="var(--s0)" stroke-width="1.5"/>
+    <text x="${P}" y="${H - 3}" font-size="11" fill="var(--muted)">${hm(t0)}</text><text x="${W - 6}" y="${H - 3}" text-anchor="end" font-size="11" fill="var(--muted)">${hm(t1)}</text>
+    <text x="${P + 4}" y="12" font-size="11" fill="var(--muted)">Mbit/s · pointillés : 95e centile</text></svg>`;
+  $("#rt_span").textContent = `${st.samples} mesures, de ${hm(st.from)} à ${hm(st.to)}`;
+  $("#rt_stats").innerHTML = `<tr><th class="num">Moyenne</th><th class="num">Minimum</th><th class="num">Médiane</th><th class="num">95e centile</th><th class="num">Maximum</th></tr>
+    <tr>${["mean", "min", "median", "p95", "max"].map((k) => `<td class="num big" style="font-size:18px">${mbps(st[k])}</td>`).join("")}</tr>`;
+}
 const openLogs = new Set();
 function logToggle(key) {
   openLogs.has(key) ? openLogs.delete(key) : openLogs.add(key);
@@ -1019,7 +1065,7 @@ showTab(location.hash.slice(1).split("&")[0]);
 
 refreshHist().then(refresh);
 setInterval(refresh, 1000);
-setInterval(refreshHist, 5000);
+setInterval(refreshHist, 2000);
 setInterval(refreshThumbs, 4000);
 $("#livedlg").addEventListener("close", liveStop);
 </script>
