@@ -99,8 +99,10 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
   <section id="alerts"></section>
   <section id="pending"></section>
   <div class="tab" data-tab="etat">
-    <section><h2>Machine</h2><div class="card" id="machine"></div></section>
-    <section><h2>Radios</h2><div class="muted" style="font-size:12px;margin:-4px 0 8px">CPU des radios, des multiplex et des sources : en % d'un cœur (100 % = un cœur entier). La jauge Machine, elle, est en % de tous les cœurs.</div><div id="radios" class="grid"></div></section>
+    <div class="row" style="align-items:flex-start;gap:12px 18px;flex-wrap:wrap">
+      <section style="flex:1 1 420px;min-width:0"><h2>Radios</h2><div class="muted" style="font-size:12px;margin:-4px 0 8px">CPU des radios, des multiplex et des sources : en % d'un cœur (100 % = un cœur entier) ; la jauge Machine, en % de tous les cœurs.</div><div id="radios" class="grid"></div></section>
+      <section style="flex:0 0 auto;margin-left:auto"><h2>Machine</h2><div class="card" id="machine" style="padding:10px 14px"></div></section>
+    </div>
     <section><h2>Multiplex</h2><div id="carriers"></div></section>
   </div>
   <div class="tab" data-tab="chaines">
@@ -455,11 +457,11 @@ function renderMachine(m) {
     const name = (/\[(.*)\]/.exec(g.name) || [null, g.name])[1].slice(0, 26);    // "UHD Graphics 630" rather than the chip
     const eng = Object.entries(g.engines || {}).sort((a, b) => b[1] - a[1]);
     const sub = eng.slice(0, 2).map(([k, v]) => `${ENG[k] || k} ${Math.round(v)} %`).join(" · ") || "pas de mesure";
-    return `<div title="${esc(g.name + "\n" + eng.map(([k, v]) => `${ENG[k] || k} : ${v} %`).join("\n"))}">${gauge(g.busy, 120, "GPU · " + name, sub)}</div>`;
+    return `<div title="${esc(g.name + "\n" + eng.map(([k, v]) => `${ENG[k] || k} : ${v} %`).join("\n"))}">${gauge(g.busy, 96, "GPU", sub)}</div>`;
   }).join("");
-  $("#machine").innerHTML = `<div class="row" style="align-items:flex-end;gap:18px 34px">
-    ${gauge(m.cpu, 190, "CPU de la machine", `${m.cores} cœurs · tous les processus, dvbtx compris`)}
-    ${gpus ? `<div class="row" style="align-items:flex-end;gap:12px 22px">${gpus}</div>` : '<span class="muted">aucune carte graphique utilisable</span>'}
+  $("#machine").innerHTML = `<div class="row" style="align-items:flex-end;gap:10px 16px;flex-wrap:nowrap">
+    <div title="tous les processus de la machine, dvbtx compris">${gauge(m.cpu, 130, "CPU", `${m.cores} cœurs`)}</div>
+    ${gpus || '<span class="muted" style="font-size:12px">pas de GPU</span>'}
   </div>`;
 }
 /* load of the sources of a multiplex's channels: their ffmpeg CPU, and the GPU of the re-encoded ones */
