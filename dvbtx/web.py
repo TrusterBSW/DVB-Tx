@@ -9,13 +9,30 @@ GET  /api/calc?standard=dvbt&constellation=64qam&...   useful bit rate of a chan
 GET  /metrics                Prometheus exposition
 POST /api/input/<n>/restart  restart one ingest process
 POST /api/reload             re-read the EPG and rebuild the SI tables
+GET  /api/gpu                the graphics adapters, how each one transcodes (learnt), their load
+GET  /api/preview/<sid>.jpg  last picture of a channel (204 while the first one comes); keeps the
+                             thumbnails of its multiplex going for 30 s
+GET  /api/preview/<sid>/live.mp4[?transcode=1]   the channel live (fragmented MP4) while it is read
+POST /api/gpu/learn          learn the adapters again (in the background)
 GET    /api/channels                    the channels (number, service_id, name, source, backup, ...)
 POST   /api/channels                    add one: {"name", "source", "carrier"?, "lcn"?, "sid"?, "backup"?, options}
 PATCH  /api/channels/<channel>          change it: {"name"?, "lcn"?, "swap"?, "source"?, "backup"?, options}
 DELETE /api/channels/<channel>          remove it
   <channel>: number (LCN), service_id (0x0101) or name (URL-encoded). The changes are applied
   at once to that channel only, and written to the configuration file. Answer: {"ok", "sid",
-  "changes", "saved", "warning"?} or {"error"} with status 400.
+  "changes", "saved", "warning"?} or {"error"} with status 400. With ?apply=0 (the web page) they
+  are only written to the file, pending until POST /api/config/apply.
+
+The configuration file (each change checked and saved at once, applied on demand):
+GET    /api/config                      radios, multiplexes, validity, pending changes, profiles
+PATCH  /api/config/radio|carrier/<n>    change settings: {"key": value, "key": null (removed)}
+POST   /api/config/radio|carrier        add one: {"name", ...}
+DELETE /api/config/radio|carrier/<n>    remove one (a multiplex with its channels)
+POST   /api/config/apply                apply the file (channels one by one, else restart of the transmission)
+POST   /api/config/revert               the file back to what runs
+POST   /api/profiles                    save the file as profile {"name"} (<file>.<name>)
+POST   /api/profiles/<name>/load        copy a profile over the file (pending until applied)
+DELETE /api/profiles/<name>             delete a profile
 
 Requests that change something must come from this page or a program (no other web site: Origin
 checked, JSON body), and carry the token when web.token is set (Authorization: Bearer <token>).
@@ -156,9 +173,38 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, metrics(sup).encode(), "text/plain; version=0.0.4")
             if path == "/api/channels":
                 return self._send(200, sup.channels())
+            if path == "/api/config":
+                return self._send(200, sup.call(sup.config_view))
+            m = re.fullmatch(r"/api/preview/(\d+)\.jpg", path)
+            if m:
+                img = sup.previews.thumbnail(int(m.group(1)))
+                return self._send(200, img, "image/jpeg") if img else self._send(204, b"", "image/jpeg")
+            m = re.fullmatch(r"/api/preview/(\d+)/live\.mp4", path)
+            if m:
+                return self._live(int(m.group(1)), q.get("transcode") == "1")
+            if path == "/api/gpu":
+                from . import gpu
+                return self._send(200, gpu.MANAGER.status() if gpu.MANAGER else {"state": "off"})
             return self._send(404, {"error": "not found"})
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def _live(self, sid, transcode):
+        sup = self.sup
+        if sup.previews.live >= int(sup.cfg["web"].get("preview_max_live", 4)):
+            return self._send(503, {"error": "too many live previews at once (web.preview_max_live)"})
+        if not any(s.sid == sid for s in sup.plan.services):
+            return self._send(404, {"error": "no such channel"})
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        try:
+            sup.previews.stream(sid, self.wfile.write, transcode)
+        except (BrokenPipeError, ConnectionResetError, RuntimeError, KeyError) as e:
+            log.debug("live preview %s: %s", sid, e)
 
     # ---------------------------------------------------------------- changes
 
@@ -200,7 +246,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         sup = self.sup
         path = self.path.partition("?")[0]
-        if not self._allowed(path == "/api/channels"):
+        if not self._allowed(path in ("/api/channels", "/api/profiles") or path.startswith("/api/config/radio")
+                             or path.startswith("/api/config/carrier")):
             return
         m = re.fullmatch(r"/api/input/(\d+)/restart", path)
         if m:
@@ -213,19 +260,51 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/reload":
             sup.reload_si()
             return self._send(200, {"ok": True})
+        if path == "/api/gpu/learn":
+            from . import gpu
+            if not gpu.MANAGER or gpu.MANAGER.mode.lower() in gpu.CPU_VALUES:
+                return self._send(400, {"ok": False, "error": "GPU transcoding is off (ingest.gpu)"})
+            started = gpu.MANAGER.learn_async()
+            logging.getLogger("dvbtx").info("GPU learning %s from the web page", "started" if started else "already running")
+            return self._send(200, {"ok": True, "started": started})
+        draft = "apply=0" in self.path.partition("?")[2]
         if path == "/api/channels":
             try:
                 spec = self._body()
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
             allow = bool(sup.cfg["web"].get("allow_exec_sources"))
+            if draft:
+                return self._change(lambda: sup.draft_channel("add", spec=spec, allow_exec=allow))
             return self._change(lambda: sup.channel_add(spec, allow))
+        m = re.fullmatch(r"/api/config/(radio|carrier)", path)
+        if m:
+            try:
+                spec = self._body()
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._change(lambda: sup.draft().add(m.group(1), spec))
+        if path == "/api/config/apply":
+            return self._change(sup.apply_config)
+        if path == "/api/config/revert":
+            return self._change(sup.revert_config)
+        if path == "/api/profiles":
+            try:
+                spec = self._body()
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._change(lambda: sup.draft().save_profile(str(spec.get("name", ""))))
+        m = re.fullmatch(r"/api/profiles/([A-Za-z0-9_-]+)/load", path)
+        if m:
+            return self._change(lambda: sup.draft().load_profile(m.group(1)))
         return self._send(404, {"error": "not found"})
 
     def do_PATCH(self):
         sup = self.sup
-        m = re.fullmatch(r"/api/channels/([^/?]+)", self.path.partition("?")[0])
-        if not m:
+        path = self.path.partition("?")[0]
+        m = re.fullmatch(r"/api/channels/([^/?]+)", path)
+        mc = re.fullmatch(r"/api/config/(radio|carrier)/(\d+)", path)
+        if not m and not mc:
             return self._send(404, {"error": "not found"})
         if not self._allowed(True):
             return
@@ -233,18 +312,31 @@ class Handler(BaseHTTPRequestHandler):
             changes = self._body()
         except ValueError as e:
             return self._send(400, {"error": str(e)})
+        if mc:
+            return self._change(lambda: sup.draft().update(mc.group(1), int(mc.group(2)), changes))
         ref = unquote(m.group(1))
         allow = bool(sup.cfg["web"].get("allow_exec_sources"))
+        if "apply=0" in self.path.partition("?")[2]:
+            return self._change(lambda: sup.draft_channel("update", ref=ref, spec=changes, allow_exec=allow))
         return self._change(lambda: sup.channel_update(ref, changes, allow))
 
     def do_DELETE(self):
         sup = self.sup
-        m = re.fullmatch(r"/api/channels/([^/?]+)", self.path.partition("?")[0])
-        if not m:
+        path = self.path.partition("?")[0]
+        m = re.fullmatch(r"/api/channels/([^/?]+)", path)
+        mc = re.fullmatch(r"/api/config/(radio|carrier)/(\d+)", path)
+        mp = re.fullmatch(r"/api/profiles/([A-Za-z0-9_-]+)", path)
+        if not (m or mc or mp):
             return self._send(404, {"error": "not found"})
         if not self._allowed(False):
             return
+        if mc:
+            return self._change(lambda: sup.draft().remove(mc.group(1), int(mc.group(2))))
+        if mp:
+            return self._change(lambda: sup.draft().delete_profile(mp.group(1)))
         ref = unquote(m.group(1))
+        if "apply=0" in self.path.partition("?")[2]:
+            return self._change(lambda: sup.draft_channel("remove", ref=ref))
         return self._change(lambda: sup.channel_remove(ref))
 
 

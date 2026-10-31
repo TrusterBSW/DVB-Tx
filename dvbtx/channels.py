@@ -241,6 +241,8 @@ def update(cfg, plan, ref, changes, allow_exec=True):
 
 # ------------------------------------------------------------------ the TOML file
 
+# written 482_000_000 like in the sample configuration
+GROUPED_KEYS = {"frequency", "bandwidth", "symbol_rate", "rate", "center", "lnb_lo", "ts_rate"}
 HEX_KEYS = {"sid", "pid_base"}
 
 
@@ -250,7 +252,7 @@ def toml_value(v, key=None):
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, int):
-        return str(v)
+        return f"{v:_}" if key in GROUPED_KEYS and abs(v) >= 100_000 else str(v)
     if isinstance(v, float):
         return repr(v)
     if isinstance(v, str):

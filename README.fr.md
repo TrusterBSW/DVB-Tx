@@ -30,13 +30,14 @@ TSDuck et GNU Radio de la version précédente :
 6. [Numéros de chaînes (LCN) et ONID](#numéros-de-chaînes-lcn-et-onid)
 7. [Guide des programmes (EPG)](#guide-des-programmes-epg)
 8. [Débit utile : `dvbtx calc`](#débit-utile--dvbtx-calc)
-9. [Supervision, alertes, export TSDuck](#supervision-alertes-export-tsduck)
-10. [Flux de secours](#flux-de-secours)
-11. [Service systemd](#service-systemd)
-12. [Plusieurs porteuses, plusieurs radios](#plusieurs-porteuses-plusieurs-radios)
-13. [Mesures](#mesures)
-14. [Validation](#validation)
-15. [État et suite](#état-et-suite)
+9. [Supervision, alertes, export TSDuck](#supervision-alertes-export-tsduck) (aperçu des chaînes, configuration depuis la page, profils)
+10. [Transcodage sur GPU](#transcodage-sur-gpu)
+11. [Flux de secours](#flux-de-secours)
+12. [Service systemd](#service-systemd)
+13. [Plusieurs porteuses, plusieurs radios](#plusieurs-porteuses-plusieurs-radios)
+14. [Mesures](#mesures)
+15. [Validation](#validation)
+16. [État et suite](#état-et-suite)
 
 ## Architecture
 
@@ -300,7 +301,33 @@ sur un réseau de confiance) :
 - chaînes : source active (principale / secours), débit d'entrée et de sortie, **marge de décodage**
   vidéo et audio, retard d'envoi, erreurs de continuité en entrée, émission en cours et suivante ;
 - sources : état du processus ffmpeg, relances, dernières lignes du journal, bouton « Relancer » ;
+  **traitement** de chaque source (copie, réencodage CPU ou GPU et sur quelle carte), images par
+  seconde, vitesse par rapport au temps réel (en rouge sous 1×), images perdues ou dupliquées, CPU
+  des processus et occupation du GPU (moteurs vidéo, lus dans `/proc/PID/fdinfo`) ;
+- **aperçu des chaînes**, seulement à la demande : vignettes (bouton « Afficher les aperçus », une
+  image par chaîne toutes les 4 s, prise sur les seules images clés : quelques % d'un cœur par
+  multiplex) et ▶ pour regarder une chaîne en direct dans le navigateur (vidéo H.264 copiée, son en
+  AAC ; « réencoder » en 360p si l'image ne s'affiche pas). C'est ce qui part à l'antenne, vidéo de
+  secours comprise : le moteur ouvre une copie du multiplex le temps de l'aperçu
+  (`monitor add`), rien ne tourne quand personne ne regarde (`web.preview_max_live` directs à la fois) ;
+- carte GPU : les cartes trouvées, ce que chacune sait encoder (appris), sa charge ;
 - alertes actives et historique.
+
+**Configuration depuis la page** : « Réglages » sur une radio ou un multiplex (fréquence, norme,
+constellation, rendement, intervalle de garde, FFT, pilotes, débit symbole... avec le débit utile
+calculé en direct), « + Ajouter une radio / un multiplex », et les chaînes (« Modifier », « + Ajouter
+une chaîne »). Chaque modification est vérifiée (le fichier entier doit rester valide, avec les
+règles du démarrage) et **enregistrée tout de suite** dans le fichier, commentaires gardés ; rien ne
+change à l'antenne avant **« Appliquer »** dans le bandeau qui liste les modifications en attente :
+on peut donc tout préparer puis appliquer d'un coup. Si seules des chaînes changent, elles sont
+appliquées une par une sans couper les autres ; si une radio ou un multiplex change, l'émission
+redémarre (1 à 2 s sans signal, les sources qui ne changent pas continuent). « Annuler les
+modifications » remet le fichier comme ce qui tourne.
+
+**Profils** : copies du fichier à côté de lui, `dvbtx.toml.<nom>` (`dvbtx.toml.nuit`,
+`dvbtx.toml.test`...). « Enregistrer la configuration actuelle comme profil » copie le fichier ;
+« Charger » copie le profil sur le fichier (l'ancien gardé en `.bak`), à appliquer ensuite. Seul
+`dvbtx.toml` est jamais appliqué.
 
 **Priorités** : quand un multiplex est saturé (sources copiées dont le débit dépasse la capacité),
 `priority` (1 à 10, 5 par défaut) décide qui garde la marge : les chaînes prioritaires restent à
@@ -329,6 +356,36 @@ curl http://127.0.0.1:8080/api/status                       # tout, en JSON
 
 Chaque multiplex est aussi copié en UDP sur `127.0.0.1:20900+n` (et sur les adresses de
 `carrier.monitor`, par exemple un multicast à regarder avec VLC).
+
+## Transcodage sur GPU
+
+Les sources à réencoder (codec non DVB, capture, mire, `encode = true`) passent par un GPU quand il
+y en a un qui convient, sinon par libx264 sur le CPU. Rien à régler : `[ingest] gpu = "auto"` (par
+défaut), `"off"` pour toujours le CPU, ou la liste des cartes permises (`"/dev/dri/renderD129"`,
+`"cuda:0"`) ; par chaîne, `encode = { hwaccel = "cpu" }` (ou `"vaapi"`, `"qsv"`, `"nvenc"` pour
+n'utiliser que ce type), et un codec explicite (`video_codec = "h264_vaapi"`) est pris tel quel.
+
+- **Détection** à chaque démarrage, instantanée : cartes Intel, AMD et NVIDIA, intégrées ou non, leur
+  pilote ; une carte sans pilote, confiée à une VM (vfio) ou sous nouveau est signalée et écartée.
+- **Apprentissage** : chaque façon d'utiliser chaque carte (VAAPI avec chaque pilote VA installé,
+  avec ou sans l'encodeur basse consommation ; QSV ; NVENC ; toute la chaîne sur le GPU, ou
+  décodage et mise à l'échelle sur le CPU et seulement l'encodage sur le GPU) encode une mire 1080p
+  en 720p à débit constant, en H.264, HEVC et MPEG-2. Une façon est retenue si ffmpeg réussit, que
+  la sortie a le bon codec et la bonne taille et que **le débit est tenu** (un encodeur qui ne sait
+  faire que de la qualité constante est refusé : le multiplex DVB a besoin d'un débit plafonné) ; la
+  vitesse les classe. Quelques secondes par carte.
+- L'apprentissage ne se refait que si les cartes, leurs pilotes ou ffmpeg changent (empreinte gardée
+  avec les résultats dans `/var/lib/dvbtx/gpu.json`), en tâche de fond : le démarrage n'attend pas,
+  les transcodages passent par le CPU en attendant. `dvbtx gpu` montre les cartes et les résultats,
+  `dvbtx gpu learn` (ou le bouton de la page) refait l'apprentissage.
+- **Répartition** : chaque nouveau transcodage va à la carte qui a le plus de vitesse disponible
+  (vitesse apprise ÷ transcodages en cours). Un transcodage qui échoue deux fois sur une carte passe
+  à une autre façon, puis au CPU.
+
+Intel jusqu'à la 9ᵉ génération (UHD 630...) avec les pilotes libres de Debian : le pilote iHD n'y
+fait ni la mise à l'échelle ni le débit constant sans le firmware HuC (`options i915
+enable_guc=2`, puis redémarrage) ou le pilote non libre (`intel-media-va-driver-non-free`, section
+non-free) ; dvbtx le dit et reste sur le CPU.
 
 ## Plusieurs sources par chaîne, cache
 

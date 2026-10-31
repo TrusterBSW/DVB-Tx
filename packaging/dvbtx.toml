@@ -36,6 +36,7 @@ enabled = true
 listen = "127.0.0.1:8080"               # monitoring page; "0.0.0.0:8080" for the LAN (then set a token)
 token = ""                              # if set, changes (channels, restarts) need "Authorization: Bearer <token>"
 allow_exec_sources = false              # let the web API / dvbtx channel set exec:, pipe:, stdin: sources
+preview_max_live = 4                    # live channel previews at once on the web page (thumbnails: one ffmpeg per multiplex)
 
 [monitoring]
 tsduck = "auto"                         # run "tsp -P analyze" on each multiplex: true, false, auto (if tsp exists)
@@ -65,6 +66,9 @@ restart_max_s = 30
 stall_restart_s = 20                    # an ffmpeg that sends nothing for this long is restarted
 discontinuity_restart = 10              # an ffmpeg reporting this many timestamp discontinuities within 30 s is
                                         # replaced by a new one, beside it, without a cut (0: never)
+gpu = "auto"                            # transcodes on the GPU that works best (learnt), else the CPU; "off": CPU only;
+                                        # or a list of cards: "/dev/dri/renderD128,cuda:0" (dvbtx gpu lists them)
+gpu_cache = ""                          # learnt results; "" = /var/lib/dvbtx/gpu.json
 
 [engine]
 binary = ""                             # default: /usr/lib/dvbtx/dvbtx-engine
@@ -121,7 +125,8 @@ audio_rate = 48000
 pix_fmt = "yuv420p"
 size = ""                               # e.g. "1280x720" (scaled, black bars kept)
 fps = ""
-hwaccel = ""                            # "vaapi"
+hwaccel = ""                            # "" / "auto": a GPU if one works (ingest.gpu); "cpu": never;
+                                        # "vaapi", "qsv", "nvenc": only that kind
 deinterlace = false
 
 # --------------------------------------------------------------------------- radios
@@ -131,7 +136,8 @@ deinterlace = false
 name = "hackrf"
 driver = "hackrf"                       # hackrf, uhd (USRP B200/B210...), soapy (LimeSDR, Pluto...), null (no radio)
 args = ""                               # hackrf: "serial=...", "rt=60" (SCHED_FIFO priority of its USB thread,
-                                        # default 60, 0: none), "m0_poll=1" (s between reads of its gap counter);
+                                        # default 60, 0: none), "m0_poll=1" (s between reads of its gap counter),
+                                        # "cb_log_ms=12" (diagnosis: log USB callbacks later than that, and each gap);
                                         # uhd: "serial=...,type=b200"; soapy: "driver=lime"
 gain = 30                               # hackrf: TX VGA 0-47 dB; uhd: 0-89.75 dB
 amp = false                             # hackrf +14 dB amplifier

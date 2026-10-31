@@ -15,11 +15,14 @@ import socket
 import subprocess
 import threading
 import time
+import tomllib
 import urllib.request
 
 from . import channels as chmod
+from . import confedit
 from . import config as cfgmod
 from . import epg as epgmod
+from . import gpu
 from . import si
 from .ingest import IngestProc
 
@@ -436,17 +439,11 @@ class Supervisor:
         self.detected = {}
         self.si = SiManager(plan, self.si_dir, self.store, self.detected)
         self.ingest = [IngestProc(i, plan) for i in plan.inputs]
+        gpu.MANAGER = gpu.Manager(self.cfg["ingest"])
         mon = self.cfg["monitoring"]
         self.exporter = Exporter(mon.get("export"))
         self.stats_exporter = Exporter(mon.get("stats_export"))
-        self.analyzers = []
-        use_tsp = mon.get("tsduck", "auto")
-        tsp = mon.get("tsp", "tsp")
-        if use_tsp is True or (use_tsp == "auto" and shutil.which(tsp)):
-            base = int(self.cfg["ingest"]["monitor_base_port"])
-            self.analyzers = [Analyzer(c, base + c.index, int(mon["interval"]), tsp, self.exporter) for c in plan.carriers]
-        elif use_tsp is True:
-            log.warning("tsduck requested but '%s' not found", tsp)
+        self.analyzers = self._make_analyzers()
         self.alerts = Alerts(self.cfg["alerts"])
         self.history = History()
         self.stats = None
@@ -459,6 +456,9 @@ class Supervisor:
         self._stop = False          # set from signal handlers: a plain flag, no lock (an Event can deadlock)
         self._reload = False
         self.lock = threading.Lock()
+        self.cmd_lock = threading.Lock()
+        from .preview import Previews
+        self.previews = Previews(self)
         # channels changed while running
         self.calls = queue.Queue()
         self.next_input = max((i.index for i in plan.inputs), default=-1) + 1
@@ -468,6 +468,27 @@ class Supervisor:
         self.reply_cv = threading.Condition()
         self.fo = {}                # service_id -> state of the choice among its sources (see _failover)
         self.fo_wait = {}           # service_id -> {source k: [retry interval, not before]} of sources left
+
+        # the configuration file as running: edits from the web page are pending until applied
+        self.applied_doc = self._file_doc()
+
+    def _make_analyzers(self):
+        mon = self.cfg["monitoring"]
+        use_tsp = mon.get("tsduck", "auto")
+        tsp = mon.get("tsp", "tsp")
+        if use_tsp is True or (use_tsp == "auto" and shutil.which(tsp)):
+            base = int(self.cfg["ingest"]["monitor_base_port"])
+            return [Analyzer(c, base + c.index, int(mon["interval"]), tsp, self.exporter) for c in self.plan.carriers]
+        if use_tsp is True:
+            log.warning("tsduck requested but '%s' not found", tsp)
+        return []
+
+    def _file_doc(self):
+        try:
+            with open(self.plan.config_path, "rb") as f:
+                return tomllib.load(f)
+        except (OSError, TypeError, tomllib.TOMLDecodeError):
+            return {}
 
     # ---------------------------------------------------------------- engine
 
@@ -546,11 +567,12 @@ class Supervisor:
 
     def engine_cmd(self, cmd):
         if self.engine and self.engine.poll() is None:
-            try:
-                self.engine.stdin.write((cmd + "\n").encode())
-                self.engine.stdin.flush()
-            except OSError:
-                pass
+            with self.cmd_lock:                     # the web threads (previews) send commands too
+                try:
+                    self.engine.stdin.write((cmd + "\n").encode())
+                    self.engine.stdin.flush()
+                except OSError:
+                    pass
 
     def restart_stalled(self):
         """an ffmpeg still running but sending nothing (frozen HLS playlist, half-open connection): restarted,
@@ -679,6 +701,7 @@ class Supervisor:
         signal.signal(signal.SIGHUP, on_hup)
         self.si.tick(force=True)
         self.start_engine()
+        gpu.MANAGER.start()             # detection only; the learning, when needed, in the background
         for p in self.ingest:
             p.start()
         web = None
@@ -707,6 +730,7 @@ class Supervisor:
             self._retire()
             for an in self.analyzers:
                 an.poll()
+            self.previews.poll()
             try:
                 self.si.tick()
             except Exception as e:                          # noqa: BLE001
@@ -718,6 +742,7 @@ class Supervisor:
             p.stop()
         for an in self.analyzers:
             an.stop()
+        self.previews.stop()
         if self.engine and self.engine.poll() is None:
             self.engine_cmd("quit")
             try:
@@ -758,6 +783,8 @@ class Supervisor:
                 c.result = c.fn()
             except chmod.ChannelError as e:
                 c.error = e
+            except (cfgmod.ConfigError, OSError) as e:      # an invalid file, a file that cannot be written
+                c.error = chmod.ChannelError(str(e))
             except Exception as e:                       # noqa: BLE001 - reported to the caller
                 log.exception("channel change failed")
                 c.error = chmod.ChannelError(f"internal error: {e}")
@@ -796,6 +823,165 @@ class Supervisor:
     def channel_update(self, ref, changes, allow_exec=False):
         new_cfg, new_plan, sid = chmod.update(self.cfg, self.plan, ref, changes, allow_exec)
         return dict(self._apply(new_cfg, new_plan), sid=sid)
+
+    # ---------------------------------------------------------------- the configuration file edited from the web
+    # page: every change is saved in the file at once, the transmitter follows when asked (apply_config)
+
+    def draft(self):
+        if not self.plan.config_path:
+            raise chmod.ChannelError("no configuration file to edit (channels set on the command line)")
+        return confedit.Draft(self.plan.config_path, self._validate_text)
+
+    def _validate_text(self, text):
+        from .cli import load_cfg
+        cfg = load_cfg(self.args, text=text) if self.args is not None else \
+            cfgmod.load(self.plan.config_path, text=text)
+        return cfg, cfgmod.build(cfg)
+
+    def config_view(self):
+        """the file (radios, multiplexes), whether it is valid, what differs from what runs, the profiles"""
+        if not self.plan.config_path:
+            return {"path": None, "error": "no configuration file (channels set on the command line)"}
+        d = self.draft()
+        out = {"path": self.plan.config_path, "error": None, "drivers": sorted(cfgmod.DRIVER_RATES),
+               "std_keys": cfgmod.STD_KEYS, "radio_defaults": cfgmod.RADIO_DEFAULTS}
+        try:
+            text = d.text()
+            doc = tomllib.loads(text)
+        except (OSError, tomllib.TOMLDecodeError) as e:
+            return dict(out, error=str(e))
+        try:
+            _, plan = self._validate_text(text)
+            caps = {c.index: c.ts_rate for c in plan.carriers}
+        except cfgmod.ConfigError as e:
+            out["error"], caps = str(e), {}
+        out["radios"] = doc.get("radio", [])
+        out["carriers"] = [dict({k: v for k, v in c.items() if k != "service"}, services=len(c.get("service", [])),
+                                capacity=caps.get(i)) for i, c in enumerate(doc.get("carrier", []))]
+        out["pending"] = confedit.diff(self.applied_doc, doc)
+        out["restart"] = confedit.needs_restart(self.applied_doc, doc)
+        out["profiles"] = d.profiles()
+        return out
+
+    def draft_channel(self, op, ref=None, spec=None, allow_exec=False):
+        """a channel added, changed or removed in the file only (pending until applied)"""
+        res = {}
+
+        def fn(cfg, plan):
+            removed = None
+            if op == "add":
+                new, _, sid = chmod.add(cfg, plan, spec, allow_exec)
+            elif op == "remove":
+                svc = chmod.find(plan, ref)
+                removed = (svc.carrier.index, svc.local_index)
+                new, _, sid = chmod.remove(cfg, plan, ref)
+            else:
+                new, _, sid = chmod.update(cfg, plan, ref, spec, allow_exec)
+            res["sid"] = sid
+            return new, removed
+        return dict(self.draft().channels(fn), pending=True, **res)
+
+    def apply_config(self):
+        """the file applied: the channels one by one when only they changed, else the transmission restarted"""
+        text = self.draft().text()
+        try:
+            new_cfg, new_plan = self._validate_text(text)
+        except cfgmod.ConfigError as e:
+            raise chmod.ChannelError(str(e)) from e
+        new_plan.config_path = self.plan.config_path
+        doc = tomllib.loads(text)
+        changes = confedit.diff(self.applied_doc, doc)
+        if confedit.needs_restart(self.applied_doc, doc):
+            self.restart_plan(new_cfg, new_plan)
+            res = {"restarted": True}
+        else:
+            res = dict(self._apply(new_cfg, new_plan, save=False), restarted=False)
+        self.applied_doc = doc
+        log.info("configuration applied: %d change(s)%s", len(changes), ", transmission restarted" if res["restarted"] else "")
+        return dict(res, detail=changes)
+
+    def revert_config(self):
+        """pending changes dropped: the file back to what runs (its text as last applied is not kept: the
+        running radios, multiplexes and channels are written over the file's)"""
+        d = self.draft()
+        cur = d.doc()
+        if not confedit.diff(self.applied_doc, cur):
+            return {"saved": False}
+        t = confedit.Tables(d.path)
+        want = self.applied_doc
+        lines_ok = len(cur.get("radio", [])) == len(want.get("radio", [])) and \
+            len(cur.get("carrier", [])) == len(want.get("carrier", []))
+        if not lines_ok:
+            raise chmod.ChannelError("radios or multiplexes were added or removed: load a profile, or edit them back")
+        for kind in ("radio", "carrier"):
+            for i, (a, b) in enumerate(zip(cur.get(kind, []), want.get(kind, []))):
+                a2 = {k: v for k, v in a.items() if k != "service"}
+                b2 = {k: v for k, v in b.items() if k != "service"}
+                if a2 != b2:
+                    t.set_table_keys(kind, i, {k: v for k, v in b2.items() if a2.get(k) != v},
+                                     [k for k in a2 if k not in b2])
+        t.save()
+        old_cfg, _ = self._validate_text(d.text())
+        new_cfg = copy.deepcopy(old_cfg)
+        for ci, c in enumerate(want.get("carrier", [])):
+            new_cfg["carrier"][ci]["service"] = copy.deepcopy(c.get("service", []))
+        if [c.get("service", []) for c in old_cfg["carrier"]] != [c.get("service", []) for c in new_cfg["carrier"]]:
+            chmod.persist(d.path, old_cfg, new_cfg)
+        return {"saved": True}
+
+    def restart_plan(self, new_cfg, new_plan):
+        """radios or multiplexes changed: the engine started again on the new plan (a few seconds without
+        signal); the sources that stay the same keep running"""
+        log.warning("configuration: radios or multiplexes changed, the transmission restarts")
+        self.previews.stop()
+        for an in self.analyzers:
+            an.stop()
+        for sid in list(self.fo):
+            self._fo_drop(sid)
+        for r in self.retiring:
+            r[0].stop()
+        self.retiring = []
+        if self.engine and self.engine.poll() is None:
+            self.engine_cmd("quit")
+            try:
+                self.engine.wait(8)
+            except subprocess.TimeoutExpired:
+                self.engine.kill()
+                self.engine.wait()
+        self.engine = None
+
+        def key(inp):
+            return (inp.addr, inp.source, inp.kind, inp.role, json.dumps(inp.options, sort_keys=True, default=str))
+        old = {key(p.inp): p for p in self.ingest}
+        procs = []
+        for inp in new_plan.inputs:
+            p = old.pop(key(inp), None)
+            if p is None:
+                p = IngestProc(inp, new_plan)
+            else:
+                p.inp, p.plan, p.ing = inp, new_plan, new_cfg["ingest"]
+            procs.append(p)
+        for p in old.values():
+            p.stop()
+        self.ingest = procs
+        self.plan, self.cfg = new_plan, new_cfg
+        new_plan.cfg = new_cfg
+        if self.store:
+            self.store.services = new_plan.services
+            try:
+                self.store.refresh(remap=True)
+            except Exception as e:                          # noqa: BLE001
+                log.warning("EPG: %s", e)
+        self.si = SiManager(new_plan, self.si_dir, self.store, self.detected)
+        self.analyzers = self._make_analyzers()
+        self.next_input = max((i.index for i in new_plan.inputs), default=-1) + 1
+        self.fo, self.fo_wait = {}, {}
+        self.si.tick(force=True)
+        self.start_engine()
+        self.engine_restarts = 0
+        for p in self.ingest:
+            if p.proc is None:
+                p.start()
 
     def channels(self):
         live = {}
@@ -1013,6 +1199,10 @@ class Supervisor:
         try:
             chmod.persist(plan.config_path, old_cfg, new_cfg, removed)
             res["saved"] = True
+            doc = self._file_doc()
+            for ci, c in enumerate(self.applied_doc.get("carrier", [])):
+                if ci < len(doc.get("carrier", [])):
+                    c["service"] = copy.deepcopy(doc["carrier"][ci].get("service", []))
         except (chmod.ChannelError, OSError) as e:
             res["warning"] = f"not saved in {plan.config_path}: {e}"
             log.warning("channels: %s", res["warning"])
@@ -1198,7 +1388,7 @@ class Supervisor:
                "network": {k: plan.cfg["network"][k] for k in ("name", "network_id", "onid", "country", "provider")},
                "thresholds": {"margin_min_ms": self.cfg["alerts"]["margin_min_ms"]},
                "si": dict(self.si.stats), "epg_errors": self.store.errors[-5:] if self.store else [],
-               "config_path": plan.config_path,
+               "config_path": plan.config_path, "gpu": gpu.MANAGER.status() if gpu.MANAGER else None,
                "default_backup": "" if plan.cfg["defaults"].get("backup") is False else str(plan.cfg["defaults"].get("backup") or "")}
         rst = {r["index"]: r for r in (st or {}).get("radios", [])}
         for r in plan.radios:

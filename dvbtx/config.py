@@ -22,14 +22,15 @@ DEFAULTS = {
     },
     "epg": {"dir": "", "urls": [], "url_refresh_s": 3600, "days": 7, "pf_cycle_ms": 1000,
             "schedule_cycle_ms": 10000, "schedule": True},
-    "web": {"listen": "127.0.0.1:8080", "enabled": True, "token": "", "allow_exec_sources": False},
+    "web": {"listen": "127.0.0.1:8080", "enabled": True, "token": "", "allow_exec_sources": False,
+            "preview_max_live": 4},
     "monitoring": {"tsduck": "auto", "interval": 5, "export": [], "stats_export": [], "tsp": "tsp"},
     "alerts": {"margin_min_ms": 150, "overload_percent": 98.0, "input_down_s": 10, "late_ms": 300, "hold_s": 4,
                "webhook": "", "command": "", "repeat_s": 300},
     "ingest": {"base_port": 20100, "monitor_base_port": 20900, "ffmpeg": "ffmpeg", "streamlink": "streamlink",
                "ytdlp": "yt-dlp", "restart_min_s": 1, "restart_max_s": 30, "stall_restart_s": 20,
                "discontinuity_restart": 10,
-               "loglevel": "warning"},
+               "loglevel": "warning", "gpu": "auto", "gpu_cache": ""},
     "engine": {"binary": "", "log_level": "info", "stats_interval_ms": 1000, "cpus": "auto",
                "cpu_latency_us": 0},
     "defaults": {
@@ -52,6 +53,19 @@ RADIO_DEFAULTS = {"driver": "hackrf", "args": "", "gain": 30, "amp": False, "ppm
 CARRIER_DEFAULTS = {"standard": "dvbt", "bandwidth": 8_000_000, "mode": "8k", "constellation": "64qam",
                     "code_rate": "7/8", "guard": "1/32", "cell_id": 0, "gain_db": 0.0, "monitor": [],
                     "si_reserve": 0.03}
+
+# modulation parameters of each standard (the other keys of a [[carrier]] are common to all)
+STD_KEYS = {"dvbt": ("bandwidth", "mode", "constellation", "code_rate", "guard"),
+            "dvbc": ("constellation", "symbol_rate", "rolloff"),
+            "dvbs": ("code_rate", "symbol_rate", "rolloff", "polarization", "orbital"),
+            "dvbt2": ("bandwidth", "fft", "extended", "guard", "pilot", "constellation", "rotation", "code_rate",
+                      "frame", "fec_blocks", "data_symbols", "ti_blocks", "l1_constellation", "cell_id",
+                      "network_id", "t2_system_id", "t2_frames"),
+            "dvbs2": ("modulation", "code_rate", "symbol_rate", "rolloff", "pilots", "frame", "gold_code",
+                      "polarization", "orbital", "lnb_lo"),
+            "ts": ("ts_rate", "bandwidth", "mode", "constellation", "code_rate", "guard")}
+CARRIER_COMMON_KEYS = ("name", "radio", "standard", "frequency", "channel", "tsid", "onid", "gain_db", "cell_id",
+                       "synth", "si_reserve", "monitor", "output")
 
 HACKRF_FILTERS = [1.75e6, 2.5e6, 3.5e6, 5e6, 5.5e6, 6e6, 7e6, 8e6, 9e6, 10e6, 12e6, 14e6, 15e6, 20e6, 24e6, 28e6]
 DRIVER_RATES = {"hackrf": (8e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6, 1e9), "null": (1, 1e10)}
@@ -118,16 +132,18 @@ def set_path(cfg, path, value):
             cur = cur[k]
 
 
-def load(path=None, overrides=(), quick=None):
-    """Merged configuration dict (defaults < file < quick options < --set)."""
+def load(path=None, overrides=(), quick=None, text=None):
+    """Merged configuration dict (defaults < file (or its text) < quick options < --set)."""
     cfg = copy.deepcopy(DEFAULTS)
     cfg["radio"], cfg["carrier"] = [], []
-    if path:
+    if path and text is None:
         with open(path, "rb") as f:
-            try:
-                user = tomllib.load(f)
-            except tomllib.TOMLDecodeError as e:
-                raise ConfigError(f"{path}: {e}") from e
+            text = f.read().decode("utf-8")
+    if text is not None:
+        try:
+            user = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as e:
+            raise ConfigError(f"{path or 'configuration'}: {e}") from e
         _merge(cfg, user)
     if quick:
         _apply_quick(cfg, quick)
@@ -406,15 +422,7 @@ def build(cfg):
         if "channel" in cc and "frequency" not in cc:
             cc["frequency"] = channel_frequency(cc["channel"])
         freq = float(_num(cc.get("frequency", 0), f"carrier {ci} frequency"))
-        keys = {"dvbt": ("bandwidth", "mode", "constellation", "code_rate", "guard"),
-                "dvbc": ("constellation", "symbol_rate", "rolloff"),
-                "dvbs": ("code_rate", "symbol_rate", "rolloff", "polarization", "orbital"),
-                "dvbt2": ("bandwidth", "fft", "extended", "guard", "pilot", "constellation", "rotation", "code_rate",
-                          "frame", "fec_blocks", "data_symbols", "ti_blocks", "l1_constellation", "cell_id",
-                          "network_id", "t2_system_id", "t2_frames"),
-                "dvbs2": ("modulation", "code_rate", "symbol_rate", "rolloff", "pilots", "frame", "gold_code",
-                          "polarization", "orbital", "lnb_lo"),
-                "ts": ("ts_rate", "bandwidth", "mode", "constellation", "code_rate", "guard")}.get(std, ())
+        keys = STD_KEYS.get(std, ())
         if std == "dvbt2":                       # DVB-T defaults do not apply: maximum capacity validated
             for k, v in (("constellation", "256qam"), ("code_rate", "5/6"), ("guard", "1/128")):   # over the air
                 if k not in c:

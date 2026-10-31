@@ -156,7 +156,30 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
   TSDuck errors, engine down;
 - `--analysis-export udp://host:port` (or `tcp://`): TSDuck `analyze` JSON report of every
   multiplex; `--stats-export`: engine statistics + alerts every second; `/metrics` for Prometheus;
-  `/api/status` JSON; each multiplex is copied to `udp://127.0.0.1:20900+n` (and `carrier.monitor`).
+  `/api/status` JSON; each multiplex is copied to `udp://127.0.0.1:20900+n` (and `carrier.monitor`);
+- what each source does (copy, CPU or GPU transcode and on which card), its frames per second, speed
+  against real time, dropped/duplicated frames, CPU and GPU engine load;
+- channel previews on demand only: thumbnails (key frames only, one picture every 4 s) and a live
+  view in the browser (fragmented MP4, H.264 copied, AAC sound), taken from what goes on air (the
+  engine opens a copy of the multiplex for the preview: `monitor add`);
+- configuration from the page: radios, multiplexes (frequency, standard, modulation, with the useful
+  rate computed live), channels. Every change is validated and saved in the file at once (comments
+  kept), nothing changes on air until **Apply** in the banner listing the pending changes: channels
+  only are applied one by one, a radio or multiplex change restarts the transmission (1-2 s, the
+  unchanged sources keep running). Profiles are copies of the file beside it (`dvbtx.toml.<name>`):
+  save one, load one over the file, then apply; only `dvbtx.toml` is ever applied.
+
+## GPU transcoding
+
+Sources that must be re-encoded go through a GPU when one works, else libx264 on the CPU
+(`[ingest] gpu = "auto" | "off" | list of devices`; per channel `encode = { hwaccel = "cpu" }`).
+The cards (Intel, AMD, NVIDIA, integrated or not) are detected at every start; every way to use them
+(VAAPI per VA driver, low power or not, QSV, NVENC, the whole chain on the GPU or only the encoding)
+is tested once on a 1080p→720p constant-rate transcode in H.264, HEVC and MPEG-2: kept if the codec,
+size and **bit rate** are right, ranked by speed. The learning runs again (in the background, CPU
+meanwhile) only when the cards, their drivers or ffmpeg change (`/var/lib/dvbtx/gpu.json`);
+`dvbtx gpu` shows it, `dvbtx gpu learn` or the web button redoes it. New transcodes go to the card
+with the most speed left; one that fails twice moves to another way, then to the CPU.
 
 ## Several sources per channel, cache
 

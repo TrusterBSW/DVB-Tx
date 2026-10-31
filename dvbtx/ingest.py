@@ -35,6 +35,7 @@ import urllib.parse
 import urllib.request
 
 from . import config as cfgmod
+from . import gpu
 
 log = logging.getLogger("dvbtx.ingest")
 
@@ -154,6 +155,12 @@ class Recipe:
         self.probe = []            # URLs/paths whose codecs may be checked before copying
         self.network = False       # fetched over HTTP: -re must be able to catch up after a slow fetch
         self.copyts = False        # separate video and audio inputs: their own timestamps keep them in sync
+        self.no_gpu = False        # transcode on the CPU (the GPU ways failed for this input)
+        self.gpu_exclude = ()      # GPU ways that failed for this input
+        self.gpu_way = None        # the GPU way of the transcode (gpu.Way), None: CPU or copy
+        self.hw_input = []         # its options before the -i of the video
+        self.env = {}              # its environment (LIBVA_DRIVER_NAME, ...)
+        self.mode = None           # {"kind": copy | audio | cpu | gpu, "codec", "device"}
 
 
 def recipe_for(src, opts, ing, work_dir, pl_index=0):
@@ -361,17 +368,32 @@ def encode_args(svc_opts, rec, svc, ing):
         vf.append(f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1")
     if enc.get("fps"):
         vf.append(f"fps={enc['fps']}")
+    bufsize = int(vbr * min(1.0, float(svc_opts.get("mux_delay", 0.7)) * 0.7))
+    rate = ["-b:v", str(vbr), "-maxrate", str(vbr), "-bufsize", str(bufsize), "-g", str(gop)]
+    audio = ["-c:a", enc.get("audio_codec", "aac"), "-b:a", str(enc.get("audio_bitrate", "128k")),
+             "-ar", str(enc.get("audio_rate", 48000)), "-ac", "2"]
+    # a GPU by default (hwaccel "" or "auto"; "vaapi", "qsv", "nvenc": only that kind; "cpu": never) when
+    # the codec is a generic one (libx264, libx265, mpeg2video); an explicit h264_vaapi... is used as given
+    hw = str(enc.get("hwaccel") or "auto").lower()
+    fam = gpu.FAMILIES.get(codec)
+    way = None
+    if fam and gpu.MANAGER and hw not in gpu.CPU_VALUES and not rec.no_gpu:
+        way = gpu.MANAGER.acquire(fam, hw if hw in ("vaapi", "qsv", "nvenc") else None, rec.gpu_exclude)
+    rec.gpu_way = way
+    if way:
+        size = tuple(int(x) for x in str(enc["size"]).lower().split("x")) if enc.get("size") else None
+        rec.hw_input, rec.env = way.input_args(), way.env()
+        return (["-vf", ",".join(way.filters(bool(enc.get("deinterlace")), size, enc.get("fps") or None)),
+                 "-c:v", way.encoder(fam)] + way.rate_args() + rate + audio)
     a = []
-    hw = enc.get("hwaccel", "")
-    if hw == "vaapi" or codec.endswith("_vaapi"):
+    if codec.endswith("_vaapi"):
         a = ["-vaapi_device", enc.get("device", "/dev/dri/renderD128")]
         vf += ["format=nv12", "hwupload"]
     elif enc.get("pix_fmt"):
         vf.append(f"format={enc['pix_fmt']}")
     if vf:
         a += ["-vf", ",".join(vf)]
-    bufsize = int(vbr * min(1.0, float(svc_opts.get("mux_delay", 0.7)) * 0.7))
-    a += ["-c:v", codec, "-b:v", str(vbr), "-maxrate", str(vbr), "-bufsize", str(bufsize), "-g", str(gop)]
+    a += ["-c:v", codec] + rate
     if codec in ("libx264", "libx265"):
         a += ["-preset", enc.get("preset", "veryfast"), "-sc_threshold", "0"]
         if enc.get("tune"):
@@ -380,18 +402,20 @@ def encode_args(svc_opts, rec, svc, ing):
             a += ["-x264-params", "nal-hrd=vbr:repeat-headers=1"]
     elif codec.endswith("_nvenc"):
         a += ["-preset", enc.get("preset", "p4"), "-rc", "cbr"]
-    a += ["-c:a", enc.get("audio_codec", "aac"), "-b:a", str(enc.get("audio_bitrate", "128k")),
-          "-ar", str(enc.get("audio_rate", 48000)), "-ac", "2"]
-    return a
+    return a + audio
 
 
-def build_command(inp, plan, pl_index=0):
-    """argv of ffmpeg (and of the producer) for one input; also returns the folder playlist."""
+def build_command(inp, plan, pl_index=0, gpu_exclude=(), no_gpu=False):
+    """argv of ffmpeg (and of the producer) for one input; also returns the folder playlist and the
+    recipe (its GPU way and environment)."""
     c = plan.cfg
     ing = c["ingest"]
     o = inp.options
     rec = recipe_for(inp.source, o, ing, plan.work_dir, pl_index)
-    ff = [ing["ffmpeg"], "-hide_banner", "-loglevel", ing.get("loglevel", "warning"), "-nostats"]
+    rec.gpu_exclude, rec.no_gpu = tuple(gpu_exclude), no_gpu
+    # -progress: frames, speed, drops of the transcode every second on stdout (web page)
+    ff = [ing["ffmpeg"], "-hide_banner", "-loglevel", ing.get("loglevel", "warning"), "-nostats",
+          "-progress", "pipe:1", "-stats_period", "1"]
     if not rec.use_stdin and not rec.producer:
         ff.append("-nostdin")
     ff += ["-fflags", "+genpts+discardcorrupt"] + (["-copyts"] if rec.copyts else []) + rec.inputs
@@ -417,10 +441,15 @@ def build_command(inp, plan, pl_index=0):
             rec.note = f"audio {'/'.join(sorted(codecs['audio']))} not in copy_audio_codecs: audio encoded"
     if rec.encode:
         ff += encode_args(o, rec, inp.service, ing) if inp.service is not None else _backup_encode(o)
+        vc = ff[len(ff) - ff[::-1].index("-c:v")] if "-c:v" in ff else ""      # after the last -c:v
+        rec.mode = {"kind": "gpu" if rec.gpu_way else "cpu", "codec": vc,
+                    "device": rec.gpu_way.label() if rec.gpu_way else "CPU"}
     elif getattr(rec, "audio_only", None):
         ff += rec.audio_only
+        rec.mode = {"kind": "audio", "codec": o["encode"].get("audio_codec", "aac"), "device": "CPU"}
     else:
         ff += ["-c", "copy"]
+        rec.mode = {"kind": "copy", "codec": "", "device": ""}
     if getattr(rec, "note", None):
         log.info("input %s: %s", inp.name, rec.note)
     ff += list(o.get("ffmpeg_output", []))
@@ -430,7 +459,10 @@ def build_command(inp, plan, pl_index=0):
     prod = None
     if rec.producer:
         prod = rec.producer if not rec.producer_shell else ["/bin/sh", "-c", rec.producer]
-    return prod, ff, rec.use_stdin, rec.playlist
+    if rec.hw_input:                        # GPU decoding: options of the video input, before its -i
+        i = ff.index("-i")
+        ff[i:i] = rec.hw_input
+    return prod, ff, rec.use_stdin, rec.playlist, rec
 
 
 def _backup_encode(o):
@@ -463,6 +495,12 @@ class IngestProc:
         self.pl_index = 0
         self.playlist = None
         self.disc_times = collections.deque(maxlen=100)   # "timestamp discontinuity" lines of ffmpeg
+        self.gpu_way = None         # GPU used by the running ffmpeg (gpu.Way), None: CPU or copy
+        self.gpu_fails = {}         # GPU way -> quick exits with it (2: not used again for this input)
+        self.mode = None            # what the running ffmpeg does (Recipe.mode)
+        self.prog = {}              # its last -progress report
+        self.usage = {}             # {"cpu": %, "gpu": {engine: %}} of its processes
+        self._usage_prev = None
 
     def _reader(self, stream, tag):
         for raw in iter(stream.readline, b""):
@@ -473,11 +511,67 @@ class IngestProc:
                     self.disc_times.append(time.monotonic())
         stream.close()
 
+    def _progress(self, stream):
+        """ffmpeg -progress: key=value lines, a block ends with progress=continue|end"""
+        block = {}
+        for raw in iter(stream.readline, b""):
+            k, _, v = raw.decode("utf-8", "replace").strip().partition("=")
+            block[k] = v
+            if k == "progress":
+                def num(x, f=float):
+                    try:
+                        return f(str(x).strip().rstrip("x").replace("kbits/s", ""))
+                    except ValueError:
+                        return None
+                self.prog = {"frame": num(block.get("frame"), int), "fps": num(block.get("fps")),
+                             "speed": num(block.get("speed")), "drop": num(block.get("drop_frames"), int),
+                             "dup": num(block.get("dup_frames"), int), "kbps": num(block.get("bitrate")),
+                             "out_s": (num(block.get("out_time_us"), int) or 0) / 1e6, "at": time.time()}
+                block = {}
+        stream.close()
+
+    def _sample_usage(self):
+        """CPU % of the ffmpeg (and producer) processes; GPU engines busy % from /proc/PID/fdinfo (drm-engine-*)"""
+        pids = [p.pid for p in (self.proc, self.prod) if p and p.poll() is None]
+        if not pids:
+            self.usage, self._usage_prev = {}, None
+            return
+        ticks, eng = 0, {}
+        for pid in pids:
+            try:
+                st = open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()
+                ticks += int(st[11]) + int(st[12])
+            except (OSError, IndexError, ValueError):
+                pass
+            seen = set()
+            for fd in glob.glob(f"/proc/{pid}/fdinfo/*"):
+                try:
+                    txt = open(fd).read()
+                except OSError:
+                    continue
+                cid = re.search(r"drm-client-id:\s*(\d+)", txt)
+                if not cid or cid.group(1) in seen:       # one DRM client may have several fds
+                    continue
+                seen.add(cid.group(1))
+                for name, ns in re.findall(r"drm-engine-([\w-]+):\s*(\d+) ns", txt):
+                    eng[name] = eng.get(name, 0) + int(ns)
+        now = time.monotonic()
+        prev, self._usage_prev = self._usage_prev, (now, ticks, eng, tuple(pids))
+        if not prev or prev[3] != tuple(pids):
+            return
+        dt = now - prev[0]
+        if dt <= 0:
+            return
+        hz = os.sysconf("SC_CLK_TCK")
+        self.usage = {"cpu": round(100 * (ticks - prev[1]) / hz / dt),
+                      "gpu": {k: min(100, round(100 * (v - prev[2].get(k, v)) / 1e9 / dt)) for k, v in eng.items()}}
+
     def start(self):
         if self.inp.kind != "ffmpeg" or self._stop:
             return
         try:
-            prod, ff, use_stdin, self.playlist = build_command(self.inp, self.plan, self.pl_index)
+            bad = [k for k, n in self.gpu_fails.items() if n >= 2]
+            prod, ff, use_stdin, self.playlist, rec = build_command(self.inp, self.plan, self.pl_index, bad)
         except (ValueError, OSError) as e:
             self.error = str(e)
             self.state = "error"
@@ -487,7 +581,13 @@ class IngestProc:
             self.backoff = min(self.backoff * 2, float(self.ing["restart_max_s"]))
             return
         self.error = ""
-        self.cmdline = (" ".join(shlex.quote(a) for a in prod) + " | " if prod else "") + " ".join(shlex.quote(a) for a in ff)
+        self._release_gpu()
+        self.gpu_way = rec.gpu_way
+        self.mode, self.prog, self.usage, self._usage_prev = rec.mode, {}, {}, None
+        env = dict(os.environ, **rec.env) if rec.env else None
+        self.cmdline = (" ".join(shlex.quote(a) for a in prod) + " | " if prod else "") + \
+            " ".join(f"{k}={shlex.quote(v)}" for k, v in rec.env.items()) + (" " if rec.env else "") + \
+            " ".join(shlex.quote(a) for a in ff)
         log.debug("input %s: %s", self.inp.name, self.cmdline)
         try:
             stdin = None
@@ -498,14 +598,16 @@ class IngestProc:
                 stdin = self.prod.stdout
             elif not use_stdin:
                 stdin = subprocess.DEVNULL
-            self.proc = subprocess.Popen(ff, stdin=stdin, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                         preexec_fn=_die_with_parent)
+            self.proc = subprocess.Popen(ff, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         preexec_fn=_die_with_parent, env=env)
             if self.prod:
                 self.prod.stdout.close()
             threading.Thread(target=self._reader, args=(self.proc.stderr, ""), daemon=True).start()
+            threading.Thread(target=self._progress, args=(self.proc.stdout,), daemon=True).start()
         except OSError as e:
             self.error = str(e)
             self.state = "error"
+            self._release_gpu()
             self.next_start = time.monotonic() + self.backoff
             return
         self.state = "running"
@@ -526,16 +628,23 @@ class IngestProc:
                     pass
                 p.wait()
 
+    def _release_gpu(self):
+        if self.gpu_way is not None and gpu.MANAGER:
+            gpu.MANAGER.release(self.gpu_way)
+        self.gpu_way = None
+
     def stop(self):
         self._stop = True
         self._kill(self.prod)
         self._kill(self.proc)
+        self._release_gpu()
         self.state = "stopped"
 
     def restart(self):
         self._kill(self.prod)
         self._kill(self.proc)
         self.proc = self.prod = None
+        self._release_gpu()
         self.next_start = 0
         self.state = "restarting"
 
@@ -555,10 +664,18 @@ class IngestProc:
         if rc is None:
             if now - self.started_at > 60:
                 self.backoff = float(self.ing["restart_min_s"])
+            self._sample_usage()
             return
         self._kill(self.prod)
         self.last_exit = rc
         self.proc = self.prod = None
+        if self.gpu_way is not None and rc and now - self.started_at < 15:
+            k = self.gpu_way.key
+            self.gpu_fails[k] = self.gpu_fails.get(k, 0) + 1
+            if self.gpu_fails[k] == 2:
+                log.warning("input %s: the transcode on %s fails: another way (or the CPU) from now on",
+                            self.inp.name, self.gpu_way.label())
+        self._release_gpu()
         if self.playlist and rc == 0:            # end of a file of the folder: next one, right away
             self.pl_index = (self.pl_index + 1) % len(self.playlist)
             if self.pl_index or self.inp.options.get("loop", True):
@@ -577,4 +694,6 @@ class IngestProc:
                 "uptime": round(time.monotonic() - self.started_at) if self.state == "running" else 0,
                 "last_exit": self.last_exit, "error": self.error, "log": list(self.lines)[-50:],
                 "playing": self.playlist[self.pl_index % len(self.playlist)] if self.playlist else None,
-                "cmd": self.cmdline}
+                "gpu": self.gpu_way.label() if self.gpu_way else None, "mode": self.mode,
+                "progress": self.prog if self.state == "running" else {},
+                "usage": self.usage if self.state == "running" else {}, "cmd": self.cmdline}

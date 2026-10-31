@@ -84,9 +84,11 @@ button.danger { color: var(--crit); }
 </header>
 <main>
   <section id="alerts"></section>
-  <section><h2>Radios</h2><div id="radios" class="grid"></div></section>
-  <section><h2>Multiplex</h2><div id="carriers"></div></section>
+  <section id="pending"></section>
+  <section><h2 class="row" style="justify-content:space-between">Radios <button onclick="radioOpen(null)">+ Ajouter une radio</button></h2><div id="radios" class="grid"></div></section>
+  <section><h2 class="row" style="justify-content:space-between">Multiplex <button onclick="carOpen(null)">+ Ajouter un multiplex</button></h2><div id="carriers"></div></section>
   <section><h2>Sources</h2><div class="card scroll"><table id="inputs"></table></div></section>
+  <section><h2>Transcodage : GPU</h2><div class="card" id="gpu"></div></section>
   <section><h2>Journal du moteur</h2><div class="card"><details><summary>dernières lignes</summary><pre id="englog"></pre></details></div></section>
   <section><h2>Calculateur de débit utile</h2><div class="card">
     <div class="row" style="gap:8px 14px">
@@ -96,6 +98,7 @@ button.danger { color: var(--crit); }
       <label>Chaînes <input id="k_n" type="number" min="1" value="1" style="width:4em" oninput="calc()"></label>
       <span class="big" id="k_rate">–</span><span class="muted" id="k_per"></span>
     </div></div></section>
+  <section><h2>Configuration et profils</h2><div class="card" id="profiles"></div></section>
   <section><h2>Historique des alertes</h2><div class="card scroll"><table id="ahist"></table></div></section>
 </main>
 <dialog id="chdlg">
@@ -114,6 +117,51 @@ button.danger { color: var(--crit); }
     <div class="err" id="ch_err"></div>
     <div class="actions"><button type="button" onclick="chdlg.close()">Annuler</button><button class="primary" id="ch_ok">Enregistrer</button></div>
   </form>
+</dialog>
+<dialog id="radiodlg">
+  <form id="radioform" method="dialog">
+    <h3 id="rd_title">Radio</h3>
+    <label for="rd_name">Nom</label><input id="rd_name" type="text" maxlength="40" required>
+    <label for="rd_driver">Pilote</label><select id="rd_driver"></select>
+    <label for="rd_args">Arguments</label><input id="rd_args" type="text" placeholder="serial=..., rt=60">
+    <div class="row" style="gap:6px 14px">
+      <span><label for="rd_gain">Gain (dB)</label><input id="rd_gain" type="number" step="0.5" style="width:7em"></span>
+      <span><label for="rd_backoff">Recul (dB)</label><input id="rd_backoff" type="number" step="0.5" style="width:7em" placeholder="13"></span>
+      <span><label for="rd_rate">Échantillonnage (MS/s)</label><input id="rd_rate" type="number" step="any" style="width:9em" placeholder="auto"></span>
+      <span><label for="rd_center">LO (MHz)</label><input id="rd_center" type="number" step="any" style="width:9em" placeholder="auto"></span>
+      <span><label for="rd_lo">Décalage du LO</label><input id="rd_lo" type="text" style="width:7em" placeholder="auto"></span>
+    </div>
+    <label style="display:flex;gap:6px;align-items:center;color:inherit"><input id="rd_amp" type="checkbox"> amplificateur RF (HackRF)</label>
+    <div class="hint">Vide = automatique. Enregistré dans le fichier tout de suite, appliqué avec le bouton du bandeau (l'émission redémarre).</div>
+    <div class="err" id="rd_err"></div>
+    <div class="actions"><button type="button" class="danger" id="rd_del" onclick="radioDelete()" style="margin-right:auto">Supprimer</button>
+      <button type="button" onclick="radiodlg.close()">Annuler</button><button class="primary" id="rd_ok">Enregistrer</button></div>
+  </form>
+</dialog>
+<dialog id="cardlg">
+  <form id="carform" method="dialog">
+    <h3 id="cd_title">Multiplex</h3>
+    <label for="cd_name">Nom</label><input id="cd_name" type="text" maxlength="60" required>
+    <div class="row" style="gap:6px 14px">
+      <span><label for="cd_radio">Radio</label><select id="cd_radio"></select></span>
+      <span><label for="cd_std">Norme</label><select id="cd_std" onchange="carFields()"><option value="dvbt">DVB-T</option><option value="dvbt2">DVB-T2</option><option value="dvbc">DVB-C</option><option value="dvbs">DVB-S</option><option value="dvbs2">DVB-S2</option></select></span>
+      <span><label for="cd_freq">Fréquence (MHz)</label><input id="cd_freq" type="number" step="any" required style="width:9em" oninput="carCalc()"></span>
+      <span><label for="cd_tsid">TSID</label><input id="cd_tsid" type="number" min="0" max="65535" style="width:6em" placeholder="auto"></span>
+    </div>
+    <div class="row" id="cd_fields" style="gap:6px 14px"></div>
+    <div class="row" style="margin-top:10px"><span class="muted">débit utile</span><span class="big" id="cd_rate">–</span><span class="muted" id="cd_per"></span></div>
+    <div class="hint">Enregistré dans le fichier tout de suite, appliqué avec le bouton du bandeau : l'émission redémarre (quelques secondes), les TV devront peut-être refaire une recherche.</div>
+    <div class="err" id="cd_err"></div>
+    <div class="actions"><button type="button" class="danger" id="cd_del" onclick="carDelete()" style="margin-right:auto">Supprimer</button>
+      <button type="button" onclick="cardlg.close()">Annuler</button><button class="primary" id="cd_ok">Enregistrer</button></div>
+  </form>
+</dialog>
+<dialog id="livedlg">
+  <h3 id="live_title">Direct</h3>
+  <video id="live_video" controls autoplay playsinline style="width:100%;background:#000;border-radius:6px;aspect-ratio:16/9"></video>
+  <div class="hint" id="live_hint">Ce qui part à l'antenne, avec quelques secondes de retard. Rien ne tourne quand la fenêtre est fermée.</div>
+  <div class="actions"><label style="margin:0 auto 0 0;display:flex;gap:6px;align-items:center;color:inherit"><input type="checkbox" id="live_tc" onchange="liveStart()"> réencoder (si l'image ne s'affiche pas)</label>
+    <button type="button" onclick="livedlg.close()">Fermer</button></div>
 </dialog>
 <div id="toast"></div>
 <script>
@@ -218,6 +266,7 @@ function render(s) {
   $("#radios").innerHTML = s.radios.map((r) => {
     const l = r.live || {};
     return `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="pill">${esc(r.driver)}</span>
+      <span style="flex:1"></span><button onclick="radioOpen(${r.index})">Réglages</button></div><div class="row" style="margin-top:4px">
       ${l.underruns ? `<span class="pill critical">${l.underruns} sous-débits</span>` : '<span class="pill ok">0 sous-débit</span>'}</div>
       <div class="kv" style="margin-top:8px"><span>LO</span><span>${(r.center / 1e6).toFixed(4)} MHz</span>
       <span>Échantillonnage</span><span>${(r.rate / 1e6).toFixed(4)} MS/s</span>
@@ -264,6 +313,8 @@ function render(s) {
         <td class="num">${marginPill(lv.audio_margin_min_ms)}</td>
         <td class="num">${lv.late_max_ms != null && lv.late_max_ms < 0 ? `<span class="muted">${ms(-lv.late_max_ms)} d'avance</span>` : ms(lv.late_max_ms)}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
         <td class="num hide-sm">${inp.cc_errors ?? "–"}</td>
+        <td class="hide-sm" style="white-space:nowrap">${thumbsOn ? `<img data-thumb="${sv.sid}" alt="" src="${thumbUrl[sv.sid] || ""}" onclick="liveOpen(${sv.sid})" title="regarder en direct" style="width:96px;height:54px;object-fit:cover;background:#000;border-radius:4px;cursor:pointer;vertical-align:middle">` : ""}
+          <button onclick="liveOpen(${sv.sid})" title="regarder en direct">▶</button></td>
         <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
         <td style="white-space:nowrap"><button onclick="chEdit(${sv.sid})">Modifier</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
       </tr>`;
@@ -275,6 +326,7 @@ function render(s) {
         <span class="muted">capacité</span><span class="big">${mbps(cap)}</span><span class="muted">Mbit/s</span>
         <span class="muted">occupé</span><span class="big" style="color:${occ > 98 ? "var(--crit)" : occ > 90 ? "var(--warn)" : "inherit"}">${occ == null ? "–" : occ.toFixed(1) + " %"}</span>
         ${l && l.cpu != null ? `<span class="muted">CPU ${l.cpu.toFixed(1)} %</span>` : ""}
+        <button onclick="carOpen(${c.index})">Réglages</button>
       </div>
       <div class="bar">${bar}</div><div class="legend">${legend}</div>
       ${chart(c.index, cap)}
@@ -283,25 +335,28 @@ function render(s) {
         <span>débit ${mbps(ts.bitrate)} Mbit/s</span><span>erreurs transport ${ts.transport_errors ?? 0}</span>
         <span>discontinuités ${ts.pids.reduce((a, p) => a + (p.discontinuities || 0), 0)}</span><span class="muted">il y a ${ts.age_s} s</span>
         <a href="/api/analysis/${c.index}" target="_blank">rapport complet</a></div>` : ""}
-      <div class="row" style="margin-top:10px"><span style="flex:1"></span><button onclick="chAdd(${c.index})">+ Ajouter une chaîne</button></div>
+      <div class="row" style="margin-top:10px"><span style="flex:1"></span><button onclick="thumbsToggle()" title="images des chaînes, rafraîchies toutes les 4 s tant que la page est ouverte">${thumbsOn ? "Masquer les aperçus" : "Afficher les aperçus"}</button> <button onclick="chAdd(${c.index})">+ Ajouter une chaîne</button></div>
       <div class="scroll" style="margin-top:6px"><table>
         <tr><th class="num">LCN</th><th>Chaîne</th><th>Source</th><th class="num">Entrée Mbit/s</th><th class="num">Sortie Mbit/s</th>
         <th class="num" title="Temps entre l'émission d'une image et le moment où le récepteur doit la décoder (minimum sur 1 s)">Marge vidéo</th><th class="hide-sm">10 min</th>
-        <th class="num">Marge audio</th><th class="num" title="Retard maximal d'envoi par rapport à l'instant idéal">Retard ms</th><th class="num hide-sm">CC entrée</th><th class="hide-sm">En cours</th><th></th></tr>
+        <th class="num">Marge audio</th><th class="num" title="Retard maximal d'envoi par rapport à l'instant idéal">Retard ms</th><th class="num hide-sm">CC entrée</th><th class="hide-sm">Aperçu</th><th class="hide-sm">En cours</th><th></th></tr>
         ${rows}</table></div>
     </div>`;
   }).join("");
 
-  keepOpen($("#inputs"), () => $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
+  keepOpen($("#inputs"), () => $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th>Traitement</th><th class="num" title="images par seconde, vitesse par rapport au temps réel">Img/s · vitesse</th><th class="num" title="images perdues / dupliquées par ffmpeg">Perdues</th><th class="num" title="CPU des processus de la source (100 % = un cœur) ; GPU : moteur le plus occupé">CPU · GPU</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
     s.inputs.map((p) => {
       const live = p.live || {};
       const cls = p.state === "running" ? "ok" : p.state === "error" ? "critical" : p.kind === "direct" ? "info" : "warning";
       return `<tr><td>${p.index}</td><td><b>${esc(p.name)}</b> <span class="muted">${p.role === "backup" ? "(secours)" : ""}</span><div class="muted" style="font-size:11px;word-break:break-all">${esc(p.source)}</div></td>
         <td><span class="pill ${cls}">${p.kind === "direct" ? "UDP direct" : esc(p.state)}</span>${p.error ? `<div class="err" style="font-size:11px">${esc(p.error)}</div>` : ""}</td>
+        ${procCells(p)}
         <td class="num">${p.restarts}</td><td class="num">${mbps(live.rate)}</td><td class="num">${live.idle_ms != null && live.idle_ms >= 0 ? ms(live.idle_ms) + " ms" : "–"}</td>
         <td><details data-key="in${p.index}${p.role === "trial" ? "t" : ""}"><summary>${p.log.length} ligne(s)</summary><pre>${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td>
         <td>${p.kind === "ffmpeg" ? `<button onclick="restartInput(${p.index})">Relancer</button>` : ""}</td></tr>`;
     }).join(""));
+
+  renderGpu(s.gpu);
 
   const el = $("#englog"), txt = (s.engine.log || []).join("\n"), sel = window.getSelection();
   if (el.textContent !== txt && !(sel && !sel.isCollapsed && el.contains(sel.anchorNode))) {
@@ -312,6 +367,99 @@ function render(s) {
   $("#ahist").innerHTML = `<tr><th>Heure</th><th>Événement</th><th>Niveau</th><th>Message</th></tr>` +
     s.alert_history.map((a) => `<tr><td>${new Date(a.time * 1000).toLocaleTimeString()}</td><td>${a.event === "clear" ? "fin" : a.event === "raise" ? "début" : "rappel"}</td>
       <td><span class="pill ${a.level}">${a.level}</span></td><td>${esc(a.message)}</td></tr>`).join("");
+}
+
+/* what the ffmpeg of a source does: copy, CPU or GPU transcode, with its speed and load */
+function procCells(p) {
+  if (p.kind !== "ffmpeg") return '<td class="muted">–</td><td></td><td></td><td></td>';
+  const m = p.mode || {}, pr = p.progress || {}, u = p.usage || {};
+  const what = m.kind === "gpu" ? `<span class="pill info">GPU</span> ${esc(m.codec)}<div class="muted" style="font-size:11px">${esc(m.device)}</div>`
+    : m.kind === "cpu" ? `<span class="pill warning">CPU</span> ${esc(m.codec)}`
+    : m.kind === "audio" ? `copie vidéo<div class="muted" style="font-size:11px">audio réencodé (${esc(m.codec)})</div>`
+    : m.kind === "copy" ? '<span class="muted">copie</span>' : '<span class="muted">–</span>';
+  const speed = pr.speed != null ? pr.speed.toFixed(2) + "×" : "–";
+  const slow = pr.speed != null && pr.speed < 0.97 && p.uptime > 20;
+  const fps = m.kind === "gpu" || m.kind === "cpu" ? (pr.fps != null ? Math.round(pr.fps) + " · " : "") : "";
+  const gpuBusy = u.gpu && Object.keys(u.gpu).length ? Math.max(...Object.values(u.gpu)) : null;
+  const gpuTitle = u.gpu ? Object.entries(u.gpu).map(([k, v]) => `${k} ${v} %`).join(", ") : "";
+  return `<td>${what}</td>
+    <td class="num"${slow ? ' style="color:var(--crit)" title="plus lent que le temps réel"' : ""}>${fps}${speed}</td>
+    <td class="num">${pr.drop || pr.dup ? `${pr.drop || 0} / ${pr.dup || 0}` : '<span class="muted">0</span>'}</td>
+    <td class="num"${gpuTitle ? ` title="${esc(gpuTitle)}"` : ""}>${u.cpu != null ? u.cpu + " %" : "–"}${gpuBusy != null ? ` · ${gpuBusy} %` : ""}</td>`;
+}
+
+function renderGpu(g) {
+  const el = $("#gpu");
+  if (!g) { el.innerHTML = '<span class="muted">–</span>'; return; }
+  const state = { off: "désactivé (ingest.gpu)", none: "aucune carte utilisable", ready: "prêt", learning: "apprentissage en cours…",
+                  error: "échec de l'apprentissage" }[g.state] || g.state;
+  const FAM = { h264: "H.264", hevc: "HEVC", mpeg2: "MPEG-2" };
+  const devs = (g.devices || []).map((d) => {
+    const fams = Object.entries(d.results || {}).map(([f, rows]) => {
+      const b = rows.find((r) => r.ok);
+      const why = rows.find((r) => !r.ok && /RC mode|entrypoint|bit rate|MFX|Assertion/.test(r.error || "")) || rows[0] || {};
+      return `<tr><td>${FAM[f] || f}</td><td>${b ? `<span class="pill ok">${Math.round(b.fps)} img/s</span>` : '<span class="pill">non</span>'}</td>
+        <td class="muted" style="font-size:12px">${b ? esc(b.label) : esc(why.error || "")}</td></tr>`;
+    }).join("");
+    return `<div style="margin-top:8px"><b>${esc(d.name)}</b> <span class="muted">${esc(d.id)} · pilote ${esc(d.driver || "aucun")}</span>
+      ${d.usable ? `<span class="pill">${d.load} transcodage(s)</span>` : `<span class="pill warning">non utilisable : ${esc(d.reason)}</span>`}
+      ${fams ? `<table style="margin-top:4px">${fams}</table>` : d.usable ? '<div class="muted">pas encore appris</div>' : ""}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="row"><span>État : <b>${esc(state)}</b></span>${g.progress ? `<span class="muted">${esc(g.progress)}</span>` : ""}
+    ${g.learnt_at ? `<span class="muted">appris le ${new Date(g.learnt_at * 1000).toLocaleString()}</span>` : ""}<span style="flex:1"></span>
+    ${g.state !== "off" && g.state !== "none" ? `<button onclick="gpuLearn()" ${g.state === "learning" ? "disabled" : ""}>Réapprendre les GPU</button>` : ""}</div>
+    ${devs || '<div class="muted">aucune carte graphique</div>'}
+    <div class="muted" style="font-size:12px;margin-top:8px">Un GPU sert aux chaînes à réencoder (codec non DVB, capture, encode = true) ; sinon libx264 sur le CPU. L'apprentissage ne se refait que si les cartes, leurs pilotes ou ffmpeg changent.</div>`;
+}
+async function gpuLearn() { const r = await api("POST", "/api/gpu/learn"); r.ok ? toast("apprentissage des GPU lancé") : report(r); refresh(); }
+
+/* previews: thumbnails (on demand, remembered by the browser) and the live picture of a channel */
+let thumbsOn = false;
+try { thumbsOn = localStorage.getItem("dvbtx_thumbs") === "1"; } catch (e) { /* private window */ }
+const thumbUrl = {};
+function thumbsToggle() {
+  thumbsOn = !thumbsOn;
+  try { localStorage.setItem("dvbtx_thumbs", thumbsOn ? "1" : "0"); } catch (e) { /* not kept */ }
+  if (last) render(last);
+  refreshThumbs();
+}
+let thumbsBusy = false;
+async function refreshThumbs() {
+  if (!thumbsOn || !last || document.hidden || thumbsBusy) return;
+  thumbsBusy = true;
+  try {
+    for (const c of last.carriers) for (const sv of c.services) {
+      const r = await fetch(`/api/preview/${sv.sid}.jpg`);
+      if (r.status !== 200) continue;
+      const url = URL.createObjectURL(await r.blob()), old = thumbUrl[sv.sid];
+      thumbUrl[sv.sid] = url;
+      document.querySelectorAll(`img[data-thumb="${sv.sid}"]`).forEach((i) => { i.src = url; });
+      if (old) URL.revokeObjectURL(old);
+    }
+  } catch (e) { /* next time */ }
+  thumbsBusy = false;
+}
+let liveSid = null;
+function liveOpen(sid) {
+  const [, sv] = svcBySid(sid);
+  liveSid = sid;
+  $("#live_title").textContent = sv ? `${sv.lcn} · ${sv.name}` : "Direct";
+  $("#live_tc").checked = false;
+  $("#livedlg").showModal();
+  liveStart();
+}
+function liveStart() {
+  const v = $("#live_video");
+  const q = new URLSearchParams({ t: Date.now() });
+  if ($("#live_tc").checked) q.set("transcode", "1");
+  v.src = `/api/preview/${liveSid}/live.mp4?${q}`;
+  v.play().catch(() => { /* autoplay refused: the controls are there */ });
+}
+function liveStop() {
+  const v = $("#live_video");
+  v.pause();
+  v.removeAttribute("src");
+  v.load();                       // closes the connection: the server stops its ffmpeg
 }
 
 async function refresh() {
@@ -334,7 +482,7 @@ const KFIELDS = {
            extended: ["true", "false"], guard: ["1/128", "1/32", "1/16", "19/256", "1/8", "19/128", "1/4"],
            pilot: ["PP8", "PP7", "PP6", "PP5", "PP4", "PP3", "PP2", "PP1"], constellation: ["256qam", "64qam", "16qam", "qpsk"],
            code_rate: ["5/6", "4/5", "3/4", "2/3", "3/5", "1/2"] },
-  dvbc: { constellation: ["256qam", "64qam", "16qam"], symbol_rate: "6900000" },
+  dvbc: { constellation: ["256qam", "128qam", "64qam", "32qam", "16qam"], symbol_rate: "6900000" },
   dvbs: { code_rate: ["7/8", "5/6", "3/4", "2/3", "1/2"], symbol_rate: "27500000" },
   dvbs2: { modulation: ["32apsk", "16apsk", "8psk", "qpsk"], code_rate: ["9/10", "8/9", "5/6", "4/5", "3/4", "2/3", "3/5", "1/2"],
            symbol_rate: "27500000", frame: ["normal", "short"] },
@@ -386,6 +534,11 @@ function toast(html, bad) {
 }
 function report(r) {
   if (!r.ok) { toast(`<b>Refusé</b> · ${esc(r.error)}`, true); return false; }
+  if (r.pending || (r.saved && r.detail === undefined)) {
+    toast("Enregistré dans la configuration<div class=\"muted\">à appliquer avec les autres modifications (bandeau en haut)</div>");
+    loadConfig();
+    return true;
+  }
   const W = { added: (d) => `${d.name} ajoutée`, recreated: (d) => `${d.name} recréée`, removed: (d) => `${d.name} supprimée`,
     name: (d) => `Nouveau nom : ${d.from} → ${d.to}`, number: (d) => `${d.name} : numéro ${d.from} → ${d.to}`,
     source: (d) => `${d.name} : nouvelle source ${[].concat(d.to).join(", puis ")}`, backup: (d) => `${d.name} : secours ${d.to || "aucun"}`,
@@ -437,7 +590,7 @@ async function chSubmit(ev) {
       if (lcn) body.lcn = Number(lcn);
       body.backup = bk || false;               // emptied: no backup
       if (cache) body.buffer_ms = Number(cache);
-      r = await api("POST", "/api/channels", body);
+      r = await api("POST", "/api/channels?apply=0", body);
     } else {
       const b = chMode.before, body = {};
       if (name !== b.name) body.name = name;
@@ -446,7 +599,7 @@ async function chSubmit(ev) {
       if (bk !== b.backup) body.backup = bk;
       if (cache !== b.cache) body.buffer_ms = cache ? Number(cache) : null;
       if (!Object.keys(body).length) { chdlg.close(); return false; }
-      r = await api("PATCH", `/api/channels/${hex(chMode.sid)}`, body);
+      r = await api("PATCH", `/api/channels/${hex(chMode.sid)}?apply=0`, body);
     }
   } finally { $("#ch_ok").disabled = false; }
   if (r.ok) { chdlg.close(); report(r); refresh(); } else { $("#ch_err").textContent = r.error; }
@@ -455,14 +608,198 @@ async function chSubmit(ev) {
 async function chRemove(sid) {
   const [, sv] = svcBySid(sid);
   if (!sv || !confirm(`Supprimer la chaîne ${sv.lcn} « ${sv.name} » ? Les autres chaînes ne sont pas touchées.`)) return;
-  report(await api("DELETE", `/api/channels/${hex(sid)}`));
+  report(await api("DELETE", `/api/channels/${hex(sid)}?apply=0`));
   refresh();
 }
 async function restartInput(i) { const r = await api("POST", `/api/input/${i}/restart`); r.ok ? toast("source relancée") : report(r); refresh(); }
 async function reloadSi() { const r = await api("POST", "/api/reload"); r.ok ? toast("EPG et tables SI rechargés") : report(r); refresh(); }
+// ---- the configuration file: radios, multiplexes, profiles; pending until applied
+let conf = null;
+const STDNAME = { dvbt: "DVB-T", dvbt2: "DVB-T2", dvbc: "DVB-C", dvbs: "DVB-S", dvbs2: "DVB-S2", ts: "TS" };
+const KEYNAME = { frequency: "fréquence", constellation: "constellation", code_rate: "rendement", guard: "intervalle de garde",
+  bandwidth: "largeur", mode: "mode", fft: "FFT", pilot: "pilotes", standard: "norme", gain: "gain", name: "nom", radio: "radio",
+  symbol_rate: "débit symbole", source: "source", backup: "secours", lcn: "numéro", rate: "échantillonnage", center: "LO",
+  driver: "pilote", args: "arguments", amp: "ampli", tsid: "TSID", extended: "porteuses étendues", modulation: "modulation" };
+function fmtVal(k, v) {
+  if (v == null) return "défaut";
+  if ((k === "frequency" || k === "center") && typeof v === "number") return (v / 1e6) + " MHz";
+  if ((k === "bandwidth") && typeof v === "number") return (v / 1e6) + " MHz";
+  if (k === "rate" && typeof v === "number") return (v / 1e6) + " MS/s";
+  if (k === "standard") return STDNAME[v] || v;
+  return typeof v === "object" ? JSON.stringify(v) : String(v);
+}
+async function loadConfig() {
+  try { conf = await (await fetch("/api/config")).json(); } catch (e) { return; }
+  renderConfig();
+}
+function renderConfig() {
+  const el = $("#pending"), c = conf;
+  if (!c || !c.path) { el.innerHTML = ""; $("#profiles").innerHTML = `<span class="muted">${esc(c && c.error || "–")}</span>`; return; }
+  const W = { radio: "radio", carrier: "multiplex", channel: "chaîne", settings: "réglages" };
+  const items = (c.pending || []).map((d) => {
+    const what = `${W[d.what] || d.what} <b>${esc(d.name)}</b>`;
+    if (d.op === "added") return `<li>${what} ajouté${d.what === "channel" ? "e" : ""}</li>`;
+    if (d.op === "removed") return `<li>${what} supprimé${d.what === "channel" ? "e" : ""}</li>`;
+    const ks = Object.entries(d.keys || {}).map(([k, [a, b]]) => `${esc(KEYNAME[k] || k)} ${esc(fmtVal(k, a))} → ${esc(fmtVal(k, b))}`);
+    return `<li>${what} : ${ks.join(", ") || "modifié"}</li>`;
+  }).join("");
+  el.innerHTML = (c.error ? `<div class="alert critical"><b>La configuration enregistrée n'est pas valide</b> · ${esc(c.error)}</div>` : "") +
+    (items ? `<div class="alert info" style="position:sticky;top:64px;z-index:1"><div class="row"><b>Modifications enregistrées, pas encore appliquées</b><span style="flex:1"></span>
+      <button onclick="configRevert()">Annuler les modifications</button> <button class="primary" onclick="configApply()">Appliquer</button></div>
+      <ul style="margin:6px 0 0;padding-left:20px">${items}</ul>
+      ${c.restart ? '<div class="muted" style="margin-top:4px">Radios ou multiplex changés : l\'émission redémarrera (quelques secondes sans signal).</div>' : '<div class="muted" style="margin-top:4px">Seules les chaînes changent : les autres ne sont pas coupées.</div>'}</div>` : "");
+  const profs = (c.profiles || []).map((p) => `<tr><td><b>${esc(p.name)}</b>${p.same ? ' <span class="pill ok">= fichier actuel</span>' : ""}</td>
+    <td class="muted">${new Date(p.mtime * 1000).toLocaleString()}</td>
+    <td style="white-space:nowrap;text-align:right"><button onclick="profileLoad('${esc(p.name)}')">Charger</button> <button class="danger" onclick="profileDelete('${esc(p.name)}')">✕</button></td></tr>`).join("");
+  $("#profiles").innerHTML = `<div class="muted" style="font-size:12px">Fichier appliqué : ${esc(c.path)} · chaque profil est une copie à côté (${esc(c.path)}.<i>nom</i>) ; charger un profil le copie sur le fichier, à appliquer ensuite.</div>
+    ${profs ? `<table style="margin-top:8px">${profs}</table>` : '<div class="muted" style="margin-top:8px">aucun profil</div>'}
+    <div class="row" style="margin-top:10px"><input id="pf_name" type="text" placeholder="nom du profil" maxlength="40" style="font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+      <button onclick="profileSave()">Enregistrer la configuration actuelle comme profil</button></div>`;
+}
+async function configApply() {
+  if (conf && conf.restart && !confirm("Les radios ou les multiplex changent : l'émission va redémarrer (quelques secondes sans signal). Appliquer ?")) return;
+  const r = await api("POST", "/api/config/apply");
+  r.ok ? toast(r.restarted ? "Configuration appliquée, émission redémarrée" : `Configuration appliquée${r.changes && r.changes.length ? "<br>" + r.changes.map(esc).join("<br>") : ""}`) : report(r);
+  loadConfig(); refresh();
+}
+async function configRevert() {
+  if (!confirm("Remettre le fichier comme la configuration en cours (les modifications en attente sont perdues) ?")) return;
+  const r = await api("POST", "/api/config/revert"); r.ok ? toast("Modifications annulées") : report(r); loadConfig();
+}
+async function profileSave() {
+  const n = $("#pf_name").value.trim(); if (!n) return;
+  const r = await api("POST", "/api/profiles", { name: n }); r.ok ? toast(`Profil « ${esc(n)} » enregistré`) : report(r); loadConfig();
+}
+async function profileLoad(n) {
+  if (!confirm(`Copier le profil « ${n} » sur le fichier de configuration ? (l'ancien est gardé en .bak ; à appliquer ensuite)`)) return;
+  const r = await api("POST", `/api/profiles/${encodeURIComponent(n)}/load`); r.ok ? toast(`Profil « ${esc(n)} » chargé : à appliquer`) : report(r); loadConfig();
+}
+async function profileDelete(n) {
+  if (!confirm(`Supprimer le profil « ${n} » ?`)) return;
+  const r = await api("DELETE", `/api/profiles/${encodeURIComponent(n)}`); r.ok ? toast("Profil supprimé") : report(r); loadConfig();
+}
+
+// radio dialog (values of the file)
+let radioIdx = null;
+const radiodlg = $("#radiodlg");
+function radioOpen(i) {
+  if (!conf || !conf.path) { toast("pas de fichier de configuration à modifier", true); return; }
+  radioIdx = i;
+  const r = i == null ? { driver: "hackrf" } : conf.radios[i] || {};
+  $("#rd_title").textContent = i == null ? "Nouvelle radio" : `Radio ${r.name || i}`;
+  $("#rd_driver").innerHTML = conf.drivers.map((d) => `<option${d === (r.driver || "hackrf") ? " selected" : ""}>${d}</option>`).join("");
+  $("#rd_name").value = r.name || "";
+  $("#rd_args").value = r.args || "";
+  $("#rd_gain").value = r.gain ?? "";
+  $("#rd_backoff").value = r.backoff_db ?? "";
+  $("#rd_rate").value = r.rate ? r.rate / 1e6 : "";
+  $("#rd_center").value = r.center ? r.center / 1e6 : "";
+  $("#rd_lo").value = r.lo_offset ?? "";
+  $("#rd_amp").checked = !!r.amp;
+  $("#rd_del").style.display = i == null ? "none" : "";
+  $("#rd_err").textContent = "";
+  radiodlg.showModal();
+}
+$("#radioform").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const num = (v, k = 1) => v.trim() === "" ? null : Number(v) * k;
+  const lo = $("#rd_lo").value.trim();
+  const body = { name: $("#rd_name").value.trim(), driver: $("#rd_driver").value, args: $("#rd_args").value.trim() || null,
+    gain: num($("#rd_gain").value), backoff_db: num($("#rd_backoff").value), rate: num($("#rd_rate").value, 1e6),
+    center: num($("#rd_center").value, 1e6), lo_offset: lo === "" ? null : (isNaN(Number(lo)) ? lo : Number(lo)), amp: $("#rd_amp").checked || null };
+  for (const k of ["rate", "center"]) if (body[k] != null) body[k] = Math.round(body[k]);
+  let r;
+  if (radioIdx == null) {
+    for (const k in body) if (body[k] == null) delete body[k];
+    r = await api("POST", "/api/config/radio", body);
+  } else r = await api("PATCH", `/api/config/radio/${radioIdx}`, body);
+  if (!r.ok) { $("#rd_err").textContent = r.error; return; }
+  radiodlg.close(); report(r);
+});
+async function radioDelete() {
+  if (!confirm("Supprimer cette radio du fichier ?")) return;
+  const r = await api("DELETE", `/api/config/radio/${radioIdx}`);
+  if (!r.ok) { $("#rd_err").textContent = r.error; return; }
+  radiodlg.close(); report(r);
+}
+
+// multiplex dialog
+let carIdx = null;
+const cardlg = $("#cardlg");
+const MHZ_KEYS = { bandwidth: 1 };
+function carOpen(i) {
+  if (!conf || !conf.path) { toast("pas de fichier de configuration à modifier", true); return; }
+  carIdx = i;
+  const c = i == null ? { standard: "dvbt2", radio: (conf.radios[0] || {}).name } : conf.carriers[i] || {};
+  $("#cd_title").textContent = i == null ? "Nouveau multiplex" : `Multiplex ${c.name || i}`;
+  $("#cd_name").value = c.name || "";
+  $("#cd_radio").innerHTML = conf.radios.map((r, j) => `<option value="${esc(r.name || j)}"${(r.name || j) === c.radio ? " selected" : ""}>${esc(r.name || "radio " + j)}</option>`).join("");
+  $("#cd_std").value = c.standard || "dvbt";
+  $("#cd_freq").value = c.frequency ? c.frequency / 1e6 : "";
+  $("#cd_tsid").value = c.tsid ?? "";
+  $("#cd_del").style.display = i == null ? "none" : "";
+  $("#cd_err").textContent = "";
+  carFields(c);
+  cardlg.showModal();
+}
+function carFields(c) {
+  const std = $("#cd_std").value, f = KFIELDS[std] || {}, d = KDEFAULT[std] || {};
+  const cur = c && (c.standard || "dvbt") === std ? c : {};
+  $("#cd_fields").innerHTML = Object.entries(f).map(([k, v]) => {
+    let val = cur[k] ?? d[k];
+    if (k in MHZ_KEYS && typeof val === "number") val = String(val / 1e6);
+    if (typeof val === "boolean") val = String(val);
+    return `<span><label>${esc(KLABEL[k] || k)}</label>` + (Array.isArray(v)
+      ? `<select data-k="${k}" onchange="carCalc()">${v.map((o) => `<option${o === String(val ?? v[0]) ? " selected" : ""}>${o}</option>`).join("")}</select>`
+      : `<input data-k="${k}" value="${esc(val ?? v)}" style="width:9em" oninput="carCalc()">`) + "</span>";
+  }).join("");
+  carCalc();
+}
+function carValues() {
+  const out = {};
+  document.querySelectorAll("#cd_fields [data-k]").forEach((e) => {
+    const k = e.dataset.k, v = e.value;
+    out[k] = k in MHZ_KEYS ? Math.round(Number(v) * 1e6) : k === "symbol_rate" ? Math.round(Number(v)) : k === "extended" ? v === "true" : v;
+  });
+  return out;
+}
+async function carCalc() {
+  const q = new URLSearchParams({ standard: $("#cd_std").value, services: carIdx != null && conf.carriers[carIdx] ? conf.carriers[carIdx].services || 1 : 1 });
+  for (const [k, v] of Object.entries(carValues())) q.set(k, String(v));
+  try {
+    const r = await (await fetch("/api/calc?" + q)).json();
+    $("#cd_rate").textContent = r.error ? "–" : (r.rate / 1e6).toFixed(2) + " Mbit/s";
+    $("#cd_per").textContent = r.error ? r.error : `soit ${(r.per_service / 1e6).toFixed(2)} Mbit/s par chaîne`;
+  } catch (e) { /* keep */ }
+}
+$("#carform").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const tsid = $("#cd_tsid").value.trim();
+  const body = Object.assign({ name: $("#cd_name").value.trim(), radio: $("#cd_radio").value, standard: $("#cd_std").value,
+    frequency: Math.round(Number($("#cd_freq").value) * 1e6), tsid: tsid === "" ? null : Number(tsid) }, carValues());
+  let r;
+  if (carIdx == null) {
+    for (const k in body) if (body[k] == null) delete body[k];
+    r = await api("POST", "/api/config/carrier", body);
+  } else r = await api("PATCH", `/api/config/carrier/${carIdx}`, body);
+  if (!r.ok) { $("#cd_err").textContent = r.error; return; }
+  cardlg.close(); report(r);
+});
+async function carDelete() {
+  const c = conf.carriers[carIdx] || {};
+  if (!confirm(`Supprimer le multiplex « ${c.name} » et ses ${c.services || 0} chaîne(s) du fichier ?`)) return;
+  const r = await api("DELETE", `/api/config/carrier/${carIdx}`);
+  if (!r.ok) { $("#cd_err").textContent = r.error; return; }
+  cardlg.close(); report(r);
+}
+loadConfig();
+setInterval(loadConfig, 10000);
+
 refreshHist().then(refresh);
 setInterval(refresh, 1000);
 setInterval(refreshHist, 5000);
+setInterval(refreshThumbs, 4000);
+$("#livedlg").addEventListener("close", liveStop);
 </script>
 </body>
 </html>

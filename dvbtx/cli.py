@@ -57,14 +57,15 @@ def config_path(a):
     return path
 
 
-def load_cfg(a):
-    """merged configuration dict (file, quick options, --set, run options), not yet validated"""
+def load_cfg(a, text=None):
+    """merged configuration dict (file, or that text instead of it; quick options, --set, run options), not
+    yet validated"""
     path = config_path(a)
     quick = {k: getattr(a, k, None) for k in QUICK}
     quick["services"] = a.services
     if not any(v is not None for k, v in quick.items() if k != "services") and not a.services:
         quick = None
-    cfg = cfgmod.load(path, a.set, quick)
+    cfg = cfgmod.load(path, a.set, quick, text=text)
     if a.work_dir:
         cfg["work_dir"] = a.work_dir
     if a.web:
@@ -159,6 +160,48 @@ def cmd_make_backup(a):
     if r.returncode:
         sys.exit("error: ffmpeg failed")
     print(a.output)
+
+
+def cmd_gpu(a):
+    """graphics adapters and how each one transcodes (gpu learn: test them all again now)"""
+    from . import gpu
+    path = config_path(a)
+    ing = cfgmod.load(path)["ingest"] if path else dict(cfgmod.DEFAULTS["ingest"])
+    m = gpu.Manager(ing)
+    m.devices = gpu.detect()
+    m.fingerprint = gpu.fingerprint(m.devices, m.ffmpeg)
+    if not m.devices:
+        print("no graphics adapter")
+    for d in m.devices:
+        print(f"{d['id']:22s} {d['name']}  [{d['pci']} {d['pci_id']}, driver {d['driver'] or 'none'}]" +
+              ("" if d["usable"] else f"  not usable: {d['reason']}"))
+    if a.action == "learn":
+        if not any(d["usable"] for d in m.devices):
+            sys.exit("nothing to learn")
+        print(f"learning (test clip and results in {m.folder})...")
+
+        def prog(d, fam, r):
+            print(f"  {fam:5s} {r['label']}: " + (f"{r['fps']:.0f} img/s" if r["ok"] else f"no - {r['error']}"),
+                  flush=True)
+        m.save(gpu.learn(m.devices, m.ffmpeg, m.ffprobe, m.folder, prog))
+        print(f"saved in {m.cache_path} (a running dvbtx reads it at its next start, or learns again "
+              "from its web page)")
+    else:
+        c = m.cached()
+        if not c:
+            print(f"never learnt ({m.cache_path}): dvbtx gpu learn")
+            return
+        if c.get("fingerprint") != m.fingerprint:
+            print("adapters, drivers or ffmpeg changed since the last learning: dvbtx gpu learn "
+                  "(dvbtx does it by itself at its next start)")
+        m.results = c.get("results", {})
+    if m.mode.lower() in gpu.CPU_VALUES:
+        print("ingest.gpu is off: transcodes on the CPU")
+    for d in m.devices:
+        for fam, rows in m.results.get(d["id"], {}).items():
+            best = next((r for r in rows if r.get("ok")), None)
+            print(f"{d['id']:22s} {fam:5s} " + (f"{best['fps']:.0f} img/s with {best['label']}" if best else
+                                                  f"unusable ({gpu._why({fam: rows})})"))
 
 
 def cmd_devices(a):
@@ -442,6 +485,9 @@ def main(argv=None):
     g = sub.add_parser("epg", help="show what the EPG folder gives for each service")
     _add_config_args(g)
     sub.add_parser("devices", help="list the radios that are plugged in")
+    gp = sub.add_parser("gpu", help="graphics adapters used for the transcodes; 'gpu learn' tests them again")
+    gp.add_argument("action", nargs="?", choices=["list", "learn"], default="list")
+    gp.add_argument("-c", "--config", help="configuration file (ingest.ffmpeg, ingest.gpu, ingest.gpu_cache)")
     b = sub.add_parser("make-backup", help="create the clip played when a source fails")
     b.add_argument("-o", "--output", default="/var/lib/dvbtx/backup.ts")
     b.add_argument("--text", default="Incident technique - nous revenons dans un instant")
@@ -534,7 +580,7 @@ def main(argv=None):
         if getattr(a, "channel_cmd", None) in ("rm", "delete"):
             a.channel_cmd = "remove"
         {"run": cmd_run, "check": cmd_check, "calc": cmd_calc, "epg": cmd_epg, "engine-ini": cmd_engine_ini,
-         "make-backup": cmd_make_backup, "devices": cmd_devices, "channel": cmd_channel,
+         "make-backup": cmd_make_backup, "devices": cmd_devices, "gpu": cmd_gpu, "channel": cmd_channel,
          "channels": cmd_channel}[a.cmd](a)
     except cfgmod.ConfigError as e:
         sys.exit(f"configuration error: {e}")
