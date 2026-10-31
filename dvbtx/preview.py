@@ -113,9 +113,11 @@ class Previews:
             log.warning("thumbnails of %s: %s", car.name, e)
             return None
         cmd = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-skip_frame", "nokey",
-               "-analyzeduration", "3000000", "-probesize", "8000000", "-i", _udp(port)]
+               "-analyzeduration", "1500000", "-probesize", "8000000", "-i", _udp(port)]
+        # the first key frame at once, then one every THUMB_EVERY_S (fps=1/N would wait for its first window)
+        pick = f"select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{THUMB_EVERY_S})',scale=320:-2"
         for sid in sids:
-            cmd += ["-map", f"0:p:{sid}:v:0", "-an", "-vf", f"fps=1/{THUMB_EVERY_S},scale=320:-2", "-q:v", "6",
+            cmd += ["-map", f"0:p:{sid}:v:0", "-an", "-vf", pick, "-fps_mode", "passthrough", "-q:v", "6",
                     "-update", "1", "-atomic_writing", "1", "-f", "image2", os.path.join(self.dir, f"thumb-{sid}.jpg")]
         try:
             # not _die_with_parent: its signal comes when the *thread* that started the child ends, here
@@ -169,7 +171,7 @@ class Previews:
         port = _free_port()
         self._monitor(True, car.index, port)
         cmd = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-fflags", "nobuffer",
-               "-analyzeduration", "2000000", "-probesize", "5000000", "-i", _udp(port),
+               "-analyzeduration", "1000000", "-probesize", "5000000", "-i", _udp(port),
                "-map", f"0:p:{sid}:v:0?", "-map", f"0:p:{sid}:a:0?"]
         if copy:
             cmd += ["-c:v", "copy"]
@@ -177,8 +179,9 @@ class Previews:
             cmd += ["-vf", "yadif=deint=interlaced,scale=-2:360", "-c:v", "libx264", "-preset", "veryfast", "-tune",
                     "zerolatency", "-b:v", "900k", "-maxrate", "900k", "-bufsize", "900k", "-g", "50",
                     "-pix_fmt", "yuv420p"]
+        # fragments of 0.2 s: the browser gets the picture as it comes, not in bursts of a second
         cmd += ["-c:a", "aac", "-b:a", "96k", "-ac", "2", "-f", "mp4", "-movflags",
-                "frag_keyframe+empty_moov+default_base_moof", "-frag_duration", "1000000", "pipe:1"]
+                "frag_keyframe+empty_moov+default_base_moof", "-frag_duration", "200000", "pipe:1"]
         p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              preexec_fn=_die_with_parent)
         threading.Thread(target=self._drain, args=(p, f"live {svc.name}"), daemon=True).start()
