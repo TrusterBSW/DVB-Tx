@@ -307,12 +307,12 @@ sur un réseau de confiance) :
 - **aperçu des chaînes** : vignettes affichées par défaut (`web.preview_thumbnails`), l'œil de la
   colonne « Aperçu » les masque ou les réaffiche (retenu par le navigateur) ; une image par chaîne
   toutes les 4 s, prise sur les seules images clés (quelques % d'un cœur par multiplex, seulement
-  tant qu'une page les affiche) ; ▶ pour regarder une chaîne en direct dans le navigateur
+  tant qu'une page les affiche) ; un clic sur l'image ouvre la chaîne en direct dans le navigateur
   (l'image telle qu'émise, H.264 copié ; seuls le conteneur, TS → MP4, et le son, MP2/AC-3 → AAC,
   changent : les navigateurs ne lisent ni l'un ni l'autre ; « réencoder » en 360p si besoin ;
-  `#live=<sid>` dans l'adresse ouvre directement une chaîne) ; **VLC** à côté de chaque chaîne :
-  le multiplex exactement tel qu'il part à l'antenne (`/api/mux/<n>.ts`, relayé sans ffmpeg),
-  ouvert sur cette chaîne. Le moteur ouvre une copie du multiplex le temps de l'aperçu
+  `#live=<sid>` dans l'adresse ouvre directement une chaîne) ; lien **TS** de chaque multiplex :
+  le multiplex exactement tel qu'il part à l'antenne, toutes ses chaînes (`/api/mux/<n>.ts`,
+  relayé sans ffmpeg ; pour mpv, VLC...). Le moteur ouvre une copie du multiplex le temps de l'aperçu
   (`monitor add`), rien ne tourne quand personne ne regarde (`web.preview_max_live` directs à la fois) ;
 - carte GPU : les cartes trouvées, ce que chacune sait encoder (appris), sa charge ;
 - alertes actives et historique.

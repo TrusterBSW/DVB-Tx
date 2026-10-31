@@ -161,7 +161,7 @@ button.danger { color: var(--crit); }
 <dialog id="livedlg">
   <h3 id="live_title">Direct</h3>
   <video id="live_video" controls playsinline style="width:100%;background:#000;border-radius:6px;aspect-ratio:16/9"></video>
-  <div class="hint">Dans la page : vidéo telle qu'émise, son converti en AAC (les navigateurs ne lisent ni le MPEG-TS ni le MP2 / AC-3). Flux exact, sans aucune conversion : <a id="live_vlc" href="#" download>ouvrir dans VLC</a>.</div>
+  <div class="hint">Dans la page : vidéo telle qu'émise, son converti en AAC (les navigateurs ne lisent ni le MPEG-TS ni le MP2 / AC-3). Flux exact, sans aucune conversion : le <a id="live_ts" href="#">TS du multiplex</a> (mpv, VLC...).</div>
   <div class="hint" id="live_hint">Ce qui part à l'antenne, avec quelques secondes de retard. Rien ne tourne quand la fenêtre est fermée.</div>
   <div class="actions"><label style="margin:0 auto 0 0;display:flex;gap:6px;align-items:center;color:inherit"><input type="checkbox" id="live_tc" onchange="liveStart()"> réencoder (si l'image ne s'affiche pas)</label>
     <button type="button" onclick="livedlg.close()">Fermer</button></div>
@@ -321,9 +321,7 @@ function render(s) {
         <td class="num">${marginPill(lv.audio_margin_min_ms)}</td>
         <td class="num">${lv.late_max_ms != null && lv.late_max_ms < 0 ? `<span class="muted">${ms(-lv.late_max_ms)} d'avance</span>` : ms(lv.late_max_ms)}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
         <td class="num hide-sm">${inp.cc_errors ?? "–"}</td>
-        <td class="hide-sm" style="white-space:nowrap">${thumbsOn ? `<img data-thumb="${sv.sid}" alt="" src="${thumbUrl[sv.sid] || BLANK}" onclick="liveOpen(${sv.sid})" title="regarder en direct" style="width:96px;height:54px;object-fit:cover;background:#000;border-radius:4px;cursor:pointer;vertical-align:middle">` : ""}
-          <button onclick="liveOpen(${sv.sid})" title="regarder en direct dans la page">▶</button>
-          <a href="/api/mux/${c.index}.m3u?program=${sv.sid}" download="${esc(sv.name)}.m3u" title="ouvrir dans VLC le flux exact qui part à l'antenne (multiplex entier, sur cette chaîne)" style="font-size:12px">VLC</a></td>
+        <td class="hide-sm" style="white-space:nowrap">${thumbsOn ? `<img data-thumb="${sv.sid}" alt="" src="${thumbUrl[sv.sid] || BLANK}" onclick="liveOpen(${sv.sid})" title="regarder en direct" style="width:96px;height:54px;object-fit:cover;background:#000;border-radius:4px;cursor:pointer;vertical-align:middle">` : ""}</td>
         <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
         <td style="white-space:nowrap"><button onclick="chEdit(${sv.sid})">Modifier</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
       </tr>`;
@@ -339,7 +337,7 @@ function render(s) {
       </div>
       <div class="bar">${bar}</div><div class="legend">${legend}</div>
       ${chart(c.index, cap)}
-      <div class="muted" style="font-size:12px">débit utile sur 10 min, pointillés = capacité du canal · copie du TS : ${esc(c.monitor)}</div>
+      <div class="muted" style="font-size:12px">débit utile sur 10 min, pointillés = capacité du canal · copie du TS : ${esc(c.monitor)} · <a href="/api/mux/${c.index}.ts" title="le multiplex exactement tel qu'il part à l'antenne, toutes les chaînes (mpv, VLC, ffplay...)">TS</a></div>
       ${ts ? `<div class="row" style="margin-top:6px;font-size:12px"><span class="pill info">tsduck</span>
         <span>débit ${mbps(ts.bitrate)} Mbit/s</span><span>erreurs transport ${ts.transport_errors ?? 0}</span>
         <span>discontinuités ${ts.pids.reduce((a, p) => a + (p.discontinuities || 0), 0)}</span><span class="muted">il y a ${ts.age_s} s</span>
@@ -461,8 +459,7 @@ function liveOpen(sid) {
   liveSid = sid;
   $("#live_title").textContent = sv ? `${sv.lcn} · ${sv.name}` : "Direct";
   const [c] = svcBySid(sid);
-  $("#live_vlc").href = `/api/mux/${c ? c.index : 0}.m3u?program=${sid}`;
-  $("#live_vlc").download = `${sv ? sv.name : sid}.m3u`;
+  $("#live_ts").href = `/api/mux/${c ? c.index : 0}.ts`;
   $("#live_tc").checked = false;
   $("#livedlg").showModal();
   liveStart();
