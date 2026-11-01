@@ -58,6 +58,9 @@ static int inputs_json(char *buf, int len, input **in, int n, double dt)
         uint64_t rx = atomic_load(&x->rx_bytes), kept = atomic_load(&x->kept_pkts);
         int64_t last = atomic_load(&x->last_rx_ns), slack = atomic_load(&x->slack_min_ns);
         int64_t pcrmax = atomic_exchange(&x->pcr_interval_max_ns, 0);
+        /* a datagram received since now was read is stamped later than now: 0, not a negative idle that
+         * prints as -1 ("never received") and has a healthy source restarted */
+        double idle = !last ? -1.0 : last > now ? 0.0 : (now - last) / 1e6;
         double r = dt > 0 ? (rx - prev_rx[i]) * 8.0 / dt : 0;
         double k = dt > 0 ? (kept - prev_kept[i]) * 188.0 * 8.0 / dt : 0;
         prev_rx[i] = rx;
@@ -68,7 +71,7 @@ static int inputs_json(char *buf, int len, input **in, int n, double dt)
                       "\"slack_min_ms\":%.1f,\"pcr_interval_max_ms\":%.1f,\"faster_than_realtime\":%d}",
                       first ? "" : ",", i, x->name, x->addr, r, k, (unsigned long long)atomic_load(&x->cc_errors),
                       (unsigned long long)atomic_load(&x->discont), x->prog.valid ? x->prog.nes : 0,
-                      last ? (now - last) / 1e6 : -1.0, slack == INT64_MAX ? 0.0 : slack / 1e6, pcrmax / 1e6,
+                      idle, slack == INT64_MAX ? 0.0 : slack / 1e6, pcrmax / 1e6,
                       atomic_load(&x->faster_than_realtime));
         first = 0;
     }
