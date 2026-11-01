@@ -166,6 +166,12 @@ class Recipe:
 def recipe_for(src, opts, ing, work_dir, pl_index=0):
     """Parses a source string into a Recipe (pl_index: file to play for a folder)."""
     r = Recipe()
+    # "url#variant=N": only variant N of an HLS master playlist (ffmpeg's program N), for this source of a
+    # list; the fragment is never sent to the server
+    variant = None
+    m = re.match(r"(https?://[^#]+)#variant=(\d+)$", src)
+    if m:
+        src, variant = m.group(1), int(m.group(2))
     ext_in = list(opts.get("ffmpeg_input", []))
     readrate = opts.get("readrate", "auto")
     loop = bool(opts.get("loop", True))
@@ -303,6 +309,8 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
         # the input options of the first input go before its -re: keep them in front
 
     r.inputs = ext_in + r.inputs
+    if variant is not None:
+        r.maps = [f"0:p:{variant}:v:0", f"0:p:{variant}:a:0?"]
     if opts.get("encode_on"):
         r.encode = True
     return r

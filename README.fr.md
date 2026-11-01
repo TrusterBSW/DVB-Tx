@@ -443,6 +443,12 @@ le tolèrent, comme au zapping ; sinon le fournisseur refuse l'essai (rien ne ch
 l'autre (quelques secondes de secours), et `preferred_retry_s = 0` supprime ces essais.
 En ligne de commande : `dvbtx channel source "France 24" URL1 URL2 URL3` ; sur la page web, une
 source par ligne. La page et `dvbtx channel list` montrent la source utilisée (`source 2/3`).
+Une playlist HLS maîtresse propose plusieurs qualités et ffmpeg prend la première listée :
+`URL#variant=N` ne lit que sa variante N (0 = la première, numérotées comme par
+`ffprobe -show_programs`), pour cette source seulement : une liste peut ainsi se replier sur une
+qualité moindre du même flux,
+`source = ["https://hote/live.m3u8#variant=3", "https://hote/live.m3u8#variant=0"]`. Le fragment
+n'est pas envoyé au serveur.
 
 **Cache** : `buffer_ms` est le retard accepté entre l'arrivée d'une source et son émission. Plus
 grand, un flux irrégulier passe sans pertes ni bascule sur le secours, au prix d'un retard plus

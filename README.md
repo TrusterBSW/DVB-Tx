@@ -209,6 +209,11 @@ to its backup `unstable_switches` times (3) within `unstable_window_s` (10 min),
 up to 1 h), forgiven once it has held 30 min. None works: the general `backup`. A failed source is
 stopped before the next one starts (IPTV accounts limited to one connection).
 `dvbtx channel source 3 URL1 URL2 URL3`, or one source per line on the web page.
+An HLS master playlist offers several qualities and ffmpeg takes the first one listed: `URL#variant=N`
+plays only its variant N (0 = the first, as `ffprobe -show_programs` numbers them), for this source
+alone, so that a list can fall back to a lower quality of the same stream:
+`source = ["https://host/live.m3u8#variant=3", "https://host/live.m3u8#variant=0"]`. The fragment
+is not sent to the server.
 
 **Cache**: `buffer_ms`, the delay accepted between the arrival of a source and its transmission:
 larger, an irregular stream goes through without losses or switch to the backup, the channel being
