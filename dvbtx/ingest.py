@@ -9,6 +9,7 @@ Source syntax (service 'source' / 'backup'):
   m3u:/path/list.m3u#Channel name     entry of an M3U playlist (by name, tvg-name, tvg-id or #index)
   twitch://channel                    via streamlink (or yt-dlp)
   ytdlp:https://...                   anything yt-dlp can read (YouTube live, ...)
+  streamlink:URL[#quality=720p]       HLS through streamlink (rides the discontinuities: ads, next episode)
   htsp://user:pass@host:9982/Channel  tvheadend channel (through its HTTP streaming port)
   rtmp://host/app/key                 RTMP pull; rtmp://0.0.0.0:1935/live/key?listen to receive (OBS)
   rtsp://, srt://, udp://, rtp://     network streams (udp+direct:// skips ffmpeg)
@@ -163,15 +164,34 @@ class Recipe:
         self.mode = None           # {"kind": copy | audio | cpu | gpu, "codec", "device"}
 
 
+def hls_via_streamlink(src, opts, ing, forced=False):
+    """an HLS URL read through streamlink rather than ffmpeg's HLS demuxer, which stalls at the
+    discontinuities (ads, next episode) and falls behind short live playlists. hls = "auto": when
+    streamlink is installed and the service asks nothing ffmpeg-specific of its input; "ffmpeg"; "streamlink"."""
+    mode = str(opts.get("hls", "auto")).lower()
+    if "m3u8" not in src.lower() or (mode == "ffmpeg" and not forced):
+        return False
+    have = bool(shutil.which(ing.get("streamlink", "streamlink")))
+    if mode == "streamlink" or forced:
+        if not have:
+            raise ValueError(f"{src}: streamlink not found")
+        return True
+    return have and not opts.get("ffmpeg_input") and not any(":p:" in str(m) for m in opts.get("map") or [])
+
+
 def recipe_for(src, opts, ing, work_dir, pl_index=0):
     """Parses a source string into a Recipe (pl_index: file to play for a folder)."""
     r = Recipe()
-    # "url#variant=N": only variant N of an HLS master playlist (ffmpeg's program N), for this source of a
-    # list; the fragment is never sent to the server
-    variant = None
-    m = re.match(r"(https?://[^#]+)#variant=(\d+)$", src)
+    # "url#variant=N": only variant N of an HLS master playlist (ffmpeg's program N); "url#quality=Q": the
+    # quality streamlink names Q (720p, 3300k, best...); for this source of a list, never sent to the server
+    variant = quality = None
+    m = re.match(r"(https?://[^#]+)#(variant|quality)=([\w,+-]+)$", src)
     if m:
-        src, variant = m.group(1), int(m.group(2))
+        src = m.group(1)
+        if m.group(2) == "variant" and m.group(3).isdigit():
+            variant = int(m.group(3))
+        elif m.group(2) == "quality":
+            quality = m.group(3)
     ext_in = list(opts.get("ffmpeg_input", []))
     readrate = opts.get("readrate", "auto")
     loop = bool(opts.get("loop", True))
@@ -204,6 +224,15 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
         else:
             urls = resolve_ytdlp(ing["ytdlp"], f"https://www.twitch.tv/{chan}", "best")
             r.inputs = http_input(urls[0])
+    elif src.startswith("streamlink:"):
+        # streamlink fetches the HLS segments and hands them on as they are: at a discontinuity (an ad, the
+        # next episode) ffmpeg's MPEG-TS demuxer rebases the timestamps, its HLS demuxer stalls instead
+        url, _, frag = src[11:].partition("#")
+        quality = dict(urllib.parse.parse_qsl(frag)).get("quality", "best")
+        if not shutil.which(ing["streamlink"]):
+            raise ValueError(f"{src}: streamlink not found")
+        r.producer = [ing["streamlink"], "--stdout", "--loglevel", "warning", url, quality]
+        r.inputs = ["-f", "mpegts", "-i", "pipe:0"]
     elif src.startswith("ytdlp:"):
         urls = resolve_ytdlp(ing["ytdlp"], src[6:], opts.get(
             "ytdlp_format", "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/b[vcodec^=avc1]/bv*[height<=1080]+ba/b"))
@@ -222,7 +251,11 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
     elif src.startswith("htsp://") or src.startswith("tvh://"):
         r.inputs = http_input(htsp_to_http(src.replace("tvh://", "htsp://", 1)))
     elif re.match(r"https?://", src):
-        r.inputs = http_input(src)
+        if variant is None and hls_via_streamlink(src, opts, ing, quality is not None):
+            r.producer = [ing["streamlink"], "--stdout", "--loglevel", "warning", "hls://" + src, quality or "best"]
+            r.inputs = ["-f", "mpegts", "-i", "pipe:0"]
+        else:
+            r.inputs = http_input(src)
         r.probe = [src]
     elif src.startswith("rtmp://") or src.startswith("rtmps://"):
         path, q = _query(src)

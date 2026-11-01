@@ -49,6 +49,7 @@ if command -v dpkg-shlibdeps >/dev/null; then
     rm -rf "$tmp"
 fi
 [ -n "$REC" ] || REC="libhackrf0"
+REC="$REC, streamlink"      # HLS sources: rides the discontinuities that stall ffmpeg (see the hls option)
 
 install -m 755 packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm "$ROOT/DEBIAN/"
 install -m 644 packaging/debian/conffiles "$ROOT/DEBIAN/"

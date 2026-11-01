@@ -174,6 +174,7 @@ sources), `ts-output.toml` (sans radio : le TS part en UDP vers un modulateur ex
 | `http(s)://...`, `...m3u8` | flux HTTP ou HLS (reconnexion automatique) |
 | `m3u:/liste.m3u#Nom` | entrée d'une playlist M3U (par nom, tvg-name, tvg-id ou `#index`) ; URL ou fichier |
 | `twitch://chaine` | Twitch via streamlink (ou yt-dlp) |
+| `streamlink:URL` | tout ce que streamlink sait lire (Dailymotion, YouTube…) ; `#quality=720p` choisit la qualité |
 | `ytdlp:https://...` | tout ce que yt-dlp sait lire (YouTube : vidéo et audio séparés, H.264/AAC choisis par défaut) |
 | `htsp://user:mdp@hote:9982/Chaine` | chaîne tvheadend (par nom ou numéro), via son port de streaming HTTP |
 | `rtmp://hote/app/cle` ; `rtmp://0.0.0.0:1935/live/cle?listen` | RTMP en lecture ; ou en écoute pour recevoir OBS |
@@ -192,6 +193,16 @@ laissée par les autres chaînes) ; les autres sont copiées telles quelles. `en
 l'encodage (voir `[defaults.encode]`). Avant de copier un fichier, un flux HTTP/HLS ou une vidéo
 yt-dlp, ffprobe vérifie les codecs : une vidéo VP9/AV1 est encodée en H.264, un audio Opus/Vorbis
 en AAC (seule la partie incompatible est réencodée ; `codec_check = false` pour ne jamais le faire). `ffmpeg_input`/`ffmpeg_output` ajoutent des options ffmpeg.
+
+Les URL HLS passent par [streamlink](https://streamlink.github.io/) quand il est installé
+(`hls = "auto"`, par chaîne ou dans `[defaults]`) : il télécharge les segments et les transmet tels
+quels, et le lecteur MPEG-TS de ffmpeg recale les horodatages à chaque rupture. Le lecteur HLS de
+ffmpeg, lui, cale à ces ruptures (une pub, l'épisode suivant sur Pluto, Samsung TV Plus…) et prend
+du retard sur les playlists courtes en direct ; la chaîne retombe alors sur son secours : mesuré
+4 s perdues toutes les 10 s sur une chaîne Pluto, aucune en 8 min via streamlink. Une source qui
+demande ce que seul ffmpeg sait faire (`#variant=N`, un `map` sur des programmes, `ffmpeg_input`)
+reste sur ffmpeg ; `hls = "ffmpeg"` ou `"streamlink"` impose l'un des deux. `URL#quality=720p` (ou
+`3300k`, `best`, `1000k,worst`) choisit la qualité de streamlink pour une source, `best` par défaut.
 Essayées sur le banc : fichiers (y compris VP9/Opus réencodés), dossier (fichiers de formats
 différents), HLS, M3U, YouTube via yt-dlp, RTMP en écoute, UDP direct, pipe nommé, stdin, `exec:`
 et mire. Pas encore essayées (faute de matériel ou de compte) : Twitch, tvheadend, RTSP, SRT, v4l2

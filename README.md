@@ -91,13 +91,23 @@ LO and sample rate, service_id, LCN, PIDs, service type (from the streams). Exam
 ## Sources
 
 `/path/file.mkv` (looped) · `dir:/folder` (playlist, one file after the other) · `http(s)://`, HLS ·
-`m3u:list.m3u#Name` · `twitch://channel` · `ytdlp:URL` · `htsp://user:pass@host:9982/Channel`
+`m3u:list.m3u#Name` · `twitch://channel` · `ytdlp:URL` · `streamlink:URL` · `htsp://user:pass@host:9982/Channel`
 (tvheadend) · `rtmp://...` and `rtmp://0.0.0.0:1935/live/key?listen` (receive OBS) · `rtsp://`,
 `srt://`, `udp://`, `rtp://` · `udp+direct://239.0.0.1:2000` (read by the engine, no ffmpeg) ·
 `v4l2:/dev/video0?size=1280x720&fps=30&audio=pulse:default` (webcam, HDMI capture) ·
 `screen::0.0?size=1920x1080` · `lavfi:testsrc2` · `pipe:/path/fifo` · `stdin:` · `exec:command`.
 Capture sources are encoded (`video_bitrate = "auto"` takes the share of the multiplex left by the
 others), the others copied; `encode = { ... }` forces encoding (libx264/x265, VAAPI, NVENC, MPEG-2).
+
+HLS URLs are read through [streamlink](https://streamlink.github.io/) when it is installed (`hls = "auto"`,
+per channel or in `[defaults]`): it downloads the segments and hands them on as they are, and ffmpeg's
+MPEG-TS reader rebases the timestamps at each discontinuity. ffmpeg's own HLS reader stalls there (an ad,
+the next episode on Pluto, Samsung TV Plus...) and falls behind short live playlists, the channel then
+falling back to its backup: seen 4 s lost every 10 s on a Pluto channel, none in 8 min through
+streamlink. A source asking something only ffmpeg does (`#variant=N`, a `map` on programs,
+`ffmpeg_input`) stays on ffmpeg; `hls = "ffmpeg"` or `"streamlink"` forces one. `URL#quality=720p`
+(or `3300k`, `best`, `1000k,worst`) picks streamlink's quality for one source, `best` by default;
+`streamlink:URL` reads anything streamlink has a plugin for (Dailymotion, YouTube...).
 
 ## Channels while on air: `dvbtx channel`
 

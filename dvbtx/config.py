@@ -37,7 +37,7 @@ DEFAULTS = {
         "backup": "", "buffer_ms": "auto", "switch_timeout_ms": 3000, "return_ms": 10000, "max_late_ms": 600,
         "early_ms": 100, "pcr_max_ms": 35, "priority": 5, "pmt_period_ms": 100, "mux_delay": 0.7, "ring_pkts": "auto",
         "bitrate_weight": 1, "max_bitrate": "",
-        "readrate": "auto", "map": ["0:v:0?", "0:a?"], "loop": True,
+        "readrate": "auto", "map": ["0:v:0?", "0:a?"], "loop": True, "hls": "auto",
         "failover_s": 10, "source_start_s": 30, "preferred_retry_s": 300, "unstable_switches": 3,
         "unstable_window_s": 600,
         "copy_audio_codecs": ["aac", "mp2", "mp3", "ac3", "eac3", "aac_latm"],
@@ -533,6 +533,8 @@ def build(cfg):
             pid_base = int(s.get("pid_base", 0x100 + si * 0x20))
             if not 0x20 <= pid_base <= 0x1FC0:
                 raise ConfigError(f"service {name}: pid_base out of range")
+            if str(opts.get("hls", "auto")).lower() not in ("auto", "ffmpeg", "streamlink"):
+                raise ConfigError(f"service {name}: hls = \"auto\", \"ffmpeg\" or \"streamlink\"")
             backup = opts.get("backup")
             backup = "" if backup is False else str(backup or "")
             svc = Service(len(services), car, si, name, str(s.get("provider", net["provider"])), sid, lcn,
@@ -582,7 +584,7 @@ def source_list(v, what="service"):
 def segmented_live(src):
     """live source delivered in segments (HLS: YouTube, Twitch, *.m3u8): at the live edge of the
     playlist, it arrives in bursts, each segment when it is published"""
-    return bool(re.match(r"(twitch://|ytdlp:)", src) or (re.match(r"https?://", src) and "m3u8" in src)
+    return bool(re.match(r"(twitch://|ytdlp:|streamlink:)", src) or (re.match(r"https?://", src) and "m3u8" in src)
                 or re.match(r"https?://([^/]*\.)?(youtube\.com|youtu\.be|twitch\.tv)/", src))
 
 
