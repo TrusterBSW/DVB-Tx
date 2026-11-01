@@ -543,6 +543,7 @@ class Supervisor:
         self.reply_cv = threading.Condition()
         self.fo = {}                # service_id -> state of the choice among its sources (see _failover)
         self.fo_wait = {}           # service_id -> {source k: [retry interval, not before]} of sources left
+        self.src_swaps = {}         # service_id -> when its source was last started again at an HLS discontinuity
 
         # the configuration file as running: edits from the web page are pending until applied
         self.applied_doc = self._file_doc()
@@ -681,13 +682,24 @@ class Supervisor:
             return
         now = time.monotonic()
         for p in list(self.ingest):
+            svc = p.inp.service
+            if (p.state == "running" and p.src_disc > p.started_at + 2 and p.inp.role == "primary"
+                    and svc is not None and svc.input is p.inp and now - self.src_swaps.get(svc.sid, -1e9) > 20):
+                # streamlink at a discontinuity of an HLS stream with its sound apart (Pluto TV: an ad, on new
+                # PIDs): its muxer often stops there for minutes. Started again beside it from the live
+                # edge, already past it, and swapped in without a cut
+                self.src_swaps[svc.sid] = now
+                p.src_disc = 0.0
+                log.info("input %s: HLS discontinuity, its source started again from the live edge", p.inp.name)
+                self._fo_drop(svc.sid, forget=False)
+                self._use_source(svc, svc.active, edge=1)
+                continue
             if p.state != "running" or now - p.started_at < 30:
                 continue
             recent = sum(1 for t in p.disc_times if now - t <= 30)
             if recent < n:
                 continue
             p.disc_times.clear()
-            svc = p.inp.service
             log.warning("input %s: %d timestamp discontinuities in 30 s, starting its source again", p.inp.name, recent)
             if p.inp.role == "primary" and svc is not None and svc.input is p.inp:
                 self._fo_drop(svc.sid, forget=False)
@@ -1428,13 +1440,15 @@ class Supervisor:
             log.error("input %s: %s", inp.name, r.get("error"))
         return r["ok"]
 
-    def _use_source(self, svc, k, inp=None, proc=None, old_down=False):
+    def _use_source(self, svc, k, inp=None, proc=None, old_down=False, edge=None):
         """svc plays its source k from now on: started if not yet (inp/proc: already running), swapped in
         without a cut, the previous one stopped once the engine has let it go (at once if it is down:
         it may hold what the next one needs, a UDP port, the only connection an IPTV account allows)"""
         if inp is None:
             inp = cfgmod.primary_input(self._new_input_index(), svc, int(self.cfg["ingest"]["base_port"]),
                                        src=(svc.sources or [svc.source])[k])
+            if edge:
+                inp.options = dict(inp.options, hls_live_edge=edge)
             if not self._engine_input_add(inp):
                 self.fo[svc.sid] = {"since": time.monotonic(), "next_probe": 0, "probe_k": 0}
                 return

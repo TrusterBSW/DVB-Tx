@@ -179,6 +179,13 @@ def hls_via_streamlink(src, opts, ing, forced=False):
     return have and not opts.get("ffmpeg_input") and not any(":p:" in str(m) for m in opts.get("map") or [])
 
 
+def streamlink_argv(ing, opts, url, quality):
+    """streamlink writing the stream on its stdout; hls_live_edge (set by the supervisor on a source
+    started again at a discontinuity): from that many segments before the live edge (its own default: 3)"""
+    edge = ["--hls-live-edge", str(int(opts["hls_live_edge"]))] if opts.get("hls_live_edge") else []
+    return [ing["streamlink"], "--stdout", "--loglevel", "warning", *edge, url, quality]
+
+
 def recipe_for(src, opts, ing, work_dir, pl_index=0):
     """Parses a source string into a Recipe (pl_index: file to play for a folder)."""
     r = Recipe()
@@ -231,7 +238,7 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
         quality = dict(urllib.parse.parse_qsl(frag)).get("quality", "best")
         if not shutil.which(ing["streamlink"]):
             raise ValueError(f"{src}: streamlink not found")
-        r.producer = [ing["streamlink"], "--stdout", "--loglevel", "warning", url, quality]
+        r.producer = streamlink_argv(ing, opts, url, quality)
         r.inputs = ["-f", "mpegts", "-i", "pipe:0"]
     elif src.startswith("ytdlp:"):
         urls = resolve_ytdlp(ing["ytdlp"], src[6:], opts.get(
@@ -252,7 +259,7 @@ def recipe_for(src, opts, ing, work_dir, pl_index=0):
         r.inputs = http_input(htsp_to_http(src.replace("tvh://", "htsp://", 1)))
     elif re.match(r"https?://", src):
         if variant is None and hls_via_streamlink(src, opts, ing, quality is not None):
-            r.producer = [ing["streamlink"], "--stdout", "--loglevel", "warning", "hls://" + src, quality or "best"]
+            r.producer = streamlink_argv(ing, opts, "hls://" + src, quality or "best")
             r.inputs = ["-f", "mpegts", "-i", "pipe:0"]
         else:
             r.inputs = http_input(src)
@@ -537,6 +544,7 @@ class IngestProc:
         self.playlist = None
         self.disc_times = collections.deque(maxlen=100)   # "timestamp discontinuity" lines of ffmpeg
         self.new_video = 0.0        # when ffmpeg last reported a video stream appearing mid-way (new PIDs)
+        self.src_disc = 0.0         # when streamlink last reported an HLS discontinuity (an ad, the next episode)
         self.new_video_restart = 0.0
         self.gpu_way = None         # GPU used by the running ffmpeg (gpu.Way), None: CPU or copy
         self.gpu_fails = {}         # GPU way -> quick exits with it (2: not used again for this input)
@@ -554,6 +562,8 @@ class IngestProc:
                     self.disc_times.append(time.monotonic())
                 elif "New video stream with index" in line:
                     self.new_video = time.monotonic()
+                elif tag and "stream discontinuity" in line:     # streamlink: its muxer may stop there
+                    self.src_disc = time.monotonic()
         stream.close()
 
     def _progress(self, stream):
