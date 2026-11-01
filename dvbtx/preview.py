@@ -126,7 +126,7 @@ class Previews:
 
     @property
     def every(self):
-        return max(2, int(self.sup.cfg["web"].get("preview_thumb_every_s", 30)))
+        return max(2, int(self.sup.cfg["web"].get("preview_thumb_every_s", 60)))
 
     def _shot(self, car, t):
         """one ffmpeg reading the multiplex until it has one picture of each channel"""

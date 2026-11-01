@@ -23,7 +23,7 @@ DEFAULTS = {
     "epg": {"dir": "", "urls": [], "url_refresh_s": 3600, "days": 7, "pf_cycle_ms": 1000,
             "schedule_cycle_ms": 10000, "schedule": True},
     "web": {"listen": "127.0.0.1:8080", "enabled": True, "token": "", "allow_exec_sources": False,
-            "preview_max_live": 4, "preview_thumbnails": True, "preview_thumb_every_s": 30},
+            "preview_max_live": 4, "preview_thumbnails": True, "preview_thumb_every_s": 60},
     "monitoring": {"tsduck": "auto", "interval": 5, "export": [], "stats_export": [], "tsp": "tsp"},
     "alerts": {"margin_min_ms": 150, "overload_percent": 98.0, "input_down_s": 10, "late_ms": 300, "hold_s": 4,
                "webhook": "", "command": "", "repeat_s": 300},
