@@ -1342,7 +1342,7 @@ class Supervisor:
         now = time.monotonic()
         for svc in list(self.plan.services):
             n = len(svc.sources or ())
-            if n < 2 or svc.input is None:
+            if n < 2 or svc.input is None or svc.sid in self.standby:    # a standby coming: it decides
                 continue
             o = svc.opts
             fail_ms = float(o.get("failover_s", 10)) * 1000
@@ -1446,6 +1446,7 @@ class Supervisor:
     STANDBY_S = 60      # a standby source kept that long after the discontinuity, unused if nothing stalled
     STANDBY_STALL_MS = 2000
     STANDBY_HOLD_S = 25  # new PIDs in the source in use within that time: for the standby, not a restart
+    STANDBY_WAIT_S = 25  # the source in use stalled: the standby waited for that long, then the next source
 
     def _standby_start(self, svc):
         inp = cfgmod.primary_input(self._new_input_index(), svc, int(self.cfg["ingest"]["base_port"]),
@@ -1496,6 +1497,9 @@ class Supervisor:
                              f"stalled at the discontinuity ({max(idle, 0) / 1000:.1f} s)")
                     del self.standby[sid]
                     self._use_source(svc, sb["k"], sb["inp"], sb["proc"], old_down=True)
+                    continue
+                if not ready and (idle < 0 or idle > self.STANDBY_STALL_MS) and now - sb["started"] > self.STANDBY_WAIT_S:
+                    self._standby_drop(sid)          # stalled, standby not coming: the other sources then
                     continue
             if now - sb["started"] > self.STANDBY_S:
                 self._standby_drop(sid)
