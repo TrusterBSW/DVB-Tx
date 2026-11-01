@@ -26,7 +26,7 @@ from .ingest import _die_with_parent
 log = logging.getLogger("dvbtx.preview")
 
 THUMB_IDLE_S = 60           # thumbnails of a multiplex kept up to date that long after the last request
-THUMB_SHOT_S = 20           # a shot still running after that (a channel without a key frame): stopped
+THUMB_SHOT_S = 30           # a shot still running after that: stopped (seen: 21 s for a key frame of a FAST channel)
 VIDEO_STREAM_TYPES = {0x01, 0x02, 0x10, 0x1B, 0x24}
 # ffmpeg stops probing once every stream is described; a source whose key frames (with the picture
 # size) come seconds apart needs that long: give up sooner and ffmpeg ends without output
