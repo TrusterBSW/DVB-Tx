@@ -276,9 +276,14 @@ for two adjacent T2 carriers. Engine CPU (whole process), T2 32K 256-QAM 5/6: 0.
 1.16 with the filter bank at 16.33 MS/s; two T2 and one DVB-C 256-QAM carrier: 1.06 cores at 27.43 MS/s against
 2.68 at 24.18 MS/s. Like DVB-T, the OFDM side lobes are not filtered (-49 dB at the band edge): an adjacent DVB-C
 carrier on the same radio measures 59 dB of MER instead of 85 (far above what a DAC and its analog stage give).
-Over the air (HackRF to a Sony CXD2837ER tuner, 32K 256-QAM 5/6): C/N 30.1-30.6 dB, 0-1 TEI per 15 s, 50.077
-Mbit/s, the same as the filter bank at 18.67 MS/s (the HackRF analog noise is the limit); on an i5-9500 the engine
-takes 0.31 core against 0.46 with the bank.
+Over the air (32K 256-QAM 5/6, 50.077 Mbit/s, to an Astrometa key: RTL2832P USB bridge, Sony CXD2837ER
+demodulator): C/N 30.1-30.6 dB from a HackRF, 40 dB from a B210, no uncorrectable FEC block, the same with the
+filter bank; on an i5-9500 the engine takes 0.31 core against 0.46 with the bank. The few bad packets this key
+delivers (5 to 15 a minute: inserted garbage packets, half of them flagged TEI, and short bursts of lost packets)
+come from the key, not from the signal: the sent and received streams aligned packet by packet show no bit error,
+their number does not change with the radio, the number of carriers, the LO position, the synthesis, the
+modulation, the code rate or the level, and the key shows the same on a commercial cable network (DVB-C, DVB-T,
+DVB-T2, DOCSIS).
 
 ## License
 

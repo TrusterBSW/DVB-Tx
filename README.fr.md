@@ -570,10 +570,15 @@ radio, partagée par toutes les porteuses T2 de même FFT, intervalle de garde e
 
 Comme pour le DVB-T, les lobes OFDM ne sont pas filtrés (−49 dB en bord de bande) : un DVB-C voisin
 sur la même radio mesure 59 dB de MER au lieu de 85, bien au-delà de ce que donnent un convertisseur
-et son étage analogique. À l'antenne (HackRF vers un tuner Sony CXD2837ER, 32K 256-QAM 5/6) : C/N
-30,1 à 30,6 dB, 0 à 1 TEI par 15 s, 50,077 Mbit/s, comme le banc de filtres à 18,67 MS/s (c'est le
-bruit analogique du HackRF qui limite) ; sur un i5-9500 le moteur prend 0,31 cœur contre 0,46 avec
-le banc.
+et son étage analogique. À l'antenne (32K 256-QAM 5/6, 50,077 Mbit/s, vers une clé Astrometa : pont
+USB RTL2832P, démodulateur Sony CXD2837ER) : C/N 30,1 à 30,6 dB depuis un HackRF, 40 dB depuis un
+B210, aucun bloc incorrigible, pareil avec le banc de filtres ; sur un i5-9500 le moteur prend 0,31
+cœur contre 0,46 avec le banc. Les quelques paquets défectueux que sort cette clé (5 à 15 par minute :
+paquets parasites insérés, dont la moitié marqués TEI, et courtes rafales de paquets perdus) viennent
+de la clé, pas du signal : les flux émis et reçus alignés paquet par paquet ne montrent aucune erreur
+de bit, leur nombre ne change ni avec la radio, ni avec le nombre de porteuses, la position de
+l'oscillateur, la synthèse, la modulation, le rendement ou le niveau, et la clé fait de même sur un
+réseau câblé commercial (DVB-C, DVB-T, DVB-T2, DOCSIS).
 
 ## Plusieurs porteuses, plusieurs radios
 
