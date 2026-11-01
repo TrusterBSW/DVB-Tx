@@ -325,8 +325,8 @@ confondus ; les CPU des radios, multiplex et sources sont, eux, en % d'un cœur 
   des processus et occupation du GPU (moteurs vidéo, lus dans `/proc/PID/fdinfo`) ;
 - **aperçu des chaînes** : vignettes affichées par défaut (`web.preview_thumbnails`), l'œil de la
   colonne « Aperçu » les masque ou les réaffiche (retenu par le navigateur) ; une image par chaîne
-  toutes les 4 s, prise sur les seules images clés (quelques % d'un cœur par multiplex, seulement
-  tant qu'une page les affiche) ; un clic sur l'image ouvre la chaîne en direct dans le navigateur
+  toutes les 30 s (`web.preview_thumb_every_s`), une image clé lue en quelques secondes puis
+  ffmpeg s'arrête (seulement tant qu'une page les affiche) ; un clic sur l'image ouvre la chaîne en direct dans le navigateur
   (l'image telle qu'émise, H.264 copié ; seuls le conteneur, TS → MP4, et le son, MP2/AC-3 → AAC,
   changent : les navigateurs ne lisent ni l'un ni l'autre ; « réencoder » en 360p si besoin ;
   `#live=<sid>` dans l'adresse ouvre directement une chaîne) ; lien **TS** de chaque multiplex :

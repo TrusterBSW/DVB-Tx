@@ -3,10 +3,10 @@
 Both read a copy of what goes on air, asked to the engine for the time of the preview ("monitor add
 carrier=N addr=udp://127.0.0.1:PORT"), so they show what the TVs receive (backup clip included).
 
-Thumbnails: one ffmpeg per multiplex decodes only the key frames (-skip_frame nokey: a few per
-second for all its channels; on the GPU when the transcodes have one) and writes a small JPEG per
-channel every few seconds. It starts with
-the first thumbnail asked and stops THUMB_IDLE_S after the last one.
+Thumbnails: every web.preview_thumb_every_s, while the page asks for them, one ffmpeg per multiplex
+reads its copy just long enough to write one small JPEG per channel (-frames:v 1 of the first key frame,
+-skip_frame nokey, decoded on the GPU when the transcodes have one) and stops: reading the whole
+multiplex is what costs, not the decoding. They stop THUMB_IDLE_S after the last request.
 
 Live: one ffmpeg per viewer of a channel writes fragmented MP4 straight into the HTTP answer, which
 a <video> plays: the video copied when the browser can play it (H.264), else re-encoded small; the
@@ -25,8 +25,8 @@ from .ingest import _die_with_parent
 
 log = logging.getLogger("dvbtx.preview")
 
-THUMB_IDLE_S = 30           # thumbnails of a multiplex kept up to date that long after the last request
-THUMB_EVERY_S = 4           # a new picture per channel every ...
+THUMB_IDLE_S = 60           # thumbnails of a multiplex kept up to date that long after the last request
+THUMB_SHOT_S = 20           # a shot still running after that (a channel without a key frame): stopped
 VIDEO_STREAM_TYPES = {0x01, 0x02, 0x10, 0x1B, 0x24}
 # ffmpeg stops probing once every stream is described; a source whose key frames (with the picture
 # size) come seconds apart needs that long: give up sooner and ffmpeg ends without output
@@ -112,37 +112,40 @@ class Previews:
             return None
         with self.lock:
             t = self.thumbs.get(car.index)
-            sids = self._video_sids(car)
-            if t and (t["proc"].poll() is not None or t["sids"] != sids):
-                self._stop_thumbs(car.index)           # died, or the channels changed
-                t = None
             if t is None:
-                t = self._start_thumbs(car, sids)
-            if t:
-                t["asked"] = time.monotonic()
+                t = self.thumbs[car.index] = {"proc": None, "port": None, "next": 0, "carrier": car.index}
+                log.info("thumbnails of %s: started, a picture per channel every %d s", car.name, self.every)
+            t["asked"] = time.monotonic()
+            if t["proc"] is None and t["next"] == 0:
+                self._shot(car, t)                      # the first picture at once
         try:
             with open(os.path.join(self.dir, f"thumb-{sid}.jpg"), "rb") as f:
                 return f.read()
         except OSError:
             return None
 
-    def _start_thumbs(self, car, sids):
+    @property
+    def every(self):
+        return max(2, int(self.sup.cfg["web"].get("preview_thumb_every_s", 30)))
+
+    def _shot(self, car, t):
+        """one ffmpeg reading the multiplex until it has one picture of each channel"""
+        sids = self._video_sids(car)
+        t["next"] = time.monotonic() + self.every
         if not sids:
-            return None
+            return
         port = _free_port()
         try:
             self._monitor(True, car.index, port)
         except RuntimeError as e:
             log.warning("thumbnails of %s: %s", car.name, e)
-            return None
+            return
         hw, env = _hw_decode()
         cmd = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-skip_frame", "nokey",
                "-threads", "1"] + hw + ["-analyzeduration", PROBE_US, "-probesize", PROBE_BYTES, "-i", _udp(port)]
-        # the first key frame at once, then one every THUMB_EVERY_S (fps=1/N would wait for its first window)
-        pick = f"select=isnan(prev_selected_t)+gte(t-prev_selected_t\\,{THUMB_EVERY_S}),scale=320:-2"   # "\\,": a comma inside the expression
         for sid in sids:
-            cmd += ["-map", f"0:p:{sid}:v:0", "-an", "-vf", pick, "-fps_mode", "passthrough", "-q:v", "6",
-                    "-update", "1", "-atomic_writing", "1", "-f", "image2", os.path.join(self.dir, f"thumb-{sid}.jpg")]
+            cmd += ["-map", f"0:p:{sid}:v:0", "-an", "-vf", "scale=320:-2", "-frames:v", "1", "-q:v", "6",
+                    "-atomic_writing", "1", "-f", "image2", os.path.join(self.dir, f"thumb-{sid}.jpg")]
         try:
             # not _die_with_parent: its signal comes when the *thread* that started the child ends, here
             # the web request; if dvbtx dies, the engine copy stops and ffmpeg ends on its UDP timeout
@@ -151,33 +154,46 @@ class Previews:
         except OSError as e:
             self._monitor(False, car.index, port)
             log.warning("thumbnails of %s: %s", car.name, e)
-            return None
+            return
         threading.Thread(target=self._drain, args=(p, f"thumbnails {car.name}"), daemon=True).start()
-        t = {"proc": p, "port": port, "sids": sids, "asked": time.monotonic(), "carrier": car.index}
-        self.thumbs[car.index] = t
-        log.info("thumbnails of %s: started (%d channels, key frames decoded by %s)", car.name, len(sids),
-                 hw[hw.index("-hwaccel") + 1] if "-hwaccel" in hw else "the CPU")
-        return t
+        t.update(proc=p, port=port, started=time.monotonic())
+
+    def _end_shot(self, t):
+        p = t.get("proc")
+        if p is None:
+            return
+        if p.poll() is None:
+            _stop(p)
+        elif p.returncode:
+            log.warning("thumbnails of multiplex %d: ffmpeg stopped (%s)", t["carrier"],
+                        " / ".join(getattr(p, "tail", [])) or f"exit {p.returncode}")
+        self._monitor(False, t["carrier"], t["port"])
+        t["proc"] = t["port"] = None
 
     def _stop_thumbs(self, ci):
         t = self.thumbs.pop(ci, None)
-        if not t:
-            return
-        _stop(t["proc"])
-        self._monitor(False, ci, t["port"])
+        if t:
+            self._end_shot(t)
 
     def poll(self):
-        """main loop, every second: thumbnails nobody asked for lately are stopped"""
+        """main loop, every second: a shot that ended frees its copy, the next one starts when due;
+        thumbnails nobody asked for lately are stopped"""
+        now = time.monotonic()
         with self.lock:
             for ci, t in list(self.thumbs.items()):
-                died = t["proc"].poll() is not None
-                if time.monotonic() - t["asked"] > THUMB_IDLE_S or died:
+                if now - t["asked"] > THUMB_IDLE_S:
                     self._stop_thumbs(ci)
-                    if died:
-                        log.warning("thumbnails of multiplex %d: ffmpeg stopped (%s)", ci,
-                                    " / ".join(getattr(t["proc"], "tail", [])) or f"exit {t['proc'].returncode}")
+                    log.info("thumbnails of multiplex %d: stopped (page closed)", ci)
+                    continue
+                p = t.get("proc")
+                if p is not None and (p.poll() is not None or now - t["started"] > THUMB_SHOT_S):
+                    self._end_shot(t)
+                if t.get("proc") is None and now >= t["next"]:
+                    car = next((c for c in self.sup.plan.carriers if c.index == ci), None)
+                    if car is None:
+                        self.thumbs.pop(ci, None)
                     else:
-                        log.info("thumbnails of multiplex %d: stopped (page closed)", ci)
+                        self._shot(car, t)
 
     def stop(self):
         with self.lock:

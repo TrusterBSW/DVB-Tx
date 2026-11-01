@@ -175,7 +175,8 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
 - what each source does (copy, CPU or GPU transcode and on which card), its frames per second, speed
   against real time, dropped/duplicated frames, CPU and GPU engine load;
 - channel previews: thumbnails shown by default (`web.preview_thumbnails`; the eye of the preview
-  column hides them), key frames only, one picture every 4 s while a page shows them; a live view
+  column hides them), one key frame per channel every 30 s (`web.preview_thumb_every_s`) while a page
+shows them, each shot reading the multiplex only a few seconds; a live view
   in the browser (the picture as on air, H.264 copied; only the container, TS -> MP4, and the sound,
   MP2/AC-3 -> AAC, change; `#live=<sid>` opens one; a click on a channel's picture opens it); and a **TS** link per
   multiplex: the multiplex exactly as on air, every channel (`/api/mux/<n>.ts`, relayed without

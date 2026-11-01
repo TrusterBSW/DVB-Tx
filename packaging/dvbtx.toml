@@ -39,6 +39,8 @@ allow_exec_sources = false              # let the web API / dvbtx channel set ex
 preview_max_live = 4                    # live channel previews at once on the web page (thumbnails: one ffmpeg per multiplex)
 preview_thumbnails = true               # pictures of the channels shown on the page by default (the eye of the
                                         # "Aperçu" column hides them; one ffmpeg per multiplex while the page is open)
+preview_thumb_every_s = 30              # a new picture per channel every ... s: each one reads the multiplex a few
+                                        # seconds, so the CPU it takes is about proportional to 1 / this
 
 [monitoring]
 tsduck = "auto"                         # run "tsp -P analyze" on each multiplex: true, false, auto (if tsp exists)

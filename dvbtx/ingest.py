@@ -536,6 +536,8 @@ class IngestProc:
         self.pl_index = 0
         self.playlist = None
         self.disc_times = collections.deque(maxlen=100)   # "timestamp discontinuity" lines of ffmpeg
+        self.new_video = 0.0        # when ffmpeg last reported a video stream appearing mid-way (new PIDs)
+        self.new_video_restart = 0.0
         self.gpu_way = None         # GPU used by the running ffmpeg (gpu.Way), None: CPU or copy
         self.gpu_fails = {}         # GPU way -> quick exits with it (2: not used again for this input)
         self.mode = None            # what the running ffmpeg does (Recipe.mode)
@@ -550,6 +552,8 @@ class IngestProc:
                 self.lines.append(f"{time.strftime('%H:%M:%S')} {tag}{line}")
                 if "timestamp discontinuity" in line:
                     self.disc_times.append(time.monotonic())
+                elif "New video stream with index" in line:
+                    self.new_video = time.monotonic()
         stream.close()
 
     def _progress(self, stream):
@@ -703,6 +707,15 @@ class IngestProc:
             self._kill(self.proc)          # producer died: restart both
             rc = self.proc.poll()
         if rc is None:
+            # the source moved to new PIDs (an ad inserted with its own, as Google's ad server does): the
+            # streams mapped at the start fall silent until the input times out; started again at once it
+            # maps the new ones (2-3 s instead of ~20). Not twice within 10 s: a source that keeps
+            # announcing streams is left alone.
+            if self.new_video > self.started_at + 3 and now - self.new_video_restart > 10:
+                self.new_video_restart = now
+                log.info("input %s: its video moved to new PIDs (an ad?), ffmpeg started again", self.inp.name)
+                self.restart()
+                return
             if now - self.started_at > 60:
                 self.backoff = float(self.ing["restart_min_s"])
             self._sample_usage()
