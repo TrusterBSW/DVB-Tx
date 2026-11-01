@@ -543,7 +543,7 @@ class Supervisor:
         self.reply_cv = threading.Condition()
         self.fo = {}                # service_id -> state of the choice among its sources (see _failover)
         self.fo_wait = {}           # service_id -> {source k: [retry interval, not before]} of sources left
-        self.src_swaps = {}         # service_id -> when its source was last started again at an HLS discontinuity
+        self.standby = {}           # service_id -> its source started again at an HLS discontinuity (see _standby)
 
         # the configuration file as running: edits from the web page are pending until applied
         self.applied_doc = self._file_doc()
@@ -684,15 +684,12 @@ class Supervisor:
         for p in list(self.ingest):
             svc = p.inp.service
             if (p.state == "running" and p.src_disc > p.started_at + 2 and p.inp.role == "primary"
-                    and svc is not None and svc.input is p.inp and now - self.src_swaps.get(svc.sid, -1e9) > 20):
+                    and svc is not None and svc.input is p.inp and svc.sid not in self.standby):
                 # streamlink at a discontinuity of an HLS stream with its sound apart (Pluto TV: an ad, on new
-                # PIDs): its muxer often stops there for minutes. Started again beside it from the live
-                # edge, already past it, and swapped in without a cut
-                self.src_swaps[svc.sid] = now
+                # PIDs): its muxer may stop there, for minutes. A second one is started beside it from the
+                # live edge, already past it, and kept ready (see _standby)
                 p.src_disc = 0.0
-                log.info("input %s: HLS discontinuity, its source started again from the live edge", p.inp.name)
-                self._fo_drop(svc.sid, forget=False)
-                self._use_source(svc, svc.active, edge=1)
+                self._standby_start(svc)
                 continue
             if p.state != "running" or now - p.started_at < 30:
                 continue
@@ -818,6 +815,7 @@ class Supervisor:
                 p.poll()
             self.restart_stalled()
             self.restart_discontinuous()
+            self._standby()
             self._failover()
             self._retire()
             for an in self.analyzers:
@@ -830,7 +828,8 @@ class Supervisor:
             if tick % 2 == 0:
                 self.check_alerts()
         log.info("stopping")
-        for p in self.ingest + [r[0] for r in self.retiring] + [f["cand"]["proc"] for f in self.fo.values() if f.get("cand")]:
+        for p in self.ingest + [r[0] for r in self.retiring] + [f["cand"]["proc"] for f in self.fo.values() if f.get("cand")] \
+                + [sb["proc"] for sb in self.standby.values()]:
             p.stop()
         for an in self.analyzers:
             an.stop()
@@ -907,6 +906,7 @@ class Supervisor:
         top = min(1024, gap) if gap > 0 else 1024
         used = {i.index for i in self.plan.inputs} | {p.inp.index for p in self.ingest} \
             | {r[1] for r in self.retiring} | {f["cand"]["inp"].index for f in self.fo.values() if f.get("cand")} \
+            | {sb["inp"].index for sb in self.standby.values()} \
             | {i["index"] for i in (self.stats or {}).get("inputs", [])}
         for _ in range(top):
             i = self.next_input if self.next_input < top else 0
@@ -1089,6 +1089,9 @@ class Supervisor:
         self.analyzers = self._make_analyzers()
         self.next_input = max((i.index for i in new_plan.inputs), default=-1) + 1
         self.fo, self.fo_wait = {}, {}
+        for sb in self.standby.values():
+            sb["proc"].stop()
+        self.standby = {}
         self.si.tick(force=True)
         self.start_engine()
         self.engine_restarts = 0
@@ -1440,15 +1443,64 @@ class Supervisor:
             log.error("input %s: %s", inp.name, r.get("error"))
         return r["ok"]
 
-    def _use_source(self, svc, k, inp=None, proc=None, old_down=False, edge=None):
+    STANDBY_S = 45      # a standby source kept that long after the discontinuity, unused if nothing stalled
+    STANDBY_STALL_MS = 2000
+
+    def _standby_start(self, svc):
+        inp = cfgmod.primary_input(self._new_input_index(), svc, int(self.cfg["ingest"]["base_port"]),
+                                   src=(svc.sources or [svc.source])[svc.active])
+        inp.options = dict(inp.options, hls_live_edge=1)
+        if not self._engine_input_add(inp):
+            return
+        proc = IngestProc(inp, self.plan)
+        proc.poll()
+        self.standby[svc.sid] = {"inp": inp, "proc": proc, "k": svc.active, "old": svc.input,
+                                 "started": time.monotonic()}
+        log.info("input %s: HLS discontinuity, its source started again beside it from the live edge", svc.name)
+
+    def _standby_drop(self, sid):
+        sb = self.standby.pop(sid, None)
+        if sb:
+            self.engine_request(f"input del id={sb['inp'].index}")
+            sb["proc"].stop()
+
+    def _standby(self):
+        """the standby of a channel whose source passed a discontinuity: used as soon as the source in use
+        stalls while it delivers (the engine swaps without a cut, the stall still in the buffer), stopped
+        after STANDBY_S if the source went on (a swap for nothing costs a jump, and the standby needs some
+        15 s to deliver: a second discontinuity meanwhile would leave the channel on its backup)"""
+        if not self.standby:
+            return
+        fresh = self.stats and time.time() - self.stats_at < 5
+        ins = {i["index"]: i for i in self.stats.get("inputs", [])} if fresh else {}
+        now = time.monotonic()
+        by_sid = {s.sid: s for s in self.plan.services}
+        for sid, sb in list(self.standby.items()):
+            sb["proc"].poll()
+            svc = by_sid.get(sid)
+            if svc is None or svc.input is not sb["old"] or svc.active != sb["k"]:
+                self._standby_drop(sid)              # its channel changed source meanwhile
+                continue
+            if fresh:
+                cur, cand = ins.get(svc.input.index), ins.get(sb["inp"].index)
+                ready = cand and cand.get("streams") and 0 <= cand.get("idle_ms", -1) < 1000
+                idle = cur.get("idle_ms", -1) if cur else -1
+                if ready and (idle < 0 or idle > self.STANDBY_STALL_MS):
+                    log.info("input %s: stalled at the discontinuity (%.1f s), its standby used", svc.name,
+                             max(idle, 0) / 1000)
+                    del self.standby[sid]
+                    self._use_source(svc, sb["k"], sb["inp"], sb["proc"], old_down=True)
+                    continue
+            if now - sb["started"] > self.STANDBY_S:
+                self._standby_drop(sid)
+
+    def _use_source(self, svc, k, inp=None, proc=None, old_down=False):
         """svc plays its source k from now on: started if not yet (inp/proc: already running), swapped in
         without a cut, the previous one stopped once the engine has let it go (at once if it is down:
         it may hold what the next one needs, a UDP port, the only connection an IPTV account allows)"""
         if inp is None:
             inp = cfgmod.primary_input(self._new_input_index(), svc, int(self.cfg["ingest"]["base_port"]),
                                        src=(svc.sources or [svc.source])[k])
-            if edge:
-                inp.options = dict(inp.options, hls_live_edge=edge)
             if not self._engine_input_add(inp):
                 self.fo[svc.sid] = {"since": time.monotonic(), "next_probe": 0, "probe_k": 0}
                 return
@@ -1505,7 +1557,9 @@ class Supervisor:
                           "restarts": self.engine_restarts, "log": list(self.engine_lines)[-50:]},
                "radios": [], "carriers": [], "inputs": [p.status() for p in self.ingest] +
                                                        [dict(f["cand"]["proc"].status(), role="trial")
-                                                        for f in self.fo.values() if f.get("cand")],
+                                                        for f in self.fo.values() if f.get("cand")] +
+                                                       [dict(sb["proc"].status(), role="standby")
+                                                        for sb in self.standby.values()],
                "alerts": list(self.alerts.active.values()), "alert_history": list(self.alerts.history)[:50],
                "network": {k: plan.cfg["network"][k] for k in ("name", "network_id", "onid", "country", "provider")},
                "thresholds": {"margin_min_ms": self.cfg["alerts"]["margin_min_ms"]},
