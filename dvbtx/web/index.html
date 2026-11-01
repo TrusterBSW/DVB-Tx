@@ -326,7 +326,9 @@ function render(s) {
     const l = r.live || {};
     return `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="pill">${esc(r.driver)}</span>
       </div><div class="row" style="margin-top:4px">
-      ${l.underruns ? `<span class="pill critical">${l.underruns} sous-débits</span>` : '<span class="pill ok">0 sous-débit</span>'}</div>
+      ${l.state && l.state !== "on" ? `<span class="pill critical">${l.state === "off" ? "introuvable" : "perdue"} · ses multiplex sont coupés</span>`
+        : l.underruns ? `<span class="pill critical">${l.underruns} sous-débits</span>` : '<span class="pill ok">0 sous-débit</span>'}</div>
+      ${l.state && l.state !== "on" && l.error ? `<div class="muted" style="margin-top:4px">${esc(l.error)} · recherchée toutes les 15 s</div>` : ""}
       <div class="kv" style="margin-top:8px"><span>LO</span><span>${(r.center / 1e6).toFixed(4)} MHz</span>
       <span>Échantillonnage</span><span>${(r.rate / 1e6).toFixed(4)} MS/s</span>
       <span>Gain</span><span>${r.gain} dB${r.amp ? " + ampli" : ""}</span>

@@ -544,6 +544,9 @@ class Supervisor:
         self.fo = {}                # service_id -> state of the choice among its sources (see _failover)
         self.fo_wait = {}           # service_id -> {source k: [retry interval, not before]} of sources left
         self.standby = {}           # service_id -> its source started again at an HLS discontinuity (see _standby)
+        self.radios_off = {}        # radio index -> {"state": off|lost, "error", "since", "next_probe", ...}
+        self.radio_back = None      # a radio found again by the probe: the engine is started again for it
+        self.engine_planned = False # the engine stopped on purpose: started again at once
 
         # the configuration file as running: edits from the web page are pending until applied
         self.applied_doc = self._file_doc()
@@ -640,10 +643,14 @@ class Supervisor:
             return
         rc = self.engine.poll()
         if rc is not None:
+            self.engine = None
+            if self.engine_planned:
+                self.engine_planned = False
+                self.engine_next = 0
+                return
             self.engine_restarts += 1
             wait = min(30, 2 ** min(self.engine_restarts, 5))
             log.error("engine exited (%s), restart in %d s", rc, wait)
-            self.engine = None
             self.engine_next = time.monotonic() + wait
 
     def engine_cmd(self, cmd):
@@ -720,6 +727,8 @@ class Supervisor:
             ins = {i["index"]: i for i in st.get("inputs", [])}
             for c in st.get("carriers", []):
                 car = self.plan.carriers[c["carrier"]]
+                if car.radio is not None and car.radio.index in self.radios_off:
+                    continue                     # off the air with its radio: that one alert says it
                 occ = (c["rate"] - c["null_rate"]) / c["ts_rate"] * 100 if c["ts_rate"] else 0
                 demand = c["si_rate"]
                 for s in car.services:
@@ -756,6 +765,11 @@ class Supervisor:
                 if i.get("faster_than_realtime"):
                     conds[f"fast.{i['index']}"] = ("warning", f"input {i['name']}: arrives faster than real time (readrate?)")
             for r in st.get("radios", []):
+                if r.get("state", "on") != "on":
+                    cars = ", ".join(c.name for c in self.plan.carriers if c.radio is not None and c.radio.index == r["index"])
+                    conds[f"radio.{r['index']}"] = ("critical", f"radio {r['index']} ({r['driver']}): "
+                                                    f"{'not found' if r['state'] == 'off' else 'lost'}, "
+                                                    f"{cars or 'its multiplexes'} off the air ({r.get('error', '')})")
                 k = f"underrun.{r['index']}"
                 prev = getattr(self, "_underruns", {}).get(r["index"], r["underruns"])
                 if r["underruns"] > prev:
@@ -811,6 +825,7 @@ class Supervisor:
                 self.reload_si()
                 self.channels_reload()
             self.engine_poll()
+            self._radios()
             for p in self.ingest:
                 p.poll()
             self.restart_stalled()
@@ -1344,6 +1359,8 @@ class Supervisor:
             n = len(svc.sources or ())
             if n < 2 or svc.input is None or svc.sid in self.standby:    # a standby coming: it decides
                 continue
+            if svc.carrier.radio is not None and svc.carrier.radio.index in self.radios_off:
+                continue
             o = svc.opts
             fail_ms = float(o.get("failover_s", 10)) * 1000
             start_s = float(o.get("source_start_s", 30))
@@ -1442,6 +1459,77 @@ class Supervisor:
         if not r["ok"]:
             log.error("input %s: %s", inp.name, r.get("error"))
         return r["ok"]
+
+    # ---------------------------------------------------------------- radios missing
+
+    RADIO_PROBE_S = 15      # a missing radio looked for that often
+    RADIO_LOST_RESTART_S = 120  # a radio lost but not unplugged (its USB wedged) is held by the engine: started again
+
+    def _radios(self):
+        """a radio not found at the start, or lost since: the engine goes on with the others (its multiplexes
+        off the air, their sources paused); it is looked for every RADIO_PROBE_S with "dvbtx-engine --probe",
+        and the engine started again once it is back. With no radio at all, the engine runs without
+        transmitting, the web page stays."""
+        st = self.stats if self.stats and time.time() - self.stats_at < 5 else None
+        if st is None or self.engine is None:
+            return
+        now = time.monotonic()
+        seen = {r["index"]: r for r in st.get("radios", [])}
+        for idx, r in seen.items():
+            state = r.get("state", "on")
+            if state == "on":
+                if idx in self.radios_off:
+                    log.info("radio %d: on the air again", idx)
+                    del self.radios_off[idx]
+                continue
+            if idx not in self.radios_off:
+                self.radios_off[idx] = {"state": state, "error": r.get("error", ""), "since": now,
+                                        "next_probe": now + self.RADIO_PROBE_S, "probing": False}
+            self.radios_off[idx]["state"] = state
+        # sources of the multiplexes off the air: paused, back when their radio is
+        off = {i for i, o in self.radios_off.items()}
+        for p in self.ingest:
+            svc = p.inp.service
+            car = svc.carrier if svc is not None and p.inp.role == "primary" else None
+            down = car is not None and car.radio is not None and car.radio.index in off
+            if down and not p.paused:
+                p.pause()
+            elif not down and p.paused:
+                p.resume()
+        for sid in [sid for sid, sb in self.standby.items() if sb["old"].service is not None
+                    and sb["old"].service.carrier.radio is not None and sb["old"].service.carrier.radio.index in off]:
+            self._standby_drop(sid)
+        if self.radio_back is not None:
+            idx, self.radio_back = self.radio_back, None
+            log.warning("radio %d is back: the engine is started again to put it on the air", idx)
+            self._restart_engine()
+            return
+        for idx, o in self.radios_off.items():
+            if o["state"] == "lost" and now - o["since"] > self.RADIO_LOST_RESTART_S and not o.get("restarted"):
+                o["restarted"] = True
+                log.warning("radio %d lost for %.0f s and not found again: the engine is started again", idx,
+                            now - o["since"])
+                self._restart_engine()
+                return
+            if not o["probing"] and now >= o["next_probe"]:
+                o["probing"] = True
+                threading.Thread(target=self._probe_radio, args=(idx, o), daemon=True).start()
+
+    def _probe_radio(self, idx, o):
+        try:
+            r = subprocess.run([self.engine_bin, "--probe", self.ini, str(idx)], capture_output=True, timeout=60)
+            if r.returncode == 0:
+                self.radio_back = idx
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        o["next_probe"] = time.monotonic() + self.RADIO_PROBE_S
+        o["probing"] = False
+
+    def _restart_engine(self):
+        if self.engine and self.engine.poll() is None:
+            self.engine_planned = True
+            self.engine_cmd("quit")
+        self.radios_off = {}
 
     STANDBY_S = 60      # a standby source kept that long after the discontinuity, unused if nothing stalled
     STANDBY_STALL_MS = 2000

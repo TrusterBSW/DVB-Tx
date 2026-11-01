@@ -547,6 +547,7 @@ class IngestProc:
         self.src_disc = 0.0         # when streamlink last reported an HLS discontinuity (an ad, the next episode)
         self.new_video_restart = 0.0
         self.hold_new_video = 0.0   # until then, new PIDs left to the supervisor (a standby source ready for them)
+        self.paused = False         # its multiplex off the air (its radio missing)
         self.gpu_way = None         # GPU used by the running ffmpeg (gpu.Way), None: CPU or copy
         self.gpu_fails = {}         # GPU way -> quick exits with it (2: not used again for this input)
         self.mode = None            # what the running ffmpeg does (Recipe.mode)
@@ -694,6 +695,17 @@ class IngestProc:
         self._kill(self.prod)
         self._kill(self.proc)
         self._release_gpu()
+        self.state = "stopped"
+
+    def pause(self):
+        """its multiplex is off the air (radio missing): stopped until resume()"""
+        self.stop()
+        self.paused = True
+        self.state = "paused"
+
+    def resume(self):
+        self._stop = self.paused = False
+        self.next_start = 0
         self.state = "stopped"
 
     def restart(self):

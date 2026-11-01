@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * "null" radio: consumes samples at the nominal rate of the system clock, for tests without
- * hardware. args: file=/path writes the I/Q (cf32, or cs8 with format=cs8, cs16 with format=cs16). */
+ * hardware. args: file=/path writes the I/Q (cf32, or cs8 with format=cs8, cs16 with format=cs16);
+ * absent=/path: the radio is missing while that file exists (not found, or unplugged while running). */
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "sdr.h"
 
@@ -19,6 +21,8 @@ struct sdr_dev {
     int64_t at_ns;
     void *conv;
     size_t conv_len;
+    char absent[512];
+    int calls;
 };
 
 static int64_t now_ns(void)
@@ -48,6 +52,12 @@ static sdr_dev *nl_open(const sdr_params *p, char *err, int errlen)
 {
     sdr_dev *d = calloc(1, sizeof *d);
     d->rate = p->rate;
+    arg(p->args, "absent", d->absent, sizeof d->absent);
+    if (d->absent[0] && !access(d->absent, F_OK)) {
+        snprintf(err, errlen, "no null radio (%s exists)", d->absent);
+        free(d);
+        return NULL;
+    }
     char path[512], fmt[16];
     arg(p->args, "file", path, sizeof path);
     arg(p->args, "format", fmt, sizeof fmt);
@@ -69,6 +79,8 @@ static int nl_write(sdr_dev *d, const float complex *const *bufs, int n, float s
 {
     if (!d->t0)
         d->t0 = now_ns();
+    if (d->absent[0] && ++d->calls % 64 == 0 && !access(d->absent, F_OK))
+        return -1;                                     /* "unplugged" */
     if (d->f) {
         const float *in = (const float *)bufs[0];
         size_t ns = (size_t)n * 2;

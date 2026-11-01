@@ -168,7 +168,11 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
   multiplex is too full, below zero the TV freezes;
 - alerts (log, `webhook` JSON POST, `command`): sources asking more than the channel can carry,
   full multiplex, low margin, dropped packets, service on backup, looping source, radio underrun,
-  TSDuck errors, engine down;
+  TSDuck errors, engine down, radio missing;
+- a **radio missing** at the start or unplugged while on air takes only its own multiplexes off
+  the air (their sources paused), the other radios go on; it is looked for every 15 s and the
+  engine started again once it is back (a short cut of the others). With no radio at all, dvbtx
+  runs without transmitting and its web page stays;
 - `--analysis-export udp://host:port` (or `tcp://`): TSDuck `analyze` JSON report of every
   multiplex; `--stats-export`: engine statistics + alerts every second; `/metrics` for Prometheus;
   `/api/status` JSON; each multiplex is copied to `udp://127.0.0.1:20900+n` (and `carrier.monitor`);

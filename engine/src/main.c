@@ -413,11 +413,20 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--version")) {
             printf("dvbtx-engine %s\n", VERSION_STR);
             return 0;
+        } else if (!strcmp(argv[i], "--probe") && i + 2 < argc) {
+            /* is radio N of this configuration there (back after it was missing)? 0: yes */
+            char err[512];
+            conf *cf = conf_load(argv[i + 1], err, sizeof err);
+            if (!cf || rf_probe(cf, atoi(argv[i + 2]), err, sizeof err)) {
+                fprintf(stderr, "%s\n", err);
+                return 1;
+            }
+            return 0;
         } else
             cfg = argv[i];
     }
     if (!cfg) {
-        fprintf(stderr, "usage: dvbtx-engine [-v] engine.ini\n");
+        fprintf(stderr, "usage: dvbtx-engine [-v] engine.ini | --probe engine.ini RADIO\n");
         return 2;
     }
     /* never keep transmitting if the supervisor dies */
@@ -509,11 +518,8 @@ int main(int argc, char **argv)
         }
         int64_t now = mono_ns();
         int stalled = rf_stalled(now, 5000000000LL);
-        if (stalled >= 0 && now - t_start > 10000000000LL) {
-            LOGE("radio %d does not consume samples any more (unplugged?): exiting", stalled);
-            fflush(stderr);
-            _exit(3);                      /* the supervisor restarts the engine */
-        }
+        if (stalled >= 0 && now - t_start > 10000000000LL)
+            rf_radio_lost(stalled, "does not consume samples any more (unplugged?)");
         if (now - t_prev >= (int64_t)stats_ms * 1000000 - 5000000) {
             double dt = (now - t_prev) / 1e9;
             t_prev = now;
@@ -531,5 +537,9 @@ int main(int argc, char **argv)
     rf_stop();
     inputs_stop();
     conf_free(cf);
+    if (rf_radios_lost()) {                /* its driver may hang in its exit handlers */
+        fflush(NULL);
+        _exit(0);
+    }
     return 0;
 }

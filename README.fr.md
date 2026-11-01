@@ -371,8 +371,13 @@ zéro, le téléviseur gèle. C'est l'indicateur à surveiller pour savoir si le
 **Alertes** (`[alerts]`) : demande des sources supérieure à la capacité du canal, multiplex plein,
 marge sous `margin_min_ms`, paquets perdus car trop en retard, chaîne sur son secours ou sans
 source, source qui redémarre en boucle, sous-débit de la radio, erreurs vues par TSDuck, moteur
-arrêté. Chacune est journalisée, et peut être envoyée en POST JSON (`webhook`) ou à une commande
+arrêté, radio absente. Chacune est journalisée, et peut être envoyée en POST JSON (`webhook`) ou à une commande
 (`command`, variables `DVBTX_ALERT_*`).
+
+**Radio absente** : une radio introuvable au démarrage, ou débranchée pendant l'émission, ne coupe
+que ses propres multiplex (leurs sources sont mises en pause) ; les autres radios continuent. Elle est
+recherchée toutes les 15 s, et le moteur redémarre dès qu'elle revient (une courte coupure des
+autres). Sans aucune radio, dvbtx tourne sans émettre et sa page web reste disponible.
 
 **Exports** :
 

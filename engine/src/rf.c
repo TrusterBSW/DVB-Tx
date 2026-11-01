@@ -119,7 +119,12 @@ struct radio {
 
     pthread_t th;
     int started;
+    /* RADIO_OFF: not found at the start, RADIO_LOST: stopped since (unplugged, write error): its carriers
+     * are off the air, the others go on */
+    _Atomic int state;
+    char err[160];
 };
+enum { RADIO_ON, RADIO_OFF, RADIO_LOST };
 
 static radio *g_radios[MAX_RADIOS];
 static int g_nradios;
@@ -382,7 +387,8 @@ static void *radio_thread(void *arg)
             pthread_mutex_unlock(&c->lock);
         }
         if (r->drv->write(r->dev, bufs, r->blklen, r->scale)) {
-            LOGE("radio %d: write failed", r->idx);
+            if (g_running)
+                rf_radio_lost(r->idx, "write failed (unplugged?)");
             break;
         }
         r->written += (uint64_t)r->blklen;
@@ -393,7 +399,6 @@ static void *radio_thread(void *arg)
         }
     }
     free(out);
-    g_running = 0;
     return NULL;
 }
 
@@ -513,6 +518,26 @@ static int t2_groups(radio *r, carrier **sc, int nsc, double wtot, char *err, in
     return 0;
 }
 
+/* a radio's parameters from its [radio N] section */
+static void radio_params(radio *r, const conf_sec *s)
+{
+    r->idx = s->index;
+    snprintf(r->driver, sizeof r->driver, "%s", conf_str(s, "driver", "hackrf"));
+    snprintf(r->args, sizeof r->args, "%s", conf_str(s, "args", ""));
+    snprintf(r->clock, sizeof r->clock, "%s", conf_str(s, "clock", "internal"));
+    r->p.freq_hz = conf_num(s, "freq", 0);
+    r->p.rate = conf_num(s, "rate", 0);
+    r->p.bandwidth = conf_num(s, "bandwidth", 0);
+    r->p.gain = conf_num(s, "gain", 0);
+    r->p.amp = (int)conf_int(s, "amp", 0);
+    r->p.ppm = conf_num(s, "ppm", 0);
+    r->p.channels = 1;
+    r->p.args = r->args;
+    r->p.clock = r->clock;
+    r->p.buffer_ms = (int)conf_int(s, "buffer_ms", 50);
+    r->backoff_db = conf_num(s, "backoff_db", 13);
+}
+
 int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
 {
     /* radios */
@@ -525,21 +550,7 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             return -1;
         }
         radio *r = xcalloc(1, sizeof *r);
-        r->idx = s->index;
-        snprintf(r->driver, sizeof r->driver, "%s", conf_str(s, "driver", "hackrf"));
-        snprintf(r->args, sizeof r->args, "%s", conf_str(s, "args", ""));
-        snprintf(r->clock, sizeof r->clock, "%s", conf_str(s, "clock", "internal"));
-        r->p.freq_hz = conf_num(s, "freq", 0);
-        r->p.rate = conf_num(s, "rate", 0);
-        r->p.bandwidth = conf_num(s, "bandwidth", 0);
-        r->p.gain = conf_num(s, "gain", 0);
-        r->p.amp = (int)conf_int(s, "amp", 0);
-        r->p.ppm = conf_num(s, "ppm", 0);
-        r->p.channels = 1;
-        r->p.args = r->args;
-        r->p.clock = r->clock;
-        r->p.buffer_ms = (int)conf_int(s, "buffer_ms", 50);
-        r->backoff_db = conf_num(s, "backoff_db", 13);
+        radio_params(r, s);
         if (r->p.freq_hz <= 0 || r->p.rate <= 0) {
             snprintf(err, errlen, "radio %d: freq and rate are required", r->idx);
             return -1;
@@ -963,9 +974,10 @@ int rf_start(void)
         radio *r = g_radios[ri];
         r->dev = r->drv->open(&r->p, err, sizeof err);
         if (!r->dev) {
-            LOGE("radio %d (%s): %s", ri, r->driver, err);
-            g_running = 0;
-            return -1;
+            LOGE("radio %d (%s): %s: its carriers are off the air", ri, r->driver, err);
+            snprintf(r->err, sizeof r->err, "%.159s", err);
+            atomic_store(&r->state, RADIO_OFF);
+            continue;
         }
         /* before the radio reports anything: on air after its buffer and our symbol ring */
         int64_t lead = (int64_t)r->p.buffer_ms * 1000000 + (int64_t)(RING_SYMS * r->blklen / r->p.rate * 1e9);
@@ -975,7 +987,7 @@ int rf_start(void)
     }
     for (int i = 0; i < g_ncarriers; i++) {
         carrier *c = g_carriers[i];
-        if (c->in_group)
+        if (c->in_group || (c->radio && atomic_load(&c->radio->state) != RADIO_ON))
             continue;
         void *(*fn)(void *) = c->radio ? dvbt_thread : ts_thread;
         if (pthread_create(&c->th, NULL, fn, c))
@@ -983,16 +995,38 @@ int rf_start(void)
         c->started = 1;
     }
     for (int i = 0; i < g_nbanks; i++) {
+        if (atomic_load(&g_banks[i]->radio->state) != RADIO_ON)
+            continue;
         if (pthread_create(&g_banks[i]->th, NULL, dvbt_thread, g_banks[i]))
             return -1;
         g_banks[i]->started = 1;
     }
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
+        if (atomic_load(&r->state) != RADIO_ON)
+            continue;
         if (pthread_create(&r->th, NULL, radio_thread, r))
             return -1;
         r->started = 1;
     }
+    return 0;
+}
+
+void rf_radio_lost(int ri, const char *why)
+{
+    radio *r = g_radios[ri];
+    int on = RADIO_ON;
+    if (!atomic_compare_exchange_strong(&r->state, &on, RADIO_LOST))
+        return;
+    snprintf(r->err, sizeof r->err, "%s", why);
+    LOGE("radio %d (%s): %s: its carriers are off the air", ri, r->driver, why);
+}
+
+int rf_radios_lost(void)
+{
+    for (int ri = 0; ri < g_nradios; ri++)
+        if (atomic_load(&g_radios[ri]->state) == RADIO_LOST)
+            return 1;
     return 0;
 }
 
@@ -1006,12 +1040,12 @@ void rf_stop(void)
         pthread_mutex_unlock(&c->lock);
     }
     /* the radio threads finish their current write (the radio keeps consuming), then the radios close */
-    for (int ri = 0; ri < g_nradios; ri++)
-        if (g_radios[ri]->started)
+    for (int ri = 0; ri < g_nradios; ri++)       /* a lost radio's thread may be stuck in its driver: */
+        if (g_radios[ri]->started && atomic_load(&g_radios[ri]->state) != RADIO_LOST)   /* left as it is */
             pthread_join(g_radios[ri]->th, NULL);
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
-        if (r->dev)
+        if (r->dev && atomic_load(&r->state) != RADIO_LOST)
             r->drv->close(r->dev);
         r->dev = NULL;
     }
@@ -1030,7 +1064,7 @@ int rf_stalled(int64_t now, int64_t timeout_ns)
     static int64_t since[MAX_RADIOS];
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
-        if (!r->dev)
+        if (!r->dev || atomic_load(&r->state) != RADIO_ON)
             continue;
         sdr_stats st;
         r->drv->get_stats(r->dev, &st);
@@ -1069,8 +1103,15 @@ int rf_stats_json(char *buf, int len, double dt)
     int n = snprintf(buf, len, "\"radios\":[");
     for (int ri = 0; ri < g_nradios && n < len - 512; ri++) {
         radio *r = g_radios[ri];
-        double cpu = r->started ? thread_cpu(r->th) : 0;
+        double cpu = r->started && atomic_load(&r->state) == RADIO_ON ? thread_cpu(r->th) : prev_cpu[ri];
         double load = dt > 0 ? (cpu - prev_cpu[ri]) / dt * 100 : 0;
+        static const char *const state_name[] = { "on", "off", "lost" };
+        int st = atomic_load(&r->state);
+        char esc[sizeof r->err];               /* the driver's message, safe in a JSON string */
+        int e = 0;
+        for (const char *q = st == RADIO_ON ? "" : r->err; *q && e < (int)sizeof esc - 1; q++)
+            esc[e++] = *q == '"' || *q == '\\' || (unsigned char)*q < 0x20 ? ' ' : *q;
+        esc[e] = 0;
         prev_cpu[ri] = cpu;
         double bload = 0;                  /* filter-bank threads of this radio */
         int nb = 0;
@@ -1085,10 +1126,10 @@ int rf_stats_json(char *buf, int len, double dt)
         n += snprintf(buf + n, len - n,
                       "%s{\"index\":%d,\"driver\":\"%s\",\"freq\":%.0f,\"rate\":%.3f,\"carriers\":%d,"
                       "\"underruns\":%llu,\"late\":%llu,\"fill\":%.3f,\"cpu\":%.1f,\"samples\":%llu,"
-                      "\"banks\":%d,\"bank_cpu\":%.1f}",
+                      "\"banks\":%d,\"bank_cpu\":%.1f,\"state\":\"%s\",\"error\":\"%s\"}",
                       ri ? "," : "", ri, r->driver, r->p.freq_hz, r->p.rate, r->ncarriers,
                       (unsigned long long)r->last.underruns, (unsigned long long)r->last.late, r->last.fill, load,
-                      (unsigned long long)r->last.samples, nb, bload);
+                      (unsigned long long)r->last.samples, nb, bload, state_name[st], esc);
     }
     n += snprintf(buf + n, len - n, "],\"carriers\":[");
     for (int i = 0; i < g_ncarriers && n < len - 4096; i++) {
@@ -1116,4 +1157,25 @@ int rf_stats_json(char *buf, int len, double dt)
     }
     n += snprintf(buf + n, len - n, "]");
     return n;
+}
+
+/* "dvbtx-engine --probe engine.ini N": radio N can be opened (it is back), closed at once without
+ * transmitting; 0 if so */
+int rf_probe(const conf *cf, int index, char *err, int errlen)
+{
+    const conf_sec *s = conf_find(cf, "radio", index);
+    if (!s) {
+        snprintf(err, errlen, "no radio %d", index);
+        return -1;
+    }
+    radio r = { 0 };
+    radio_params(&r, s);
+    const sdr_driver *drv = sdr_load(r.driver, err, errlen);
+    if (!drv)
+        return -1;
+    sdr_dev *d = drv->open(&r.p, err, errlen);
+    if (!d)
+        return -1;
+    drv->close(d);
+    return 0;
 }
