@@ -3,6 +3,7 @@
  * write() fills a ring buffer (buffer_ms) drained by a sender thread, so that a late synthesis
  * thread does not underflow the radio. The master clock rate is an integer multiple of the
  * sample rate (args may force master_clock_rate=...). Underflows come from async messages. */
+#include <dirent.h>
 #include <math.h>
 #include <pthread.h>
 #include <sched.h>
@@ -132,9 +133,45 @@ static void ud_close(sdr_dev *d)
     free(d);
 }
 
+/* UHD's own I/O threads (libusb events) run at normal priority: behind the source processes they starve
+ * the USB transfers and the radio underflows. The threads that appear while the device opens are UHD's. */
+#define MAX_TIDS 1024
+
+static int list_tids(int *t, int max)
+{
+    DIR *dir = opendir("/proc/self/task");
+    if (!dir)
+        return 0;
+    int n = 0;
+    struct dirent *e;
+    while ((e = readdir(dir)) && n < max) {
+        int v = atoi(e->d_name);
+        if (v > 0)
+            t[n++] = v;
+    }
+    closedir(dir);
+    return n;
+}
+
+static void raise_new_threads(const int *old, int nold, int prio)
+{
+    int now[MAX_TIDS], n = list_tids(now, MAX_TIDS), raised = 0;
+    struct sched_param sp = { .sched_priority = prio };
+    for (int i = 0; i < n; i++) {
+        int seen = 0;
+        for (int j = 0; j < nold && !seen; j++)
+            seen = old[j] == now[i];
+        if (!seen && sched_getscheduler(now[i]) == SCHED_OTHER && !sched_setscheduler(now[i], SCHED_FIFO, &sp))
+            raised++;
+    }
+    fprintf(stderr, "uhd: %d UHD thread(s) SCHED_FIFO %d\n", raised, prio);
+}
+
 static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
 {
     sdr_dev *d = calloc(1, sizeof *d);
+    static int old[MAX_TIDS];
+    int nold = list_tids(old, MAX_TIDS);
     pthread_mutex_init(&d->lock, NULL);
     pthread_cond_init(&d->cond, NULL);
     char args[512];
@@ -201,6 +238,7 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
     }
     uhd_tx_streamer_max_num_samps(d->tx, &d->max_samps);
     uhd_tx_metadata_make(&d->md, false, 0, 0.0, false, false);
+    raise_new_threads(old, nold, 55);
 
     int ms = p->buffer_ms > 0 ? p->buffer_ms : 50;
     d->size = (size_t)(p->rate * ms / 1000.0);

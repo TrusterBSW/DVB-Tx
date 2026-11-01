@@ -1504,6 +1504,10 @@ static void *group_worker(void *arg)
     dvbt2_group *g = ((void **)arg)[0];
     int w = (int)(intptr_t)((void **)arg)[1];
     free(arg);
+    /* created with the group, before the carrier threads take their real-time priority: take it here too,
+     * or the source processes delay the symbols and the radio underruns (best effort, like rf.c) */
+    struct sched_param sp = { .sched_priority = 40 };
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
     unsigned seen = 0;
     pthread_mutex_lock(&g->lock);
     for (;;) {
