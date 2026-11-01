@@ -1443,8 +1443,9 @@ class Supervisor:
             log.error("input %s: %s", inp.name, r.get("error"))
         return r["ok"]
 
-    STANDBY_S = 45      # a standby source kept that long after the discontinuity, unused if nothing stalled
+    STANDBY_S = 60      # a standby source kept that long after the discontinuity, unused if nothing stalled
     STANDBY_STALL_MS = 2000
+    STANDBY_HOLD_S = 25  # new PIDs in the source in use within that time: for the standby, not a restart
 
     def _standby_start(self, svc):
         inp = cfgmod.primary_input(self._new_input_index(), svc, int(self.cfg["ingest"]["base_port"]),
@@ -1454,8 +1455,11 @@ class Supervisor:
             return
         proc = IngestProc(inp, self.plan)
         proc.poll()
-        self.standby[svc.sid] = {"inp": inp, "proc": proc, "k": svc.active, "old": svc.input,
-                                 "started": time.monotonic()}
+        now = time.monotonic()
+        self.standby[svc.sid] = {"inp": inp, "proc": proc, "k": svc.active, "old": svc.input, "started": now}
+        old = self.proc_of(svc.input.index)
+        if old:
+            old.hold_new_video = now + self.STANDBY_HOLD_S
         log.info("input %s: HLS discontinuity, its source started again beside it from the live edge", svc.name)
 
     def _standby_drop(self, sid):
@@ -1485,9 +1489,11 @@ class Supervisor:
                 cur, cand = ins.get(svc.input.index), ins.get(sb["inp"].index)
                 ready = cand and cand.get("streams") and 0 <= cand.get("idle_ms", -1) < 1000
                 idle = cur.get("idle_ms", -1) if cur else -1
-                if ready and (idle < 0 or idle > self.STANDBY_STALL_MS):
-                    log.info("input %s: stalled at the discontinuity (%.1f s), its standby used", svc.name,
-                             max(idle, 0) / 1000)
+                old = self.proc_of(svc.input.index)
+                moved = old is not None and old.new_video > sb["started"]     # the ad on new PIDs reached it
+                if ready and (moved or idle < 0 or idle > self.STANDBY_STALL_MS):
+                    log.info("input %s: %s, its standby used", svc.name, "video on new PIDs" if moved else
+                             f"stalled at the discontinuity ({max(idle, 0) / 1000:.1f} s)")
                     del self.standby[sid]
                     self._use_source(svc, sb["k"], sb["inp"], sb["proc"], old_down=True)
                     continue

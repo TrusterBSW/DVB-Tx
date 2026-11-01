@@ -546,6 +546,7 @@ class IngestProc:
         self.new_video = 0.0        # when ffmpeg last reported a video stream appearing mid-way (new PIDs)
         self.src_disc = 0.0         # when streamlink last reported an HLS discontinuity (an ad, the next episode)
         self.new_video_restart = 0.0
+        self.hold_new_video = 0.0   # until then, new PIDs left to the supervisor (a standby source ready for them)
         self.gpu_way = None         # GPU used by the running ffmpeg (gpu.Way), None: CPU or copy
         self.gpu_fails = {}         # GPU way -> quick exits with it (2: not used again for this input)
         self.mode = None            # what the running ffmpeg does (Recipe.mode)
@@ -721,7 +722,7 @@ class IngestProc:
             # streams mapped at the start fall silent until the input times out; started again at once it
             # maps the new ones (2-3 s instead of ~20). Not twice within 10 s: a source that keeps
             # announcing streams is left alone.
-            if self.new_video > self.started_at + 3 and now - self.new_video_restart > 10:
+            if self.new_video > self.started_at + 3 and now - self.new_video_restart > 10 and now >= self.hold_new_video:
                 self.new_video_restart = now
                 log.info("input %s: its video moved to new PIDs (an ad?), ffmpeg started again", self.inp.name)
                 self.restart()
