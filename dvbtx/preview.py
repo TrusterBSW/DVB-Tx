@@ -4,7 +4,8 @@ Both read a copy of what goes on air, asked to the engine for the time of the pr
 carrier=N addr=udp://127.0.0.1:PORT"), so they show what the TVs receive (backup clip included).
 
 Thumbnails: one ffmpeg per multiplex decodes only the key frames (-skip_frame nokey: a few per
-second for all its channels) and writes a small JPEG per channel every few seconds. It starts with
+second for all its channels; on the GPU when the transcodes have one) and writes a small JPEG per
+channel every few seconds. It starts with
 the first thumbnail asked and stops THUMB_IDLE_S after the last one.
 
 Live: one ffmpeg per viewer of a channel writes fragmented MP4 straight into the HTTP answer, which
@@ -19,6 +20,7 @@ import subprocess
 import threading
 import time
 
+from . import gpu
 from .ingest import _die_with_parent
 
 log = logging.getLogger("dvbtx.preview")
@@ -32,6 +34,22 @@ PROBE_US, PROBE_BYTES = "6000000", "40000000"
 # decoder messages of a stream joined in the middle (until its first key frame): not worth a log line
 NOISE = ("non-existing PPS", "no frame!", "decode_slice_header", "Last message repeated", "co located POCs")
 H264 = 0x1B
+
+
+def _hw_decode():
+    """(input options, environment) to decode the thumbnails' key frames on the GPU the transcodes use,
+    the frames copied back to memory for the small JPEGs: a 1080p key frame costs the CPU ~15 ms, for
+    every channel of the multiplex. ([], {}): no usable adapter, the CPU (an unsupported codec also
+    falls back to it)."""
+    m = gpu.MANAGER
+    if m is None or getattr(m, "state", "") != "ready":
+        return [], {}
+    for _, w in m.best("h264"):
+        if w.api in ("vaapi", "qsv") and w.dev.get("render"):
+            return ["-hwaccel", "vaapi", "-hwaccel_device", w.dev["render"]], ({"LIBVA_DRIVER_NAME": w.va} if w.va else {})
+        if w.api == "nvenc":
+            return ["-hwaccel", "cuda", "-hwaccel_device", str(w.dev["cuda"])], {"CUDA_DEVICE_ORDER": "PCI_BUS_ID"}
+    return [], {}
 
 
 def _free_port():
@@ -117,8 +135,9 @@ class Previews:
         except RuntimeError as e:
             log.warning("thumbnails of %s: %s", car.name, e)
             return None
+        hw, env = _hw_decode()
         cmd = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-skip_frame", "nokey",
-               "-analyzeduration", PROBE_US, "-probesize", PROBE_BYTES, "-i", _udp(port)]
+               "-threads", "1"] + hw + ["-analyzeduration", PROBE_US, "-probesize", PROBE_BYTES, "-i", _udp(port)]
         # the first key frame at once, then one every THUMB_EVERY_S (fps=1/N would wait for its first window)
         pick = f"select=isnan(prev_selected_t)+gte(t-prev_selected_t\\,{THUMB_EVERY_S}),scale=320:-2"   # "\\,": a comma inside the expression
         for sid in sids:
@@ -128,7 +147,7 @@ class Previews:
             # not _die_with_parent: its signal comes when the *thread* that started the child ends, here
             # the web request; if dvbtx dies, the engine copy stops and ffmpeg ends on its UDP timeout
             p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                 start_new_session=True)
+                                 start_new_session=True, env=dict(os.environ, **env) if env else None)
         except OSError as e:
             self._monitor(False, car.index, port)
             log.warning("thumbnails of %s: %s", car.name, e)
@@ -136,7 +155,8 @@ class Previews:
         threading.Thread(target=self._drain, args=(p, f"thumbnails {car.name}"), daemon=True).start()
         t = {"proc": p, "port": port, "sids": sids, "asked": time.monotonic(), "carrier": car.index}
         self.thumbs[car.index] = t
-        log.info("thumbnails of %s: started (%d channels)", car.name, len(sids))
+        log.info("thumbnails of %s: started (%d channels, key frames decoded by %s)", car.name, len(sids),
+                 hw[hw.index("-hwaccel") + 1] if "-hwaccel" in hw else "the CPU")
         return t
 
     def _stop_thumbs(self, ci):
