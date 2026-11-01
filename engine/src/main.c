@@ -9,6 +9,7 @@
  *               max_late_ms= early_ms= pcr_max_ms= pmt_period_ms= priority=] name=...
  *   service del carrier=N sid=N
  *   service set carrier=N sid=N [primary=ID] [backup=ID|-1] [name=...]
+ *   carrier set id=N on=0|1              (off the air: still modulated, its radio and the others go on)
  * name= takes the rest of the line. Any command may start with seq=N: the answer is a JSON line
  * {"type":"reply","seq":N,"ok":true} or {..."ok":false,"error":"..."}. */
 #define _GNU_SOURCE
@@ -268,6 +269,11 @@ static void command(char *line, int *quit, int *reload)
         } else {
             snprintf(err, sizeof err, "service %s: unknown", w2);
         }
+    } else if (!strcmp(w1, "carrier") && w2) {
+        if (strcmp(w2, "set") || kv_int(&o, "on", -1) < 0)
+            snprintf(err, sizeof err, "carrier: set id=N on=0|1");
+        else if ((r = rf_carrier_on((int)kv_int(&o, "id", -1), (int)kv_int(&o, "on", 1))) < 0)
+            snprintf(err, sizeof err, "carrier: no such id");
     } else if (!strcmp(w1, "monitor") && w2) {
         /* monitor add|del carrier=N addr=udp://127.0.0.1:PORT: copy of a carrier's output (previews) */
         mux *m = rf_carrier_mux((int)kv_int(&o, "carrier", -1));

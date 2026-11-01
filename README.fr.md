@@ -374,6 +374,11 @@ source, source qui redémarre en boucle, sous-débit de la radio, erreurs vues p
 arrêté, radio absente. Chacune est journalisée, et peut être envoyée en POST JSON (`webhook`) ou à une commande
 (`command`, variables `DVBTX_ALERT_*`).
 
+**Arrêter / Démarrer un multiplex** : le bouton de chaque multiplex de la page le retire de l'antenne
+aussitôt, sans interrompre les autres, et met ses sources en pause ; une radio dont tous les multiplex
+sont arrêtés est éteinte (et rallumée avec eux). L'arrêt est gardé dans le fichier (`enabled = false`
+dans le `[[carrier]]`), donc après un redémarrage.
+
 **Radio absente** : une radio introuvable au démarrage, ou débranchée pendant l'émission, ne coupe
 que ses propres multiplex (leurs sources sont mises en pause) ; les autres radios continuent. Elle est
 recherchée toutes les 15 s, et le moteur redémarre dès qu'elle revient (une courte coupure des

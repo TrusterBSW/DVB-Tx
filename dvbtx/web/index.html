@@ -326,9 +326,10 @@ function render(s) {
     const l = r.live || {};
     return `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="pill">${esc(r.driver)}</span>
       </div><div class="row" style="margin-top:4px">
-      ${l.state && l.state !== "on" ? `<span class="pill critical">${l.state === "off" ? "introuvable" : "perdue"} · ses multiplex sont coupés</span>`
+      ${l.state === "idle" ? '<span class="pill">éteinte · ses multiplex sont arrêtés</span>'
+        : l.state && l.state !== "on" ? `<span class="pill critical">${l.state === "off" ? "introuvable" : "perdue"} · ses multiplex sont coupés</span>`
         : l.underruns ? `<span class="pill critical">${l.underruns} sous-débits</span>` : '<span class="pill ok">0 sous-débit</span>'}</div>
-      ${l.state && l.state !== "on" && l.error ? `<div class="muted" style="margin-top:4px">${esc(l.error)} · recherchée toutes les 15 s</div>` : ""}
+      ${l.state && l.state !== "on" && l.state !== "idle" && l.error ? `<div class="muted" style="margin-top:4px">${esc(l.error)} · recherchée toutes les 15 s</div>` : ""}
       <div class="kv" style="margin-top:8px"><span>LO</span><span>${(r.center / 1e6).toFixed(4)} MHz</span>
       <span>Échantillonnage</span><span>${(r.rate / 1e6).toFixed(4)} MS/s</span>
       <span>Gain</span><span>${r.gain} dB${r.amp ? " + ampli" : ""}</span>
@@ -382,12 +383,14 @@ function render(s) {
       </tr>`;
     }).join("");
     const head = `<div class="row"><b style="font-size:16px">${esc(c.name)}</b>
+        ${c.enabled ? "" : '<span class="pill warning" title="multiplex arrêté : rien à l\'antenne, ses sources en pause, sa radio éteinte si elle n\'a plus que lui">arrêté</span>'}
         <span class="muted">${std} · ${c.frequency ? (c.frequency / 1e6).toFixed(3) + " MHz" : ""} · TSID ${c.tsid}${c.radio ? " · " + esc(c.radio) : ""}</span>
         <span style="flex:1"></span>
         <span class="muted">capacité</span><span class="big">${mbps(cap)}</span><span class="muted">Mbit/s</span>
         <span class="muted">occupé</span><span class="big" style="color:${occ > 98 ? "var(--crit)" : occ > 90 ? "var(--warn)" : "inherit"}">${occ == null ? "–" : occ.toFixed(1) + " %"}</span>
         ${l && l.cpu != null ? `<span class="muted" title="modulation de ce multiplex (100 % = un cœur)">modulation ${l.cpu.toFixed(1)} % d'un cœur</span>` : ""}
         ${loadPills(c.sources_load)}
+        <button onclick="carrierPower(${c.index}, ${!c.enabled})" title="${c.enabled ? "arrêter l'émission de ce multiplex (les autres continuent)" : "remettre ce multiplex à l'antenne"}">${c.enabled ? "■ Arrêter" : "▶ Démarrer"}</button>
       </div>
       <div class="bar">${bar}</div><div class="legend">${legend}</div>`;
     const summary = `<div class="card">${head}
@@ -871,6 +874,12 @@ const openLogs = new Set();
 function logToggle(key) {
   openLogs.has(key) ? openLogs.delete(key) : openLogs.add(key);
   if (last) render(last);
+}
+async function carrierPower(i, on) {
+  if (!on && !confirm("Arrêter l'émission de ce multiplex ? Les autres continuent.")) return;
+  const r = await api("POST", `/api/carrier/${i}/${on ? "start" : "stop"}`);
+  r.ok ? toast(on ? "multiplex à l'antenne" : "multiplex arrêté") : report(r);
+  refresh();
 }
 async function restartInput(i) { const r = await api("POST", `/api/input/${i}/restart`); r.ok ? toast("source relancée") : report(r); refresh(); }
 async function reloadSi() { const r = await api("POST", "/api/reload"); r.ok ? toast("EPG et tables SI rechargés") : report(r); refresh(); }

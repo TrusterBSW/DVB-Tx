@@ -288,6 +288,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allowed(path in ("/api/channels", "/api/profiles") or path.startswith("/api/config/radio")
                              or path.startswith("/api/config/carrier")):
             return
+        m = re.fullmatch(r"/api/carrier/(\d+)/(start|stop)", path)
+        if m:
+            idx, on = int(m.group(1)), m.group(2) == "start"
+            return self._change(lambda: sup.carrier_power(idx, on))
         m = re.fullmatch(r"/api/input/(\d+)/restart", path)
         if m:
             p = sup.proc_of(int(m.group(1)))

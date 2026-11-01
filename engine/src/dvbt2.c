@@ -377,6 +377,7 @@ struct dvbt2_group {
         int lo, hi;            /* occupied bins */
         float gain, pre;       /* cells x pre (x oscillator phase), then IFFT x post */
         int owned;
+        volatile int muted;    /* off the air: still coded (its multiplex keeps its clock), not placed */
     } m[MAX_MEMBERS];
     float post;
     fftwf_complex *fbuf[2], *p1buf;   /* two spectra: one being filled, one transformed */
@@ -1720,6 +1721,8 @@ static void group_p1(dvbt2_group *g, int64_t Tf)
         memset(x, 0, sizeof(float complex) * (size_t)M);
         for (int i = 0; i < g->n; i++) {
             const struct gmember *m = &g->m[i];
+            if (m->muted)
+                continue;
             int64_t start = pass ? Tf : Tf + 542 * k;     /* where the segment's index 0 lies */
             float complex ph = cis_frac((int64_t)m->off1 * (start % M), M);
             int unit = ph == 1.0f && m->gain == 1.0f;
@@ -1773,7 +1776,8 @@ static void group_job(dvbt2_group *g, int w)
             }
             float complex ph = cis_frac((int64_t)m->off * (g->job_win % Nt), Nt);
             int unit = ph == 1.0f && m->pre == 1.0f;
-            member_place(m->t, g->job_l, b, Nt, m->off, m->pre * ph, unit);
+            if (!m->muted)
+                member_place(m->t, g->job_l, b, Nt, m->off, m->pre * ph, unit);
         }
         m->t->l++;
     }
@@ -1854,4 +1858,10 @@ dvbt2 *dvbt2_new(const dvbt2_cfg *c, ts_pull_fn pull, void *ctx)
 int dvbt2_samples(dvbt2 *t, float complex *out, int max)
 {
     return dvbt2_group_samples(t->own, out, max);
+}
+
+void dvbt2_group_mute(dvbt2_group *g, int member, int muted)
+{
+    if (member >= 0 && member < g->n)
+        g->m[member].muted = muted;
 }

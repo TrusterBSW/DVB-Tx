@@ -117,6 +117,8 @@ void dvbt2_group_free(dvbt2_group *g);
 /* members in the group; the worker thread that codes a member (0: none, the caller's thread does it)
  * and how many members share it (CPU per carrier) */
 int dvbt2_group_members(const dvbt2_group *g);
+/* member off the air (1) or back (0): still coded, so that its multiplex keeps its clock */
+void dvbt2_group_mute(dvbt2_group *g, int member, int muted);
 int dvbt2_group_worker(const dvbt2_group *g, int member, pthread_t *th, int *sharing);
 
 #endif

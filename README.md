@@ -169,6 +169,9 @@ dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
 - alerts (log, `webhook` JSON POST, `command`): sources asking more than the channel can carry,
   full multiplex, low margin, dropped packets, service on backup, looping source, radio underrun,
   TSDuck errors, engine down, radio missing;
+- **Stop / Start** on each multiplex of the page: off the air at once, the others not interrupted,
+  its sources paused; a radio whose multiplexes are all stopped is switched off (and on again with
+  them). Kept in the file (`enabled = false` in the `[[carrier]]`) across restarts;
 - a **radio missing** at the start or unplugged while on air takes only its own multiplexes off
   the air (their sources paused), the other radios go on; it is looked for every 15 s and the
   engine started again once it is back (a short cut of the others). With no radio at all, dvbtx

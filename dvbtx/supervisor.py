@@ -727,8 +727,8 @@ class Supervisor:
             ins = {i["index"]: i for i in st.get("inputs", [])}
             for c in st.get("carriers", []):
                 car = self.plan.carriers[c["carrier"]]
-                if car.radio is not None and car.radio.index in self.radios_off:
-                    continue                     # off the air with its radio: that one alert says it
+                if not car.enabled or (car.radio is not None and car.radio.index in self.radios_off):
+                    continue                     # stopped, or off the air with its radio (that one alert says it)
                 occ = (c["rate"] - c["null_rate"]) / c["ts_rate"] * 100 if c["ts_rate"] else 0
                 demand = c["si_rate"]
                 for s in car.services:
@@ -765,7 +765,7 @@ class Supervisor:
                 if i.get("faster_than_realtime"):
                     conds[f"fast.{i['index']}"] = ("warning", f"input {i['name']}: arrives faster than real time (readrate?)")
             for r in st.get("radios", []):
-                if r.get("state", "on") != "on":
+                if r.get("state", "on") not in ("on", "idle"):
                     cars = ", ".join(c.name for c in self.plan.carriers if c.radio is not None and c.radio.index == r["index"])
                     conds[f"radio.{r['index']}"] = ("critical", f"radio {r['index']} ({r['driver']}): "
                                                     f"{'not found' if r['state'] == 'off' else 'lost'}, "
@@ -1359,7 +1359,7 @@ class Supervisor:
             n = len(svc.sources or ())
             if n < 2 or svc.input is None or svc.sid in self.standby:    # a standby coming: it decides
                 continue
-            if svc.carrier.radio is not None and svc.carrier.radio.index in self.radios_off:
+            if not svc.carrier.enabled or (svc.carrier.radio is not None and svc.carrier.radio.index in self.radios_off):
                 continue
             o = svc.opts
             fail_ms = float(o.get("failover_s", 10)) * 1000
@@ -1477,7 +1477,7 @@ class Supervisor:
         seen = {r["index"]: r for r in st.get("radios", [])}
         for idx, r in seen.items():
             state = r.get("state", "on")
-            if state == "on":
+            if state in ("on", "idle"):              # idle: all its multiplexes stopped on purpose
                 if idx in self.radios_off:
                     log.info("radio %d: on the air again", idx)
                     del self.radios_off[idx]
@@ -1491,7 +1491,7 @@ class Supervisor:
         for p in self.ingest:
             svc = p.inp.service
             car = svc.carrier if svc is not None and p.inp.role == "primary" else None
-            down = car is not None and car.radio is not None and car.radio.index in off
+            down = car is not None and (not car.enabled or (car.radio is not None and car.radio.index in off))
             if down and not p.paused:
                 p.pause()
             elif not down and p.paused:
@@ -1514,6 +1514,34 @@ class Supervisor:
             if not o["probing"] and now >= o["next_probe"]:
                 o["probing"] = True
                 threading.Thread(target=self._probe_radio, args=(idx, o), daemon=True).start()
+
+    def carrier_power(self, index, on):
+        """a multiplex stopped or started again from the web page: off the air at once (its radio switched
+        off when it was its last one), its sources paused; kept in the configuration file (enabled = false)"""
+        car = next((c for c in self.plan.carriers if c.index == index), None)
+        if car is None:
+            raise chmod.ChannelError(f"no multiplex {index}")
+        if car.enabled == on:
+            return {"enabled": on}
+        r = self.engine_request(f"carrier set id={index} on={int(on)}")
+        if not r["ok"]:
+            raise chmod.ChannelError(f"{car.name}: {r.get('error')}")
+        car.enabled = on
+        if self.plan.config_path:
+            t = confedit.Tables(self.plan.config_path)
+            if on:
+                t.set_table_keys("carrier", index, {}, remove=["enabled"])
+            else:
+                t.set_table_keys("carrier", index, {"enabled": False})
+            t.save()
+            cars = (self.applied_doc or {}).get("carrier") or []
+            if index < len(cars):                    # what runs: not a pending change of the file
+                if on:
+                    cars[index].pop("enabled", None)
+                else:
+                    cars[index]["enabled"] = False
+        log.info("%s: %s from the web page", car.name, "started" if on else "stopped")
+        return {"enabled": on}
 
     def _probe_radio(self, idx, o):
         try:
@@ -1714,6 +1742,7 @@ class Supervisor:
             out["carriers"].append({"index": c.index, "name": c.name, "standard": c.standard, "frequency": c.frequency,
                                     "offset": c.offset, "params": c.params, "tsid": c.tsid, "capacity": c.ts_rate,
                                     "radio": c.radio.name if c.radio else None, "live": live, "services": svcs,
+                                    "enabled": c.enabled,
                                     "tsduck": an.summary() if an else None,
                                     "sources_load": {"gpu": max(eng.values()) if eng else None, "gpu_engines": eng,
                                                      "cpu": cpu, "gpu_channels": per},

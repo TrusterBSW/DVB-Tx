@@ -66,7 +66,7 @@ STD_KEYS = {"dvbt": ("bandwidth", "mode", "constellation", "code_rate", "guard")
                       "polarization", "orbital", "lnb_lo"),
             "ts": ("ts_rate", "bandwidth", "mode", "constellation", "code_rate", "guard")}
 CARRIER_COMMON_KEYS = ("name", "radio", "standard", "frequency", "channel", "tsid", "onid", "gain_db", "cell_id",
-                       "synth", "si_reserve", "monitor", "output")
+                       "synth", "si_reserve", "monitor", "output", "enabled")
 
 HACKRF_FILTERS = [1.75e6, 2.5e6, 3.5e6, 5e6, 5.5e6, 6e6, 7e6, 8e6, 9e6, 10e6, 12e6, 14e6, 15e6, 20e6, 24e6, 28e6]
 DRIVER_RATES = {"hackrf": (8e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6, 1e9), "null": (1, 1e10)}
@@ -243,6 +243,7 @@ class Carrier:
     services: list = field(default_factory=list)
     monitor: list = field(default_factory=list)
     output: str = ""
+    enabled: bool = True          # false: stopped (from the web page), its sources paused, its radio off if it has no other
     synth: str = "auto"
 
 
@@ -489,6 +490,7 @@ def build(cfg):
         mon = cc["monitor"]
         car.monitor = [mon] if isinstance(mon, str) else list(mon)
         car.output = str(cc.get("output", ""))
+        car.enabled = bool(cc.get("enabled", True))
         if std == "ts" and not car.output:
             raise ConfigError(f"carrier {ci}: standard 'ts' needs output = \"udp://host:port\" or a file")
         if radio:
@@ -791,6 +793,8 @@ def write_engine_ini(plan, path, si_dir):
     for car in plan.carriers:
         p = car.params
         L += [f"[carrier {car.index}]", f"standard = {car.standard}", f"tsid = {car.tsid}"]
+        if not car.enabled:
+            L.append("on = 0")
         if car.standard == "dvbt2":
             L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"frequency = {car.frequency:.0f}",
                   f"gain_db = {car.gain_db}"]

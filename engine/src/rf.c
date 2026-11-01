@@ -89,6 +89,7 @@ typedef struct carrier {
 
     pthread_t th;
     int started;
+    volatile int muted;           /* stopped from the web page: modulated (its multiplex keeps its clock), not sent */
 } carrier;
 
 struct radio {
@@ -123,8 +124,10 @@ struct radio {
      * are off the air, the others go on */
     _Atomic int state;
     char err[160];
+    uint64_t sample_base;         /* samples written before the device was last opened (RADIO_IDLE in between) */
 };
-enum { RADIO_ON, RADIO_OFF, RADIO_LOST };
+/* RADIO_IDLE: all its carriers stopped, the device closed until one starts again */
+enum { RADIO_ON, RADIO_OFF, RADIO_LOST, RADIO_IDLE };
 
 static radio *g_radios[MAX_RADIOS];
 static int g_nradios;
@@ -194,7 +197,7 @@ static void radio_track(radio *r)
     r->last = st;
     if (!st.samples || !st.at_ns)
         return;
-    int64_t raw = st.at_ns - (int64_t)((double)st.samples * 1e9 / r->p.rate);
+    int64_t raw = st.at_ns - (int64_t)((double)(st.samples + r->sample_base) * 1e9 / r->p.rate);
     if (!r->win_start) {
         r->win_start = st.at_ns;
         r->win_min = raw;
@@ -255,6 +258,8 @@ static void bank_sym(void *ctx, float complex *v)
         c->sym_pos = 0;
     }
     *v = c->ring[(size_t)(c->rd % RING_SYMS) * SYMBLK + c->sym_pos++];
+    if (c->muted)
+        *v = 0;
 }
 
 /* ---- carrier threads ---- */
@@ -333,6 +338,8 @@ static void *ts_thread(void *arg)
         for (int i = 0; i < 7; i++)
             mux_pull(c->mux, buf + i * TS_PKT);
         slot += 7;
+        if (c->muted)
+            continue;
         if (c->out_is_udp)
             sendto(c->out_fd, buf, sizeof buf, 0, (struct sockaddr *)&c->out_sa, sizeof c->out_sa);
         else if (c->out_fd >= 0 && write(c->out_fd, buf, sizeof buf) < 0 && errno != EAGAIN)
@@ -343,15 +350,65 @@ static void *ts_thread(void *arg)
 
 /* ---- radio thread ---- */
 
+static int radio_needed(radio *r)
+{
+    for (int i = 0; i < g_ncarriers; i++)
+        if (g_carriers[i]->radio == r && !g_carriers[i]->muted)
+            return 1;
+    return 0;
+}
+
+/* all the carriers of r stopped: the device closed (nothing on the air, its carriers wait on their
+ * rings) until one starts again, then opened again with the clock carried on from the samples written */
+static void radio_idle(radio *r)
+{
+    char err[256];
+    r->drv->close(r->dev);
+    r->dev = NULL;
+    atomic_store(&r->state, RADIO_IDLE);
+    memset(&r->last, 0, sizeof r->last);
+    LOGI("radio %d (%s): all its carriers stopped, radio off", r->idx, r->driver);
+    while (g_running && !radio_needed(r)) {
+        struct timespec ts = { 0, 100000000 };
+        nanosleep(&ts, NULL);
+    }
+    if (!g_running)
+        return;
+    r->dev = r->drv->open(&r->p, err, sizeof err);
+    if (!r->dev) {
+        snprintf(r->err, sizeof r->err, "%.159s", err);
+        atomic_store(&r->state, RADIO_LOST);
+        LOGE("radio %d (%s): %s: its carriers are off the air", r->idx, r->driver, err);
+        return;
+    }
+    r->sample_base = r->written;
+    r->win_start = 0;
+    r->tracking = 0;
+    int64_t lead = (int64_t)r->p.buffer_ms * 1000000 + (int64_t)(RING_SYMS * r->blklen / r->p.rate * 1e9);
+    atomic_store(&r->t0, mono_ns() + lead - (int64_t)((double)r->written * 1e9 / r->p.rate));
+    atomic_store(&r->state, RADIO_ON);
+    LOGI("radio %d (%s): a carrier started again, radio on", r->idx, r->driver);
+}
+
 static void *radio_thread(void *arg)
 {
     radio *r = arg;
     rt_priority(50, "the radio threads");
     float complex *out = xcalloc(r->blklen, sizeof *out);
+    int zn = 0;
+    for (int i = 0; i < r->nmem; i++)
+        zn = r->mem[i]->ncar > zn ? r->mem[i]->ncar : zn;
+    float complex *zeros = xcalloc(zn ? zn : 1, sizeof *zeros);   /* the symbols of a stopped DVB-T carrier */
     const float complex *cars[64];
     const float complex *bufs[1] = { out };
     int64_t next_track = 0;
     while (g_running) {
+        if (!radio_needed(r)) {
+            radio_idle(r);
+            if (!g_running || atomic_load(&r->state) != RADIO_ON)
+                break;
+            next_track = 0;
+        }
         carrier *all[128];
         int nall = 0;
         for (int i = 0; i < r->nmem; i++)
@@ -369,12 +426,15 @@ static void *radio_thread(void *arg)
             break;
         if (r->nmem) {
             for (int i = 0; i < r->nmem; i++)
-                cars[i] = r->mem[i]->ring + (size_t)(r->mem[i]->rd % RING_SYMS) * r->mem[i]->ncar;
+                cars[i] = r->mem[i]->muted ? zeros
+                                           : r->mem[i]->ring + (size_t)(r->mem[i]->rd % RING_SYMS) * r->mem[i]->ncar;
             ofdm_group_synth(r->grp, cars, out);
         } else {
             memset(out, 0, sizeof(float complex) * r->blklen);
         }
         for (int i = 0; i < r->nsc; i++) {
+            if (r->sc[i]->muted)
+                continue;
             const float complex *b = r->sc[i]->ring + (size_t)(r->sc[i]->rd % RING_SYMS) * r->sc[i]->ncar;
             for (int k = 0; k < r->blklen; k++)
                 out[k] += b[k];
@@ -399,6 +459,7 @@ static void *radio_thread(void *arg)
         }
     }
     free(out);
+    free(zeros);
     return NULL;
 }
 
@@ -575,6 +636,7 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
         snprintf(c->synth, sizeof c->synth, "%s", conf_str(s, "synth", "auto"));
         c->offset_hz = conf_num(s, "offset", 0);
         c->gain_db = conf_num(s, "gain_db", 0);
+        c->muted = !conf_int(s, "on", 1);
         double ts_rate;
         mux_clock_fn clk;
         if (!strcmp(c->standard, "dvbt")) {
@@ -985,6 +1047,9 @@ int rf_start(void)
         LOGI("radio %d: %s at %.3f MHz, %.6f MS/s, %d carrier(s), FFT %d", ri, r->driver, r->p.freq_hz / 1e6,
              r->p.rate / 1e6, r->ncarriers, r->nfft);
     }
+    for (int i = 0; i < g_ncarriers; i++)        /* stopped in the configuration (on = 0) */
+        if (g_carriers[i]->muted)
+            rf_carrier_on(i, 0);
     for (int i = 0; i < g_ncarriers; i++) {
         carrier *c = g_carriers[i];
         if (c->in_group || (c->radio && atomic_load(&c->radio->state) != RADIO_ON))
@@ -1009,6 +1074,19 @@ int rf_start(void)
             return -1;
         r->started = 1;
     }
+    return 0;
+}
+
+/* carrier ci off the air (on = 0) or back (1); its radio and the other carriers go on */
+int rf_carrier_on(int ci, int on)
+{
+    if (ci < 0 || ci >= g_ncarriers)
+        return -1;
+    carrier *c = g_carriers[ci];
+    c->muted = !on;
+    if (c->in_group && c->group && c->group->t2g)
+        dvbt2_group_mute(c->group->t2g, c->member, !on);
+    LOGI("carrier %d: %s", ci, on ? "on the air" : "off the air");
     return 0;
 }
 
@@ -1045,7 +1123,7 @@ void rf_stop(void)
             pthread_join(g_radios[ri]->th, NULL);
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
-        if (r->dev && atomic_load(&r->state) != RADIO_LOST)
+        if (r->dev && atomic_load(&r->state) != RADIO_LOST && atomic_load(&r->state) != RADIO_IDLE)
             r->drv->close(r->dev);
         r->dev = NULL;
     }
@@ -1105,7 +1183,7 @@ int rf_stats_json(char *buf, int len, double dt)
         radio *r = g_radios[ri];
         double cpu = r->started && atomic_load(&r->state) == RADIO_ON ? thread_cpu(r->th) : prev_cpu[ri];
         double load = dt > 0 ? (cpu - prev_cpu[ri]) / dt * 100 : 0;
-        static const char *const state_name[] = { "on", "off", "lost" };
+        static const char *const state_name[] = { "on", "off", "lost", "idle" };
         int st = atomic_load(&r->state);
         char esc[sizeof r->err];               /* the driver's message, safe in a JSON string */
         int e = 0;
@@ -1151,8 +1229,8 @@ int rf_stats_json(char *buf, int len, double dt)
         int m = mux_stats_json(c->mux, buf + n, len - n - 64, dt);
         if (m > 0 && buf[n + m - 1] == '}') {
             n += m - 1;
-            n += snprintf(buf + n, len - n, ",\"standard\":\"%s\",\"radio\":%d,\"offset\":%.0f,\"cpu\":%.1f}",
-                          c->standard, c->radio ? c->radio->idx : -1, c->offset_hz, load);
+            n += snprintf(buf + n, len - n, ",\"standard\":\"%s\",\"radio\":%d,\"offset\":%.0f,\"cpu\":%.1f,\"on\":%d}",
+                          c->standard, c->radio ? c->radio->idx : -1, c->offset_hz, load, !c->muted);
         }
     }
     n += snprintf(buf + n, len - n, "]");
