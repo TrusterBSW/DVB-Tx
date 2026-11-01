@@ -805,15 +805,15 @@ class Supervisor:
         self.si.tick(force=True)
         self.start_engine()
         gpu.MANAGER.start()             # detection only; the learning, when needed, in the background
-        for p in self.ingest:
-            p.start()
-        web = None
+        web = None                      # before the sources: resolving yt-dlp ones takes seconds each
         if self.cfg["web"].get("enabled", True) and self.cfg["web"].get("listen"):
             from . import web as webmod
             try:
                 web = webmod.start(self, self.cfg["web"]["listen"])
             except OSError as e:
                 log.error("web page on %s: %s (running without it)", self.cfg["web"]["listen"], e)
+        for p in self.ingest:
+            p.start()
         tick = 0
         while not self._stop:
             self._run_calls(1.0)

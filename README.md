@@ -251,6 +251,14 @@ sudo systemctl reload dvbtx              # re-read the EPG and the channels of t
 sudo systemctl enable --now dvbtx@room   # another instance: /etc/dvbtx/room.toml
 ```
 
+From a source checkout (no .deb), `packaging/install-service.sh` writes and enables the unit:
+
+```bash
+sudo packaging/install-service.sh -c /path/to/dvbtx.toml   # started now and at boot
+sudo systemctl stop dvbtx      # start | stop | restart | status
+journalctl -u dvbtx -f
+```
+
 ## Measurements
 
 Threadripper 2950X, Debian 12, radio output cabled to an RTL2832U DVB-T receiver:

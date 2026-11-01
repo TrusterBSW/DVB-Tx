@@ -491,6 +491,14 @@ sudo systemctl reload dvbtx               # relit l'EPG et les chaînes du fichi
 sudo systemctl enable --now dvbtx@salon   # autre instance : /etc/dvbtx/salon.toml (ses propres radios et ports)
 ```
 
+Depuis les sources (sans le paquet), `packaging/install-service.sh` écrit et active le service :
+
+```bash
+sudo packaging/install-service.sh -c /chemin/vers/dvbtx.toml   # démarré tout de suite et au boot
+sudo systemctl stop dvbtx      # start | stop | restart | status
+journalctl -u dvbtx -f
+```
+
 Le service donne la priorité temps réel aux threads radio (`LimitRTPRIO`) et définit `HOME` pour UHD
 (qui lit `~/.config/uhd.conf`, par exemple l'image FPGA d'un clone de B210).
 
