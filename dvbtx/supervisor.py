@@ -887,9 +887,21 @@ class Supervisor:
         return next((p for p in self.ingest if p.inp.index == index), None)
 
     def _new_input_index(self):
-        i = self.next_input
-        self.next_input += 1
-        return i
+        """a fresh input id. Every source change takes one: they are taken in turn and, past the last one,
+        from 0 again, skipping the ids still in use (the UDP port is base_port + id: the ids stay below
+        the engine's 1024 and the monitor ports)"""
+        ing = self.cfg["ingest"]
+        gap = int(ing["monitor_base_port"]) - int(ing["base_port"])
+        top = min(1024, gap) if gap > 0 else 1024
+        used = {i.index for i in self.plan.inputs} | {p.inp.index for p in self.ingest} \
+            | {r[1] for r in self.retiring} | {f["cand"]["inp"].index for f in self.fo.values() if f.get("cand")} \
+            | {i["index"] for i in (self.stats or {}).get("inputs", [])}
+        for _ in range(top):
+            i = self.next_input if self.next_input < top else 0
+            self.next_input = i + 1
+            if i not in used:
+                return i
+        raise RuntimeError(f"no input id left below {top}")
 
     def channel_add(self, spec, allow_exec=False):
         new_cfg, new_plan, sid = chmod.add(self.cfg, self.plan, spec, allow_exec)
