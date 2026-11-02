@@ -1,121 +1,185 @@
-# dvbtx — home-made multi-carrier DVB-T transmitter on a software radio
+<h1 align="center">dvbtx</h1>
 
-*[Version française : README.fr.md](README.fr.md)*
+<p align="center">
+  <b>Your own TV channels on your own coax.</b><br>
+  Live streams, cameras and files made into real DVB multiplexes, modulated on a software radio.
+</p>
 
-dvbtx builds complete DVB multiplexes from live streams, capture devices, files or pipes, and
-modulates them on a software radio (HackRF One, USRP B200/B210, any SoapySDR transmitter). One
-program replaces the bash scripts, ffmpeg, TSDuck and GNU Radio chain of the previous version:
+<p align="center">
+  <a href="README.fr.md">Version française</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#documentation">Documentation</a>
+</p>
 
-- **any number of carriers, radios and services**, described in one TOML file or on the command line;
-- all the carriers of a radio are synthesised **in a single FFT**: 2 multiplexes on a HackRF,
-  6 on a B210 (190 Mbit/s of payload);
-- a C multiplexer **clocked by the radio**: exact rate, restamped PCRs, generated PSI/SI (NIT with
-  logical channel numbers, SDT, EIT, TOT), automatic switch to a backup clip;
-- a monitoring web page: bit rate per service, **decoding margin**, over-capacity alerts, TSDuck
-  analysis exportable as JSON;
-- Debian package and systemd service.
+<p align="center">
+  <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Debian%2012%20%7C%2013%20%7C%20Ubuntu%2024.04-informational">
+  <img alt="standards" src="https://img.shields.io/badge/DVB-T%20%7C%20T2%20%7C%20C%20%7C%20S%20%7C%20S2-success">
+  <img alt="radios" src="https://img.shields.io/badge/radios-HackRF%20%7C%20USRP%20%7C%20SoapySDR-orange">
+</p>
 
-> ⚠️ **Closed coax only.** Transmitting on broadcast TV frequencies is illegal. dvbtx is meant for a
-> private coaxial network or a direct cable to the TV set, with attenuators.
+---
 
-## Architecture
+dvbtx turns a PC and a software radio into a small TV head-end. Give it a list of channels (IPTV
+links, YouTube or Twitch lives, an HDMI capture, a webcam, a folder of films), and any TV plugged
+on the coax finds them with their names, numbers and programme guide, as on regular digital TV.
 
-```
-  sources                    ingest (one ffmpeg process per source)        C engine (dvbtx-engine)
-  ───────                    ──────────────────────────────────────        ───────────────────────────────────────
-  HLS / HTTP / M3U ─┐                                                     ┌ UDP reception, PAT/PMT demux
-  Twitch, YouTube ──┤        ffmpeg -c copy (or encoding for              │ ideal departure time of every packet
-  RTMP / RTSP / SRT ┼──────► captures) ───── SPTS over local UDP ───────► │ (interpolated between PCRs, fixed buffer)
-  tvheadend (HTSP) ─┤        restarted automatically                      │
-  webcam / HDMI ────┤                                                     ├ one multiplexer per carrier, pulled by
-  screen / pattern ─┤        direct UDP multicast/unicast ──────────────► │ the modulator: due SI > most urgent
-  files, folder ────┤                                                     │ packet > PCR > null packet;
-  pipe, stdin, exec ┘                                                     │ PCR restamp, PID remap, backup switch
-                                                                          ├ DVB-T coding (RS, interleavers,
-  Python supervisor (dvbtx)                                               │ convolutional code, pilots, TPS)
-  ─────────────────────────                                               ├ one IFFT per radio for all its
-  configuration, frequency plan, NIT/SDT/EIT/TOT, EPG,                    │ carriers, at the radio rate
-  web page, alerts, TSDuck analysis ◄── UDP copy of each multiplex ◄───── └ HackRF / UHD / SoapySDR (plugins)
-```
+- **Every DVB flavour**: DVB-T, DVB-T2, DVB-C, DVB-S and DVB-S2, mixed on the same radio.
+- **Many multiplexes per radio**: 2 on a HackRF One, 6 on a USRP B210, all synthesised together;
+  any number of radios.
+- **Sources of every kind**: HLS, RTMP (OBS), SRT, RTSP, UDP, tvheadend, YouTube, Twitch, M3U
+  playlists, webcams and HDMI captures, screen, files, folders, pipes.
+- **Broadcast-grade multiplexing**: a C engine clocked by the radio, exact bit rate, PCRs
+  restamped, complete PSI/SI (NIT with channel numbers, SDT, EIT from XMLTV, TOT).
+- **It keeps going**: a backup clip when a source fails, several sources per channel in order of
+  preference, a radio unplugged takes only its own multiplexes off the air.
+- **A web page** to watch and drive it all: bit rates, decoding margin, previews, alerts, channels
+  and configuration edited live, Stop/Start per multiplex.
+- **Ready to run**: Debian packages, systemd service, power profiles for battery use.
 
-- **Each source is a separate process** linked over UDP: a source that crashes, freezes or lags never
-  disturbs the others; its service switches to its backup and comes back on its own.
-- **The multiplexer is clocked by the radio**: the modulator asks for each packet when it needs it.
-  No more ffmpeg `-muxrate`, `tsp -P regulate` or named pipe between TSDuck and GNU Radio drifting
-  apart: the rate is exact by construction, gaps are filled with null packets, PCRs are recomputed
-  at the real emission time (measured jitter < 0.5 µs).
-- **The heavy work is in C** (multiplexing, channel coding, FFTW, conversion); the Python supervisor
-  only does configuration, SI tables and monitoring.
+> [!WARNING]
+> **Closed coax only.** Transmitting on broadcast frequencies is illegal. dvbtx is meant for a
+> private coaxial network or a cable to the TV set, with attenuators.
 
-## Installation
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Configuration](#configuration)
+- [Sources](#sources)
+- [Changing channels on air](#changing-channels-on-air)
+- [Web page](#web-page)
+- [Service and power profiles](#service-and-power-profiles)
+- [Standards and radios](#standards-and-radios)
+- [Measurements](#measurements)
+- [Documentation](#documentation)
+- [Building from source](#building-from-source)
+- [License](#license)
+
+## Install
+
+Download the package for your system from the
+[releases](https://github.com/TrusterBSW/DVB-Tx/releases) and install it with apt (it pulls the
+dependencies):
+
+| System | Package |
+|---|---|
+| Debian 13 (trixie), Proxmox VE 9 | `dvbtx_0.1.0+deb13_amd64.deb` |
+| Debian 12 (bookworm), Proxmox VE 8 | `dvbtx_0.1.0+deb12_amd64.deb` |
+| Ubuntu 24.04 (noble) | `dvbtx_0.1.0+ubuntu24.04_amd64.deb` |
 
 ```bash
-sudo apt install ./dvbtx_0.1.0_amd64.deb       # Debian 12+ / Ubuntu 24.04+
+sudo apt install ./dvbtx_0.1.0+deb13_amd64.deb
+sudo apt install streamlink yt-dlp tsduck     # optional: HLS without stalls, YouTube, analysis
 ```
 
-From source:
-
-```bash
-sudo apt install build-essential pkg-config libfftw3-dev ffmpeg python3 \
-                 libhackrf-dev libuhd-dev libsoapysdr-dev       # every radio is optional
-make -C engine
-python3 -m dvbtx check -c configs/hackrf-1mux.toml
-./packaging/build-deb.sh                                         # builds the .deb
-```
-
-Python ≥ 3.11 (tomllib), standard library only. TSDuck is optional (analysis).
+One package per release because the radio plugins link that release's UHD and SoapySDR
+libraries. Each plugin is only *recommended*: a missing library disables that radio, nothing else.
 
 ## Quick start
 
 ```bash
-# command line only: one radio, one carrier
+dvbtx devices                                    # 1. the radios plugged in, with their args
+sudo cp /usr/share/dvbtx/configs/hackrf-1mux.toml /etc/dvbtx/dvbtx.toml
+sudoedit /etc/dvbtx/dvbtx.toml                   # 2. your channels
+dvbtx check                                      # 3. validate, see the frequency plan
+sudo systemctl enable --now dvbtx                # 4. on air, now and at every boot
+xdg-open http://127.0.0.1:8080/                  # 5. the web page
+```
+
+Then scan the channels on the TV. To try without a file:
+
+```bash
 sudo dvbtx --driver hackrf --channel 22 \
      --service "Pattern=lavfi:testsrc2=size=1280x720:rate=25" \
      --service "Movie=/srv/videos/movie.mkv,lcn=2"
-
-# with a file
-dvbtx check -c /etc/dvbtx/dvbtx.toml          # validate and show the frequency plan, no transmission
-sudo dvbtx run -c /etc/dvbtx/dvbtx.toml       # web page on http://127.0.0.1:8080/
-sudo dvbtx run -c my.toml -s radio.0.gain=40 -s carrier.1.frequency=498MHz
 ```
+
+`dvbtx -h` lists the commands, `dvbtx help COMMAND` details one, `man dvbtx` has everything.
+
+## How it works
+
+```
+ sources                  ingest (one process each)               C engine (dvbtx-engine)
+ ───────                  ─────────────────────────               ─────────────────────────────────────
+ HLS / HTTP / M3U ──┐                                            ┌ UDP reception, PAT/PMT demux
+ YouTube, Twitch ───┤     ffmpeg / streamlink / yt-dlp           │ de-jitter buffer, departure times
+ RTMP / RTSP / SRT ─┼───► copy, or encode (CPU or GPU) ──UDP───► ├ one multiplexer per carrier, pulled
+ tvheadend (HTSP) ──┤     restarted on failure                   │ by the modulator: SI > due packets
+ webcam / HDMI ─────┤                                            │ > PCR > null; backup switch
+ files, folders ────┤     udp+direct:// read by the engine ────► ├ DVB-T/T2/C/S/S2 channel coding
+ pipes, stdin ──────┘                                            ├ one synthesis per radio for all
+                                                                 │ its carriers, at the radio rate
+ Python supervisor (dvbtx): configuration, frequency plan,       └ HackRF / UHD / SoapySDR plugins
+ SI tables and EPG, alerts, watchdog, web page, TSDuck ◄── copy of each multiplex
+```
+
+- **Each source is its own process**: one that crashes, freezes or lags never disturbs the others;
+  its channel plays the backup clip and comes back on its own.
+- **The radio sets the pace**: the modulator asks for each packet when it needs it, so the bit rate
+  is exact by construction, gaps are filled with null packets, PCRs are stamped at the real
+  emission time (jitter < 0.5 µs).
+- **The heavy work is in C** (multiplexing, coding, FFTW); the Python supervisor does the
+  configuration, the SI tables, the monitoring and the web page.
+
+Details: `man 7 dvbtx`.
 
 ## Configuration
 
-Reference file, commented key by key: [`packaging/dvbtx.toml`](packaging/dvbtx.toml)
-(installed as `/etc/dvbtx/dvbtx.toml`). `[[radio]]` → `[[carrier]]` (multiplex: standard,
-frequency or channel, bandwidth, mode, constellation, code rate, guard interval, TSID) →
-`[[carrier.service]]` (name, LCN, source, EPG id, backup, encoding). Computed unless forced: radio
-LO and sample rate, service_id, LCN, PIDs, service type (from the streams). Examples in
-[`configs/`](configs/).
+One TOML file, `/etc/dvbtx/dvbtx.toml`: radios, then the multiplexes (carriers) of each radio,
+then the channels (services) of each multiplex.
+
+```toml
+[network]
+name = "Home TV"
+
+[[radio]]
+name = "hackrf"
+driver = "hackrf"              # hackrf, uhd, soapy, null
+gain = 30
+
+[[carrier]]
+name = "Mux 1"
+radio = "hackrf"
+channel = 22                   # or frequency = 482_000_000
+standard = "dvbt"              # dvbt, dvbt2, dvbc, dvbs, dvbs2
+  [[carrier.service]]
+  name = "News"
+  source = ["https://example.org/live.m3u8", "ytdlp:https://www.youtube.com/@channel/live"]
+  [[carrier.service]]
+  name = "Films"
+  source = "dir:/srv/films"
+```
+
+Everything not given is computed: radio frequency and sample rate, service_id, channel numbers,
+PIDs, service type. `-s radio.0.gain=40` overrides any key for one run. Every key is described in
+`man 5 dvbtx.toml` and, commented, in [`packaging/dvbtx.toml`](packaging/dvbtx.toml); more examples
+in [`configs/`](configs/).
 
 ## Sources
 
-`/path/file.mkv` (looped) · `dir:/folder` (playlist, one file after the other) · `http(s)://`, HLS ·
-`m3u:list.m3u#Name` · `twitch://channel` · `ytdlp:URL` · `streamlink:URL` · `htsp://user:pass@host:9982/Channel`
-(tvheadend) · `rtmp://...` and `rtmp://0.0.0.0:1935/live/key?listen` (receive OBS) · `rtsp://`,
-`srt://`, `udp://`, `rtp://` · `udp+direct://239.0.0.1:2000` (read by the engine, no ffmpeg) ·
-`v4l2:/dev/video0?size=1280x720&fps=30&audio=pulse:default` (webcam, HDMI capture) ·
-`screen::0.0?size=1920x1080` · `lavfi:testsrc2` · `pipe:/path/fifo` · `stdin:` · `exec:command`.
-Capture sources are encoded (`video_bitrate = "auto"` takes the share of the multiplex left by the
-others), the others copied; `encode = { ... }` forces encoding (libx264/x265, VAAPI, NVENC, MPEG-2).
+| Source | Example |
+|---|---|
+| file (looped), folder | `/srv/movie.mkv`, `dir:/srv/films` |
+| HTTP, HLS | `https://host/live.m3u8`, `…#quality=720p`, `…#variant=2` |
+| M3U playlist entry | `m3u:/srv/list.m3u#Channel name` |
+| YouTube, Twitch, any streamlink site | `ytdlp:https://youtube.com/…`, `twitch://name`, `streamlink:URL` |
+| tvheadend | `htsp://user:pass@host:9982/Channel` |
+| RTMP (OBS), RTSP, SRT, UDP, RTP | `rtmp://0.0.0.0:1935/live/key?listen`, `srt://…`, `udp://239.0.0.1:2000` |
+| UDP straight to the engine | `udp+direct://239.0.0.1:2000` |
+| webcam, HDMI capture, screen | `v4l2:/dev/video0?size=1280x720&fps=30`, `screen::0.0` |
+| test pattern | `lavfi:testsrc2` |
+| pipe, stdin, command | `pipe:/path/fifo`, `stdin:`, `exec:command` |
 
-HLS URLs are read through [streamlink](https://streamlink.github.io/) when it is installed (`hls = "auto"`,
-per channel or in `[defaults]`): it downloads the segments and hands them on as they are, and ffmpeg's
-MPEG-TS reader rebases the timestamps at each discontinuity. ffmpeg's own HLS reader stalls there (an ad,
-the next episode on Pluto, Samsung TV Plus...) and falls behind short live playlists, the channel then
-falling back to its backup: seen 4 s lost every 10 s on a Pluto channel, none in 8 min through
-streamlink. A source asking something only ffmpeg does (`#variant=N`, a `map` on programs,
-`ffmpeg_input`) stays on ffmpeg; `hls = "ffmpeg"` or `"streamlink"` forces one. `URL#quality=720p`
-(or `3300k`, `best`, `1000k,worst`) picks streamlink's quality for one source, `best` by default;
-`streamlink:URL` reads anything streamlink has a plugin for (Dailymotion, YouTube...).
+Streams already in MPEG-TS-friendly codecs are copied, captures are encoded (on a GPU when one
+works: Intel, AMD, NVIDIA are detected and tested once). A list of sources is played in order of
+preference: the next one when the one playing fails, back to a preferred one when it works again,
+the backup clip when none does. HLS goes through streamlink when installed, which rides the
+discontinuities (ads, next episode) that stall ffmpeg. Everything: `man 7 dvbtx-sources`.
 
-## Channels while on air: `dvbtx channel`
-
-Add, remove, rename, renumber a channel or give it another source while dvbtx runs: only that
-channel is touched (the others lose no packet), and the change is written back to the
-configuration file (comments kept, `sid` / `lcn` / `pid_base` pinned so that nothing shifts).
-A change of source does not cut the channel: the old source plays until the new one has a key frame
-due, then the switch is made on it (measured: 25-33 ms between two video packets, as without change).
+## Changing channels on air
 
 ```bash
 dvbtx channel list
@@ -126,220 +190,110 @@ dvbtx channel renumber "France 24 FR" 1 --swap
 dvbtx channel remove 0x0103
 ```
 
-The same from the web page (**+ Ajouter une chaîne**, **Modifier**, **✕**), from the API
-(`GET/POST /api/channels`, `PATCH/DELETE /api/channels/<number|0xSID|name>`), or by editing the
-file then `systemctl reload dvbtx`. When dvbtx is not running, `dvbtx channel` edits the file.
-Changes from the web are refused from other sites and need `web.token` if one is set; `exec:`
-sources only from the file. Everything: [`docs/CHANNELS.md`](docs/CHANNELS.md).
+Only that channel is touched (the others lose no packet), and the file is updated (comments kept,
+numbers pinned so that nothing shifts). A change of source has no cut: the new one takes over on a
+key frame. `man dvbtx-channel`.
 
-## Logical channel numbers and ONID
+## Web page
 
-The NIT carries the EACEM private_data_specifier and logical_channel_descriptor (0x83), like the
-French DTT. **Many TVs ignore LCNs when the original_network_id does not match their country**:
-`onid` and `network_id` default to `0x20FA` (France); set your country's in `[network]`.
+`http://127.0.0.1:8080/` by default (`web.listen`):
 
-## EPG
+- **dashboard**: radios (state, buffer, underruns), multiplexes (fill per channel, 10-minute
+  graph, **Stop / Start**), alerts;
+- **channels**: what each one plays, its bit rate, its **decoding margin** (how early frames reach
+  the TV: ~700 ms normally, below zero the picture freezes), what is on now and next, thumbnails, a
+  live view in the browser, the multiplex as on air in VLC (`.ts` link);
+- **sources**: the process of each source (copy or transcode, CPU or which GPU, speed, restarts,
+  log, restart button);
+- **configuration**: radios, multiplexes and channels edited with the useful bit rate computed as
+  you type; changes are saved at once and go on air with **Apply** (channels one by one, without
+  touching the others); profiles to switch between setups;
+- **logs**; a JSON API (`/api/status`, `/api/channels`...), Prometheus `/metrics`, TSDuck analysis
+  exported as JSON.
 
-Every XMLTV or TSDuck EIT XML file dropped in `epg.dir` (`/var/lib/dvbtx/epg/`) is loaded and
-re-read when it changes; XMLTV URLs can be polled too (`epg.urls`). EIT present/following and
-schedule (`epg.days`), ISO 6937 text, genre and parental rating. `dvbtx epg` shows what each
-service gets.
+`man 7 dvbtx-web`.
 
-## Useful bit rate: `dvbtx calc`
-
-```bash
-dvbtx calc dvbt --table          # full DVB-T table (31.67 Mbit/s for 64-QAM 7/8 1/32 8 MHz)
-dvbtx calc dvbt --constellation 64qam --code-rate 3/4 --guard 1/8 --services 6
-dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4
-```
-
-## Monitoring, alerts, TSDuck export
-
-- web page in tabs (dashboard, channels, sources, configuration, logs; `#chaines`, `#config`... in the
-  address): network settings with the ONID picked by country (terrestrial: 0x2000 + ISO 3166 numeric
-  code), per-channel priority (who loses first when the multiplex is full) and, for re-encoded
-  channels, a share of the bit rate (`bitrate_weight`: SD 1, HD 2, Full HD 3, 4K 6) up to
-  `max_bitrate`;
-- radios (buffer, CPU, underruns), multiplexes (occupancy per service, 10-minute graph,
-  TSDuck), services (active source, input/output rates, **decoding margin**, lateness, input CC
-  errors, now/next), sources (ffmpeg state, restarts, log, restart button), alerts;
-- the **decoding margin** is, for every frame, the time between its emission and its decoding time
-  in the receiver (DTS − PCR at emission, minimum per second): ~700 ms normally, lower when the
-  multiplex is too full, below zero the TV freezes;
-- alerts (log, `webhook` JSON POST, `command`): sources asking more than the channel can carry,
-  full multiplex, low margin, dropped packets, service on backup, looping source, radio underrun,
-  TSDuck errors, engine down, radio missing;
-- **Stop / Start** on each multiplex of the page: off the air at once, the others not interrupted,
-  its sources paused; a radio whose multiplexes are all stopped is switched off (and on again with
-  them). Kept in the file (`enabled = false` in the `[[carrier]]`) across restarts;
-- a **radio missing** at the start or unplugged while on air takes only its own multiplexes off
-  the air (their sources paused), the other radios go on; it is looked for every 15 s and the
-  engine started again once it is back (a short cut of the others). With no radio at all, dvbtx
-  runs without transmitting and its web page stays;
-- `--analysis-export udp://host:port` (or `tcp://`): TSDuck `analyze` JSON report of every
-  multiplex; `--stats-export`: engine statistics + alerts every second; `/metrics` for Prometheus;
-  `/api/status` JSON; each multiplex is copied to `udp://127.0.0.1:20900+n` (and `carrier.monitor`);
-- what each source does (copy, CPU or GPU transcode and on which card), its frames per second, speed
-  against real time, dropped/duplicated frames, CPU and GPU engine load;
-- channel previews: thumbnails shown by default (`web.preview_thumbnails`; the eye of the preview
-  column hides them), one key frame per channel every 60 s (`web.preview_thumb_every_s`) while a page
-shows them, each shot reading the multiplex only a few seconds; a live view
-  in the browser (the picture as on air, H.264 copied; only the container, TS -> MP4, and the sound,
-  MP2/AC-3 -> AAC, change; `#live=<sid>` opens one; a click on a channel's picture opens it); and a **TS** link per
-  multiplex: the multiplex exactly as on air, every channel (`/api/mux/<n>.ts`, relayed without
-  ffmpeg; for mpv, VLC...). The engine
-  opens a copy of the multiplex for the preview (`monitor add`), nothing runs when nobody looks;
-- configuration from the page: radios, multiplexes (frequency, standard, modulation, with the useful
-  rate computed live), channels. Every change is validated and saved in the file at once (comments
-  kept), nothing changes on air until **Apply** in the banner listing the pending changes: channels
-  only are applied one by one, a radio or multiplex change restarts the transmission (1-2 s, the
-  unchanged sources keep running). Profiles are copies of the file beside it (`dvbtx.toml.<name>`):
-  save one, load one over the file, then apply; only `dvbtx.toml` is ever applied.
-
-## GPU transcoding
-
-Sources that must be re-encoded go through a GPU when one works, else libx264 on the CPU
-(`[ingest] gpu = "auto" | "off" | list of devices`; per channel `encode = { hwaccel = "cpu" }`).
-The cards (Intel, AMD, NVIDIA, integrated or not) are detected at every start; every way to use them
-(VAAPI per VA driver, low power or not, QSV, NVENC; the whole chain on the GPU, decoding on it with frames copied to memory, or only the encoding)
-is tested once on a 1080p→720p capped-rate transcode in H.264, HEVC and MPEG-2: kept if the codec and
-size are right and the **bit rate stays under its cap** (no rate control: refused), ranked by speed. The learning runs again (in the background, CPU
-meanwhile) only when the cards, their drivers or ffmpeg change (`/var/lib/dvbtx/gpu.json`);
-`dvbtx gpu` shows it, `dvbtx gpu learn` or the web button redoes it. New transcodes go to the card
-with the most speed left; one that fails twice moves to another way, then to the CPU.
-The clip (H.264 High, like a broadcast) is played twice: a way that breaks where the source loops is
-refused (ffmpeg 7.1 with the frames kept on the GPU); among the ways at least half as fast as the
-fastest, the one using the least CPU is chosen. Measured, 1080p→720p H.264, CPU per frame: libx264
-veryfast 18.3 ms, Intel UHD 630 7.1 ms (219 frames/s), NVIDIA RTX A5500 6.6 ms (243 frames/s). Intel
-up to gen 9: Debian's free VA driver has no scaling nor rate control there, the non-free one is enough.
-
-## Several sources per channel, cache
-
-`source` may be a list, in order of preference, as long as needed:
-`source = ["http://provider/u/p/289", "http://provider/u/p/319", "http://provider/u/p/976"]`.
-When the source playing has delivered nothing for `failover_s` (10 s), or has not started within
-`source_start_s` (30 s), the next one is started (after the last, the first again), the channel
-playing its backup meanwhile. While not on the first one, the preferred ones are tried again in
-order every `preferred_retry_s` (300 s, 0: never), beside the one playing: the channel goes back
-to one without a cut as soon as it delivers. An unstable source is left too: the channel fell back
-to its backup `unstable_switches` times (3) within `unstable_window_s` (10 min), or stayed on it
-`failover_s` + `return_ms` (20 s); a source left is tried again later each time (5 min, 10, 20...
-up to 1 h), forgiven once it has held 30 min. None works: the general `backup`. A failed source is
-stopped before the next one starts (IPTV accounts limited to one connection).
-`dvbtx channel source 3 URL1 URL2 URL3`, or one source per line on the web page.
-An HLS master playlist offers several qualities and ffmpeg takes the first one listed: `URL#variant=N`
-plays only its variant N (0 = the first, as `ffprobe -show_programs` numbers them), for this source
-alone, so that a list can fall back to a lower quality of the same stream:
-`source = ["https://host/live.m3u8#variant=3", "https://host/live.m3u8#variant=0"]`. The fragment
-is not sent to the server.
-
-**Cache**: `buffer_ms`, the delay accepted between the arrival of a source and its transmission:
-larger, an irregular stream goes through without losses or switch to the backup, the channel being
-later than live. `auto` (default): 6000 ms for sources delivered in segments (YouTube, Twitch,
-`.m3u8`: at the live edge they arrive in bursts, one per segment), 1000 ms otherwise. Per channel,
-100-30000 ms: `buffer_ms = 8000`, `--cache 8000`, or the **Cache** field of the web page; changing
-it does not cut the channel. A source is down only once its cache has played out.
-
-## Backup clip
-
-Each service has a backup (`/var/lib/dvbtx/backup.ts`, made by `dvbtx make-backup --text ...` or
-`--image file.png`): after `switch_timeout_ms` (3 s) of silence the service switches to it on a key
-frame, and returns once the primary has been stable for `return_ms` (10 s).
-
-## systemd
+## Service and power profiles
 
 ```bash
-sudo systemctl enable --now dvbtx        # /etc/dvbtx/dvbtx.toml
-sudo systemctl reload dvbtx              # re-read the EPG and the channels of the file (applied live)
-sudo systemctl enable --now dvbtx@room   # another instance: /etc/dvbtx/room.toml
-```
-
-From a source checkout (no .deb), `packaging/install-service.sh` writes and enables the unit:
-
-```bash
-sudo packaging/install-service.sh -c /path/to/dvbtx.toml   # started now and at boot
-sudo systemctl stop dvbtx      # start | stop | restart | status
+sudo systemctl enable --now dvbtx         # /etc/dvbtx/dvbtx.toml, at every boot
+sudo systemctl reload dvbtx               # EPG and channels of the file, applied live
+sudo systemctl enable --now dvbtx@room    # another transmitter: /etc/dvbtx/room.toml
 journalctl -u dvbtx -f
 ```
 
-### On battery: power profiles
-
-`dvbtx-power` (opt-in, system wide) keeps the whole machine in power saving while nothing is on air and
-switches to a transmit profile while a dvbtx unit runs:
+**On battery**, `dvbtx-power` keeps the whole machine in its most frugal state while nothing is on
+air, and switches to a transmit profile while dvbtx runs (opt-in):
 
 ```bash
-sudo systemctl enable --now dvbtx-power          # .deb ; from a checkout: install-service.sh --power
-sudo /usr/lib/dvbtx/dvbtx-power status           # profile, governor, EPP, turbo, ASPM, package watts
+sudo systemctl enable --now dvbtx-power
+sudo dvbtx power status
 ```
 
-| | save (boot, nothing on air) | transmit (a dvbtx unit running) |
-|---|---|---|
-| governor / EPP | powersave / `power` | powersave / `balance_power` |
-| turbo | off | allowed |
-| PCIe ASPM | `powersupersave` | firmware default |
-| USB autosuspend | on (keyboards and mice spared) | off (radios never suspended) |
-| PCI runtime PM, SATA ALPM, audio, NMI watchdog, Wi-Fi power save | saving | saving |
+Measured on an Intel i3-8100T with four multiplexes on two radios: idle 1.37 W → 0.62 W, on air
+22.1 W → 13.9 W (processor package), no underrun. `man 8 dvbtx-power`.
 
-The dvbtx units call it at start and stop (`ExecStartPre`/`ExecStopPost`, also after a crash); the last
-one to stop goes back to save. Each value can be changed in `/etc/default/dvbtx-power` (`SAVE_EPP=`,
-`TRANSMIT_EPP=`, `SAVE_TURBO=`, `TRANSMIT_ASPM=`, `SAVE_EXTRA=` for a command of your own, ...).
-With `[engine] cpu_latency_us = 100` the cores may still sleep in C6 between two buffers: on an
-i3-8100T with 4 multiplexes on two radios, 22.1 W became 13.8 W with transmit, no underrun.
+From a source checkout (no package): `sudo packaging/install-service.sh -c FILE [--power]`.
+
+## Standards and radios
+
+| | Status |
+|---|---|
+| DVB-T (2k/8k, QPSK to 64-QAM) | ✅ on air; sample-exact against GNU Radio gr-dtv |
+| DVB-T2 (single PLP, 1K–32K, extended, PP1–PP8, up to 256-QAM rotated) | ✅ on air (32K 256-QAM 5/6, 50 Mbit/s, error-free); sample-exact against gr-dtv on 23 configurations |
+| DVB-C (16 to 256-QAM) | ✅ on air (256-QAM error-free on a B210, 128-QAM on a HackRF) |
+| DVB-S (QPSK 1/2–7/8) | ✅ demodulated by leandvb |
+| DVB-S2 (QPSK, 8PSK, 16APSK, 32APSK) | ✅ symbol-exact against gr-dtv, 8PSK 9/10 decoded error-free by gr-dvbs2rx |
+| HackRF One | ✅ up to 20 MS/s: 2 adjacent 8 MHz multiplexes |
+| USRP B200/B210 (UHD) | ✅ 56 MHz: 6 adjacent 8 MHz multiplexes |
+| SoapySDR transmitters | built, not tried |
 
 ## Measurements
 
-Threadripper 2950X, Debian 12, radio output cabled to an RTL2832U DVB-T receiver:
+Radio output cabled to a DVB-T/T2/C receiver:
 
 | Setup | Result |
 |---|---|
-| HackRF, 1 multiplex 64-QAM 7/8 | lock, C/N 30.9 dB, post-Viterbi BER 0 |
-| HackRF, 2 multiplexes (482 + 490 MHz) | both locked, C/N ~29 dB, BER 0; CPU: radio 25 %, 26 % per multiplex (of one core) |
-| B210, 6 multiplexes (474-514 MHz) | all six locked, C/N 26-34 dB, BER 0; CPU: radio 38 %, ~25 % per multiplex; no underrun |
-| RF-received TS through TSDuck | no continuity error, PCRs OK, names, LCN, ONID, NIT, EIT, TOT correct, video decoded |
+| HackRF, 1 DVB-T multiplex 64-QAM 7/8 | C/N 30.9 dB, BER 0 |
+| B210, 6 DVB-T multiplexes (474–514 MHz) | all locked, C/N 26–34 dB, BER 0; radio 38 % of a core, ~25 % per multiplex |
+| DVB-T2 32K 256-QAM 5/6 (50.08 Mbit/s) | HackRF C/N 31.7 dB, B210 40 dB, no error |
+| DVB-C 256-QAM 6.9 Msym/s (50.87 Mbit/s) | B210 C/N 41.5 dB, no error |
+| Received stream through TSDuck | no continuity error, PCRs in spec, NIT, SDT, EIT, TOT correct |
+| TV set | channels found with names, numbers, EPG, AAC and E-AC-3 5.1 sound |
 
-The C DVB-T coder is **sample-exact against GNU Radio gr-dtv** (`tests/`) on 2k/8k, QPSK to
-64-QAM, every code rate and guard interval.
+The synthesis, filter banks and DVB-T2 port are described in `man 7 dvbtx` and
+[`docs/DVBT2_PORT.md`](docs/DVBT2_PORT.md); the validation scripts in [`tests/`](tests/README.md).
 
-## Status
+## Documentation
 
-DVB-T ✅ (validated over the air) · HackRF ✅ · USRP/UHD ✅ · SoapySDR (built, untested) ·
-DVB-C (16/32/64/128/256-QAM) ✅ symbol-exact against the mini-cmts J.83A encoder, received over the air (Sony
-tuner: 256-QAM error-free on a B210, 128-QAM on a HackRF) · DVB-S (QPSK 1/2-7/8) ✅ demodulated by leandvb ·
-DVB-S2 (QPSK/8PSK/16APSK/32APSK) ✅ symbol-exact against gr-dtv, 8PSK 9/10 at 20 Msym/s decoded error-free by
-gr-dvbs2rx ·
-DVB-T2 (single PLP, 1K-32K, normal/extended, PP1-PP8, QPSK-256QAM rotated, normal/short frames) ✅ sample-exact
-against gr-dtv on 23 configurations (`docs/DVBT2_PORT.md`), resampled to the radio rate (exact, see below) and
-mixable with the other carriers: `standard = "dvbt2"` with `fft`, `extended`, `guard`, `pilot`, `constellation`,
-`rotation`, `code_rate`, `frame`.
+| Page | What it covers |
+|---|---|
+| `dvbtx -h`, `dvbtx help COMMAND` | every command and option |
+| [`dvbtx(1)`](man/dvbtx.1) | the command line |
+| [`dvbtx-channel(1)`](man/dvbtx-channel.1) | changing channels while on air |
+| [`dvbtx.toml(5)`](man/dvbtx.toml.5) | the configuration file, key by key |
+| [`dvbtx(7)`](man/dvbtx.7) | how it works: components, data flow, timing, failures |
+| [`dvbtx-sources(7)`](man/dvbtx-sources.7) | every kind of source, failover, cache, backup clip |
+| [`dvbtx-web(7)`](man/dvbtx-web.7) | the web page and its HTTP API |
+| [`dvbtx-engine(8)`](man/dvbtx-engine.8) | the C engine, its INI file, commands and statistics |
+| [`dvbtx-power(8)`](man/dvbtx-power.8) | power profiles for battery use |
 
-DVB-C, DVB-S and DVB-S2 carriers (`standard = "dvbc"` with `symbol_rate`, `constellation`; `"dvbs"` with
-`symbol_rate`, `code_rate`; `"dvbs2"` with `symbol_rate`, `modulation`, `code_rate`, `rolloff`, `pilots`, `frame`)
-and DVB-T2 are synthesised directly at the radio rate by frequency-domain filter banks (overlap-save): each block of
-symbols goes through an FFT, is weighted by the exact root-raised-cosine response (flat for the DVB-T2 resampling),
-placed at the carrier frequency, and one IFFT per bank gives the radio samples. The planner picks a radio rate of
-which the symbol rates are simple fractions (`dvbtx check` shows it). Measured with an ideal receiver
-(`tests/rx_sc_mer.py`, null radio, 16-bit samples, 256-QAM): 85.6 dB of MER with an adjacent carrier, against
-21 dB with the former 16-symbol polyphase filter; DVB-T2 resampling within -110 dB of ideal. `synth = "fir"` on a
-carrier keeps the polyphase filter (also used when the rate is not a simple fraction).
+Installed with the package (`man dvbtx.toml`); from the sources, `man -l man/dvbtx.toml.5`.
 
-When the radio rate is a whole multiple k of the DVB-T2 rate (64/7 MHz in 8 MHz channels; the planner prefers
-such a rate when the radio carries T2, and puts the LO on a 62.5 kHz grid from the T2 carriers), the T2 carriers
-are not resampled at all: each OFDM symbol is one IFFT of k x FFT points at the radio rate, shared by all the T2
-carriers with the same FFT size, guard interval and frame length (P1 included). Measured on the continual pilots
-(`tests/rx_t2_pilots.py`, null radio): 148 dB for one carrier (146 dB for the native-rate reference), 145.5 dB
-for two adjacent T2 carriers. Engine CPU (whole process), T2 32K 256-QAM 5/6: 0.42 core at 18.29 MS/s against
-1.16 with the filter bank at 16.33 MS/s; two T2 and one DVB-C 256-QAM carrier: 1.06 cores at 27.43 MS/s against
-2.68 at 24.18 MS/s. Like DVB-T, the OFDM side lobes are not filtered (-49 dB at the band edge): an adjacent DVB-C
-carrier on the same radio measures 59 dB of MER instead of 85 (far above what a DAC and its analog stage give).
-Over the air (32K 256-QAM 5/6, 50.077 Mbit/s, to an Astrometa key: RTL2832P USB bridge, Sony CXD2837ER
-demodulator): C/N 30.1-30.6 dB from a HackRF, 40 dB from a B210, no uncorrectable FEC block, the same with the
-filter bank; on an i5-9500 the engine takes 0.31 core against 0.46 with the bank. The few bad packets this key
-delivers (5 to 15 a minute: inserted garbage packets, half of them flagged TEI, and short bursts of lost packets)
-come from the key, not from the signal: the sent and received streams aligned packet by packet show no bit error,
-their number does not change with the radio, the number of carriers, the LO position, the synthesis, the
-modulation, the code rate or the level, and the key shows the same on a commercial cable network (DVB-C, DVB-T,
-DVB-T2, DOCSIS).
+## Building from source
+
+```bash
+sudo apt install build-essential pkg-config libfftw3-dev ffmpeg python3 \
+                 libhackrf-dev libuhd-dev libsoapysdr-dev       # every radio is optional
+make -C engine
+python3 -m dvbtx check -c configs/hackrf-1mux.toml
+sudo packaging/install-service.sh -c /path/to/dvbtx.toml       # as a service, from here
+./packaging/build-deb.sh                                         # .deb for this system
+./packaging/build-all-debs.sh                                    # .deb for every release (docker)
+```
+
+Python ≥ 3.11, standard library only. TSDuck is optional (analysis).
 
 ## License
 
-GPL-3.0-or-later.
+GPL-3.0-or-later. © 2024–2026 BILLY Rémi.

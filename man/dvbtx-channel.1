@@ -1,0 +1,231 @@
+'\" t
+.TH DVBTX-CHANNEL 1 2026-11-02 "dvbtx 0.1.0" "dvbtx manual"
+.SH NAME
+dvbtx\-channel \- list, add, remove, rename, renumber channels and change their source while dvbtx is on air
+.SH SYNOPSIS
+.EX
+dvbtx channel [\-c FILE] [\-\-url URL] [\-\-token TOKEN] [\-\-offline] COMMAND ...
+
+dvbtx channel list [\-\-json]
+dvbtx channel add NAME SOURCE... [\-\-number N] [\-\-mux MUX] [\-\-sid SID] [\-\-backup SRC | \-\-no\-backup]
+                                 [\-\-cache MS|auto] [\-\-option KEY=VALUE]...
+dvbtx channel remove CHANNEL
+dvbtx channel rename CHANNEL NEW_NAME
+dvbtx channel renumber CHANNEL NUMBER [\-\-swap]
+dvbtx channel source CHANNEL SOURCE... [\-\-backup SRC | \-\-no\-backup] [\-\-cache MS|auto] [\-\-option KEY=VALUE]...
+dvbtx channel set CHANNEL KEY=VALUE...
+.EE
+.PP
+\fBchannels\fR is accepted for \fBchannel\fR, \fBrm\fR and \fBdelete\fR for \fBremove\fR. The common options may be
+given before or after the command.
+.SH DESCRIPTION
+.PP
+A channel is a service of a multiplex (a \fB[[carrier.service]]\fR of the configuration). While dvbtx
+runs, \fBdvbtx channel\fR sends the change to it through its web API (\fBweb.listen\fR): the change is
+applied at once to that channel only, and written back to the configuration file, so that the next
+start gives the same channels. The other channels of the multiplex, and the other multiplexes, are
+not interrupted: no packet lost, no extra delay (measured: the longest gap between two video packets
+of a neighbouring channel stays at 25\-33 ms, as without change).
+.PP
+When nothing answers on the web address, dvbtx is not running: the configuration file alone is
+edited, and the change is applied at the next start (or at once with \fBsystemctl reload dvbtx\fR if it
+was in fact running with its web page disabled).
+.PP
+\fBCHANNEL\fR designates a channel by its number (LCN: \fB5\fR), its service_id (\fB0x0105\fR, \fBsid:261\fR) or
+its name (\fB"France 24"\fR, any case; a name made of digits is taken as a number).
+.SS What each change does on air
+.PP
+.TS
+allbox tab(@);
+lb lb
+l lx.
+change@on air
+\fBadd\fR@T{
+new service in the PAT (new version), SDT, NIT (number), EIT; its source starts, the backup plays meanwhile (after \fBswitch_timeout_ms\fR)
+T}
+\fBremove\fR@T{
+out of the PAT, SDT, NIT, EIT; its source is stopped (a backup shared with other channels is kept)
+T}
+\fBrename\fR@T{
+SDT (the TV shows the new name at its next scan of the SDT, usually within seconds)
+T}
+\fBrenumber\fR@T{
+NIT logical_channel_descriptor (most TVs only reorder at a new channel scan)
+T}
+\fBsource\fR@T{
+\fBno cut\fR: the new source starts beside the old one; the channel switches to it on a video key frame due at that moment (or, without video, as soon as it has data due), the old source plays until then (15 s at most, then the channel goes on as usual: its backup if the new source does not come)
+T}
+\fB\-\-backup\fR@T{
+the new backup is used from the next failure of the source (at once if the channel is on its backup)
+T}
+\fBset\fR@T{
+any other service setting: a setting of the source (\fBytdlp_format\fR, \fBencode\fR, \fBreadrate\fR, \fBmap\fR...) restarts the source like \fBsource\fR (no cut); an engine setting (\fBswitch_timeout_ms\fR, \fBreturn_ms\fR, \fBmax_late_ms\fR, \fBearly_ms\fR, \fBpcr_max_ms\fR, \fBpmt_period_ms\fR, \fBpriority\fR, \fBpid_base\fR) re\-creates the service (cut of a few seconds)
+T}
+.TE
+.PP
+The service_id and the multiplex of a channel cannot be changed: remove it and add it again.
+.SS Several sources, in order of preference
+.PP
+Several \fBSOURCE\fRs (a TOML list in the file: \fBsource = ["first", "second", ...]\fR, one per line on
+the web page, a JSON list in the API), as many as needed. The first one plays. When the source
+playing has delivered nothing for \fBfailover_s\fR (10 s), or has not started within \fBsource_start_s\fR
+(30 s), it is stopped and the next one started (after the last, the first again); the channel plays
+its backup meanwhile. A source is also left when it is unstable: the channel fell back to its
+backup \fBunstable_switches\fR times (3) within \fBunstable_window_s\fR (600 s), or stayed on it
+\fBfailover_s\fR + \fBreturn_ms\fR (20 s). A source left is tried again later each time (5 min, then 10,
+20... up to an hour), forgiven once it has held 30 min. While not on the first one, the preferred ones are tried again, in order,
+every \fBpreferred_retry_s\fR (300 s; 0: never), beside the one playing: as soon as one delivers for
+2 s, the channel goes back to it without a cut. When none works, the backup clip (\fBbackup\fR) plays.
+\fBlist\fR, the web page and the alerts say which one plays (\fB*2\fR, \fBsource 2/3\fR).
+.PP
+A failed source is stopped before the next one starts, so an IPTV account allowing one connection
+can be given several of its streams. Trying a preferred source while another plays opens a second
+connection for a few seconds (start, 2 s of stream, the switch, then the other is closed): most
+accounts tolerate it, as when zapping; otherwise the provider refuses it (nothing changes) or drops
+the other (a few seconds of backup, then the preferred one); \fBpreferred_retry_s = 0\fR avoids these
+trials.
+.SS Cache
+.PP
+\fB\-\-cache MS\fR (\fBbuffer_ms\fR, 100 to 30000) is the delay accepted between the arrival of the source and
+its transmission. Larger, an irregular source goes through without lost packets nor switch to the
+backup, the channel being later than live. \fBauto\fR (default): 6000 ms for sources delivered in
+segments (YouTube, Twitch, \fB.m3u8\fR: at the live edge of the playlist they arrive in bursts, one per
+segment of 2 to 5 s), 1000 ms otherwise. A source is only taken as down once its cache has played
+out. A change of cache restarts the source beside the old one (no cut).
+.SS Numbers, service_id and PIDs stay where they are
+.PP
+By default the service_id, the number and the PIDs of a channel follow its position in the file.
+TVs identify a channel by its service_id: a removal must not shift the others. So every structural
+change (\fBadd\fR, \fBremove\fR, \fBrenumber\fR) writes \fBsid\fR, \fBlcn\fR and \fBpid_base\fR explicitly in the services
+of the file that relied on the defaults. A new channel takes the first free service_id of its
+multiplex (TSID × 256 + n), the first free number and the first free PID range (32 PIDs from 0x100).
+.SS The configuration file
+.PP
+Only the \fB[[carrier.service]]\fR blocks concerned are rewritten; comments and layout of the rest are
+kept, the previous version is kept as \fBFILE.bak\fR, and the result is read back: if it does not say
+exactly what was meant (unusual layout, such as a setting given in a \fB[carrier.service.encode]\fR
+sub\-table changed into another form), the file is left as it was and the change is only live
+(\fBwarning: not saved ...\fR).
+.PP
+The file is not written when it differs from what is running (edited by hand meanwhile: apply your
+edit first with \fBsystemctl reload dvbtx\fR), or when the channels come from the command line
+(\fB\-\-service\fR, \fB\-\-set carrier.N.service...\fR).
+.SS Editing the file by hand
+.PP
+\fBsystemctl reload dvbtx\fR (SIGHUP) re\-reads the file and applies the differences of the channels in
+the same way, channel by channel (the EPG and SI tables are re\-read too). Changes of the radios or
+multiplexes need a restart (logged, channels then left as they are); other settings outside the
+channels are logged as needing a restart. Give \fBsid\fR explicitly to the channels you move or remove
+by hand, or the following ones change service_id.
+.SH COMMANDS
+.TP
+\fBlist [\-\-json]\fR
+the channels: number, service_id, name, multiplex, what is on air (\fBprimary\fR, \fBbackup\fR, \fBnone\fR),
+source and backup. From the file when dvbtx is not running.
+.TP
+\fBadd NAME SOURCE...\fR
+\fBSOURCE\fR is any source dvbtx reads (several: in order of preference, see above) (file, \fBdir:\fR, URL, HLS, \fBytdlp:\fR, \fBtwitch://\fR, \fBm3u:\fR,
+\fBudp://\fR, \fBrtmp://\fR, \fBsrt://\fR, \fBv4l2:\fR, \fBlavfi:\fR...). \fB\-\-number N\fR (default: the first free one),
+\fB\-\-mux MUX\fR (index or name of the multiplex; required when there are several), \fB\-\-sid SID\fR,
+\fB\-\-backup SRC\fR (default: \fBdefaults.backup\fR) or \fB\-\-no\-backup\fR, \fB\-\-option KEY=VALUE\fR for any
+service setting (repeatable; values as in TOML: \fBencode=true\fR, \fBytdlp_format=b\fR, \fBpriority=7\fR).
+.TP
+\fBremove CHANNEL\fR
+removes the channel.
+.TP
+\fBrename CHANNEL NEW_NAME\fR
+1 to 60 characters, no quotes or backslashes.
+.TP
+\fBrenumber CHANNEL NUMBER [\-\-swap]\fR
+refused if the number is taken, unless \fB\-\-swap\fR: the other channel then gets the old number.
+.TP
+\fBsource CHANNEL SOURCE... [\-\-backup SRC | \-\-no\-backup] [\-\-cache MS|auto] [\-\-option KEY=VALUE]...\fR
+plays another source (or list of sources) on the channel without cutting it. \fB\-\-option\fR sets the service settings
+that go with the new source (\fBKEY=\fR with nothing removes one, e.g. a \fBytdlp_format\fR that does not
+apply to the new source).
+.TP
+\fBset CHANNEL KEY=VALUE...\fR
+changes any setting of the channel (\fBKEY=\fR removes it, back to the default).
+.SH OPTIONS
+.TP
+\fB\-c, \-\-config FILE\fR
+configuration file (default \fB/etc/dvbtx/dvbtx.toml\fR): its \fBweb.listen\fR and \fBweb.token\fR are used
+to reach the running dvbtx, and it is the file edited when dvbtx is not running.
+.TP
+\fB\-\-url URL\fR
+web address of the running dvbtx (default \fBhttp://\fR + \fBweb.listen\fR, \fB0.0.0.0\fR read as
+\fB127.0.0.1\fR).
+.TP
+\fB\-\-token TOKEN\fR
+\fBweb.token\fR of the running dvbtx (also \fBDVBTX_TOKEN\fR in the environment).
+.TP
+\fB\-\-offline\fR
+edit the configuration file only, even if dvbtx is running (to prepare several changes, then
+\fBsystemctl reload dvbtx\fR).
+.SH WEB PAGE AND API
+.PP
+The web page has a \fB+ Ajouter une chaîne\fR button per multiplex and \fBModifier\fR / \fB✕\fR buttons
+per channel (name, number with swap, sources, cache, backup); the result of each change is shown, and
+whether it was written to the file.
+.PP
+.EX
+GET    /api/channels                  [{"lcn", "sid", "name", "source", "backup", "carrier", "on", ...}]
+POST   /api/channels                  {"name", "source", "carrier"?, "lcn"?, "sid"?, "backup"?, options...}
+PATCH  /api/channels/<channel>        {"name"?, "lcn"?, "swap"?, "source"?, "backup"?, "buffer_ms"?, options...}
+DELETE /api/channels/<channel>
+.EE
+.PP
+\fB<channel>\fR as CHANNEL above, URL\-encoded. \fB"source"\fR: a string or a list (in order of
+preference); \fB"buffer_ms": null\fR back to auto. \fB"backup": ""\fR (or \fBfalse\fR) removes the backup, an option
+set to \fBnull\fR is removed. Answer `{"ok": true, "sid", "changes": [text], "detail": [{"what", "name",
+"from", "to"}], "saved", "warning"?}\fB, or \fR{"ok": false, "error"}` with status 400 (403, 401, 415:
+see below).
+.SH SECURITY
+.PP
+The web API can change what is broadcast, so:
+.IP \(bu 2
+requests that change something are refused when they come from another web site (\fBOrigin\fR
+checked: a page you visit cannot drive the transmitter through your browser) and must send JSON
+(\fBContent\-Type: application/json\fR);
+.IP \(bu 2
+\fBweb.token = "..."\fR: these requests then need \fBAuthorization: Bearer <token>\fR (the page asks for
+it once, \fBdvbtx channel\fR reads it from the configuration file or \fB\-\-token\fR). Set one when
+\fBweb.listen\fR is not \fB127.0.0.1\fR;
+.IP \(bu 2
+sources that run a command or read the standard input (\fBexec:\fR, \fBpipe:\fR, \fBstdin:\fR), and the raw
+ffmpeg arguments \fBffmpeg_input\fR / \fBffmpeg_output\fR (they can name an output file), are refused
+from the API unless \fBweb.allow_exec_sources = true\fR; they stay possible in the file.
+.SH FILES
+.TP
+\fB/etc/dvbtx/dvbtx.toml\fR
+configuration, rewritten by the changes (it is a conffile of the package: an upgrade that brings
+a new version of it asks what to do, as for any edit).
+.TP
+\fB/etc/dvbtx/dvbtx.toml.bak\fR
+the version before the last change.
+.SH EXAMPLES
+.PP
+.EX
+dvbtx channel list
+dvbtx channel add "France 24" "http://provider.example/live/user/pass/976" \-\-number 3
+dvbtx channel add "Sky News" "ytdlp:https://www.youtube.com/@SkyNews/live" \e
+      \-\-option 'ytdlp_format=bv*[vcodec^=avc1][height<=720]+ba/b[height<=720]'
+dvbtx channel source "Sky News" "https://example.org/sky/index.m3u8" \-\-option ytdlp_format=
+dvbtx channel source "France 24" http://provider.example/u/p/289 http://provider.example/u/p/319 \e
+      http://provider.example/u/p/976          # FHD, then HD, then Caribbean, then the backup clip
+dvbtx channel source "Seismic" twitch://dynamicearthcommunitylive \-\-cache 8000
+dvbtx channel rename 3 "France 24 FR"
+dvbtx channel renumber "France 24 FR" 1 \-\-swap
+dvbtx channel set 3 epg_id=France24.fr
+dvbtx channel remove 0x0103
+dvbtx channel \-\-offline \-c /etc/dvbtx/dvbtx.toml add "Mire" lavfi:smptehdbars && sudo systemctl reload dvbtx
+curl \-s \-X PATCH \-H 'Content\-Type: application/json' \-d '{"name": "Info"}' http://127.0.0.1:8080/api/channels/3
+.EE
+.SH SEE ALSO
+.BR dvbtx (1),
+.BR dvbtx.toml (5),
+.BR dvbtx\-sources (7),
+.BR dvbtx (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR dvbtx\-power (8)

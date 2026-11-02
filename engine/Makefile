@@ -40,8 +40,10 @@ $(BUILD)/dvbtx-sdr-null.so: src/sdr_null.c src/sdr.h | $(BUILD)
 $(BUILD)/dvbtx-sdr-hackrf.so: src/sdr_hackrf.c src/sdr.h | $(BUILD)
 	$(CC) $(CFLAGS) -fPIC -shared $(shell pkg-config --cflags libhackrf) -o $@ $< $(shell pkg-config --libs libhackrf) -lm
 
+# only libuhd: the plugin uses its C API (uhd.pc also lists Boost libraries, not needed here and not
+# always installed with libuhd-dev)
 $(BUILD)/dvbtx-sdr-uhd.so: src/sdr_uhd.c src/sdr.h | $(BUILD)
-	$(CC) $(CFLAGS) -fPIC -shared $(shell pkg-config --cflags uhd) -o $@ $< $(shell pkg-config --libs uhd) -lm
+	$(CC) $(CFLAGS) -fPIC -shared $(shell pkg-config --cflags uhd) -o $@ $< $(shell pkg-config --libs-only-L uhd) -luhd -lm
 
 $(BUILD)/dvbtx-sdr-soapy.so: src/sdr_soapy.c src/sdr.h | $(BUILD)
 	$(CC) $(CFLAGS) -fPIC -shared $(shell pkg-config --cflags SoapySDR) -o $@ $< $(shell pkg-config --libs SoapySDR) -lm

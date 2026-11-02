@@ -1,0 +1,645 @@
+.TH DVBTX-SOURCES 7 2026-11-02 "dvbtx 0.1.0" "dvbtx manual"
+.SH NAME
+dvbtx-sources \- source syntax and behaviour of the dvbtx services
+.SH SYNOPSIS
+.EX
+[[carrier.service]]
+name = "Info"
+source = "SOURCE"                          # or ["SOURCE", "SOURCE", ...]
+backup = "/var/lib/dvbtx/backup.ts"        # or false
+.EE
+.SH DESCRIPTION
+Each service (channel) of a
+.B dvbtx
+multiplex plays a
+.IR source :
+a file, a folder, a stream URL, a capture device, a pipe or a command.
+The
+.B source
+key of a
+.B [[carrier.service]]
+table (see
+.BR dvbtx.toml (5)),
+the
+.B \-\-service
+option of
+.BR dvbtx (1),
+.BR dvbtx\-channel (1)
+and the web page all take the same strings.
+The
+.B backup
+key takes the same strings too.
+.PP
+Every source runs in a process of its own, usually
+.BR ffmpeg (1),
+sometimes fed by a producer
+.RB ( streamlink (1),
+.BR yt\-dlp ,
+a command), that turns it into a single\-program MPEG\-TS sent over UDP to
+.BR 127.0.0.1 :\fIport\fR
+(port
+.BR ingest.base_port " + the input number)."
+The engine reads it, re\-times every packet, restamps the PCRs and remaps the PIDs into the
+multiplex.
+A source that crashes, freezes or lags never disturbs the others: its service switches to its
+backup, and the process is restarted.
+Only
+.B udp+direct://
+sources skip ffmpeg and are received by the engine itself.
+.SH SOURCE FORMS
+.SS Files
+.TP
+.IR /path/file.mkv ", " file:///path/file.mkv
+A local file, looped
+.RB ( "loop = true" ,
+ffmpeg
+.BR "\-stream_loop \-1" ).
+A path that is a FIFO is read as a stream instead.
+.TP
+.IR dir:/path/folder ", " /path/folder
+Every video file of the folder
+.RI ( .mkv ,
+.IR .mp4 ,
+.IR .ts ,
+.IR .m2ts ,
+.IR .mov ,
+.IR .avi ,
+.IR .webm ,
+.IR .mpg ,
+.IR .mpeg ,
+.IR .flv ,
+.IR .m4v ,
+.IR .wmv ),
+in name order, as a playlist: one ffmpeg per file, the next one started as soon as a file ends,
+back to the first after the last.
+Files of different formats may be mixed; the engine handles the change of timeline and PMT.
+.SS HTTP and HLS
+.TP
+.IR http://... ", " https://...
+A progressive stream or an HLS playlist, with reconnection on network errors (15 s read timeout).
+An HLS URL (one containing
+.BR m3u8 )
+is read through streamlink or ffmpeg according to
+.B hls
+(see
+.BR "HLS READER" ).
+.TP
+.IB URL #variant= N
+Only variant
+.I N
+of an HLS master playlist (0 = the first, as
+.B ffprobe \-show_programs
+numbers them); ffmpeg otherwise takes the first variant listed.
+Read by ffmpeg.
+.TP
+.IB URL #quality= Q
+The quality streamlink names
+.I Q
+.RB ( 720p ,
+.BR 3300k ,
+.BR best ,
+.BR 1000k,worst ...;
+default
+.BR best ),
+for an HLS URL; read through streamlink whatever
+.B hls
+says (an error if it is not installed).
+.PP
+The fragment applies to that source only, so that a list can fall back to a lower quality of the
+same stream, and is never sent to the server.
+.TP
+.BI m3u: PATH_OR_URL # ENTRY
+An entry of an M3U playlist, local or fetched over HTTP: matched by its title,
+.B tvg\-name
+or
+.B tvg\-id
+(case, spaces and punctuation ignored), or by its index from 0 when
+.I ENTRY
+is a number; without
+.BI # ENTRY ,
+the first entry.
+Resolved again at each start of the source.
+.TP
+.BI streamlink: URL \fR[\fB#quality= Q \fR]
+Anything streamlink has a plugin for (Dailymotion, YouTube, HLS...), written by streamlink on a
+pipe to ffmpeg; quality
+.B best
+by default.
+.TP
+.BI twitch:// CHANNEL \fR[\fB?quality= Q \fR]
+A Twitch channel, through streamlink with its ads disabled; without streamlink, the
+.B best
+format given by yt\-dlp.
+.TP
+.BI ytdlp: URL
+Anything yt\-dlp can read (YouTube lives...), with the format
+.B ytdlp_format
+(default: H.264 up to 1080p with AAC).
+The stream URLs are resolved again at each start (they expire).
+When yt\-dlp gives separate video and audio streams, both are read with their own timestamps
+to stay in sync.
+.TP
+.BI htsp:// USER : PASS @ HOST :9982/ CHANNEL\fR,\ \fBtvh://\fR...
+A tvheadend channel, by name or number, read from its HTTP streaming port (the HTSP port
+minus one) with the
+.B pass
+profile
+.RB ( ?profile=...
+chooses another).
+.SS Network streams
+.TP
+.BI rtmp:// HOST / APP / KEY\fR,\ \fBrtmps://\fR...
+RTMP pull.
+.TP
+.BI rtmp://0.0.0.0:1935/ APP / KEY ?listen
+RTMP received: dvbtx listens, and OBS (or any RTMP client) streams to
+.BI rtmp:// this\-host / APP / KEY\fR.
+No timeout: the service plays its backup until a client connects.
+.TP
+.BI rtsp:// ...
+RTSP over TCP
+.RB ( rtsp_transport
+changes it), 15 s timeout.
+.TP
+.BI srt:// ...\fR,\ \fBudp://\fR...,\ \fBrtp://\fR...,\ \fBtcp://\fR...
+Read by ffmpeg with its own options in the URL
+.RB ( srt://0.0.0.0:9000?mode=listener ).
+.B udp://
+gets a large FIFO, overruns tolerated, 15 s timeout.
+.TP
+.BI udp+direct:// HOST : PORT\fR,\ \fBdirect://\fR...
+An MPEG\-TS on UDP, unicast or multicast, received by the engine itself: no process, no
+re\-encoding, no codec check.
+It must carry DVB codecs.
+.B program
+selects a program of a multi\-program stream (0: the first).
+A plain
+.B udp://
+source with
+.B direct = true
+is the same.
+.SS Capture and generated sources
+These are always encoded (see
+.BR "COPY OR ENCODE" ).
+.TP
+.BI v4l2: DEVICE ? OPTIONS
+A webcam or HDMI capture card
+.RI ( /dev/video0
+when
+.I DEVICE
+is empty).
+Options, joined with
+.BR & :
+.BI size= WxH\fR,
+.BI fps= N\fR,
+.BI format= F
+(input format such as
+.BR mjpeg ),
+.BI audio= A\fR.
+.TP
+.BI screen: DISPLAY ? OPTIONS\fR,\ \fBx11:\fR...
+The X11 screen
+.RB ( screen::0.0 ;
+.B $DISPLAY
+when empty):
+.BI size= WxH\fR,
+.BI fps= N
+(default 25),
+.BI audio= A\fR.
+.TP
+.BI lavfi: GRAPH\fR[\fB?audio=\fIA\fR], \fBtestsrc:\fR...
+An ffmpeg lavfi source graph, read at real time
+.RB ( lavfi:testsrc2=size=1280x720:rate=25 ,
+the default;
+.BR lavfi:smptehdbars=size=1920x1080:rate=25 ).
+.PP
+.I A
+is
+.B silence
+(default of
+.B v4l2:
+and
+.BR screen: ),
+.B sine
+(1 kHz, default of
+.BR lavfi: ),
+.BR none ,
+.BI alsa: DEV\fR,
+.BI pulse: DEV\fR,
+.BI pipewire: DEV
+(through PulseAudio),
+.BI jack: DEV
+.RB ( default
+when
+.I DEV
+is empty), or any other ffmpeg input.
+.SS Pipes and commands
+.TP
+.BI pipe: PATH
+A named pipe, in any container ffmpeg understands
+.RB ( "mkfifo /run/dvbtx/in.fifo" ,
+then
+.BR "any_program > /run/dvbtx/in.fifo" ).
+.TP
+.BR stdin: ", " stdin ", " \-
+The standard input of dvbtx
+.RB ( "some_program | dvbtx run \-c ..." ).
+.TP
+.BI exec: COMMAND
+The standard output of a shell command
+.RB ( "exec:streamlink \-\-stdout https://www.twitch.tv/x best" ),
+restarted with ffmpeg.
+.PP
+.BR exec: ,
+.BR pipe: ,
+.B stdin:
+sources, and the
+.B ffmpeg_input
+/
+.B ffmpeg_output
+options, are refused from the web API and from
+.B dvbtx channel
+talking to it, unless
+.BR "web.allow_exec_sources = true" ;
+the configuration file may always use them.
+.SH HLS READER
+ffmpeg's HLS reader stalls at the discontinuities of a live playlist (an ad, the next episode)
+and falls behind short playlists; streamlink hands the segments on as they are, and ffmpeg's
+MPEG\-TS reader rebases the timestamps there.
+The
+.B hls
+setting (per service or in
+.BR [defaults] )
+chooses:
+.TP
+.B auto
+(default) through streamlink when it is installed and the service asks nothing that only ffmpeg
+does: no
+.BI # variant ,
+no
+.B ffmpeg_input
+option, no
+.B map
+on programs
+.RB ( 0:p:... ).
+.TP
+.B ffmpeg
+always ffmpeg (but
+.B #quality=
+still forces streamlink).
+.TP
+.B streamlink
+always streamlink; an error if it is not installed.
+.SH COPY OR ENCODE
+Sources are copied
+.RB ( "\-c copy" ,
+the streams selected by
+.BR map :
+the first video and every audio track by default), except:
+.IP \(bu 2
+capture sources
+.RB ( v4l2: ,
+.BR screen: ,
+.BR lavfi: ),
+always encoded;
+.IP \(bu 2
+.B encode = true
+or an
+.B encode = { ... }
+table: encoded with the
+.B [defaults.encode]
+settings, changed by the table;
+.IP \(bu 2
+without an explicit
+.BR encode ,
+and with
+.B codec_check
+(the default), files, folders, HTTP URLs, M3U entries and yt\-dlp streams are probed first with
+ffprobe: video other than H.264, HEVC or MPEG\-2/1 (VP9, AV1...) is encoded; audio not in
+.B copy_audio_codecs
+(Opus...) is encoded alone, the video copied.
+.PP
+.B encode = false
+forces the copy without probing.
+A re\-encoded service with
+.B video_bitrate = \(dqauto\(dq
+takes its share of what the multiplex has left (see
+.B bitrate_weight
+and
+.B max_bitrate
+in
+.BR dvbtx.toml (5)).
+.SS GPU transcoding
+When the codec is a generic one
+.RB ( libx264 ,
+.BR libx265 ,
+.BR mpeg2video )
+and
+.B hwaccel
+is
+.B \(dq\(dq
+or
+.BR auto ,
+the encode goes to a GPU when one works, else to the CPU:
+.IP \(bu 2
+the display adapters (Intel, AMD, NVIDIA) are detected at every start; those allowed by
+.B ingest.gpu
+are used;
+.IP \(bu 2
+every way to use them (VAAPI with each VA driver, low power or not, QSV, NVENC; the whole chain
+on the GPU, decoding on it with frames copied to memory, or only the encoding) is tested once
+per codec family on a 1080p to 720p capped\-rate transcode, kept if the output has the right
+codec and size and stays under its bit rate cap; among the ways at least half as fast as the
+fastest, the one using the least CPU is preferred; the learning runs
+again, in the background with the CPU meanwhile, only when the adapters, their drivers or ffmpeg
+change
+.RI ( /var/lib/dvbtx/gpu.json ;
+.B dvbtx gpu
+shows it,
+.B dvbtx gpu learn
+redoes it);
+.IP \(bu 2
+each new transcode goes to the adapter with the most speed left;
+a way that makes ffmpeg fail twice within 15 s of its start is not used again for that source,
+which moves to the next way, then to the CPU.
+.PP
+.BR "hwaccel = \(dqvaapi\(dq" ,
+.B \(dqqsv\(dq
+or
+.B \(dqnvenc\(dq
+restricts the choice to that kind;
+.B \(dqcpu\(dq
+never uses a GPU.
+An explicit GPU codec
+.RB ( h264_vaapi ,
+.BR h264_nvenc ...)
+is used as given, without the learning.
+.SH READING PACE
+.B readrate = \(dqauto\(dq
+reads at real time (ffmpeg
+.BR \-re )
+every source that does not arrive at real time by itself: files, folders, HTTP and HLS, M3U,
+yt\-dlp, streamlink, Twitch, tvheadend, commands.
+Live inputs (RTMP, RTSP, SRT, UDP, RTP, TCP, V4L2, screen, pipes, FIFOs, stdin) are read as
+they come.
+Network inputs read with
+.B \-re
+may catch up at
+.B readrate_catchup
+times real time (2) after a slow segment.
+A source arriving faster than real time raises an alert.
+.SH SEVERAL SOURCES PER CHANNEL
+.B source
+may be a list, in order of preference:
+.PP
+.RS
+.EX
+source = ["http://provider/u/p/289", "http://provider/u/p/319", "http://other/info.m3u8"]
+.EE
+.RE
+.PP
+The first one plays.
+The supervisor leaves the source playing, stops it, and starts the next one (after the last, the
+first again), the channel playing its backup meanwhile, when:
+.IP \(bu 2
+it has delivered nothing for
+.B failover_s
+(10 s), or has not started within
+.B source_start_s
+(30 s);
+.IP \(bu 2
+it is unstable: the channel fell back to its backup
+.B unstable_switches
+times (3) within
+.B unstable_window_s
+(600 s; 0 switches: never), or stayed on it
+.BR failover_s " + " return_ms
+(20 s).
+.PP
+A source is stopped before the next one starts, so an IPTV account allowing one connection can
+be given several of its streams.
+.PP
+While not on the first source, the preferred ones are tried again in order every
+.B preferred_retry_s
+(300 s; 0: never), beside the one playing: a candidate that delivers for 2 s takes over without
+a cut; one that does not deliver within
+.B source_start_s
+is abandoned.
+A source that was left is not tried again before a delay that doubles each time it is left
+(from
+.B preferred_retry_s
+up to an hour); that delay is reset once the source has played 30 min.
+.PP
+When no source works, the backup plays.
+The web page,
+.B dvbtx channel list
+and the alerts tell which source is on air.
+.SH CACHE
+.B buffer_ms
+is the delay between the arrival of a source and its transmission.
+Larger, an irregular source goes through without lost packets nor switch to the backup, the
+channel being later than live.
+.B auto
+(default) is 6000 ms for live sources delivered in segments, which arrive in bursts at the live
+edge
+.RB ( twitch:// ,
+.BR ytdlp: ,
+.BR streamlink: ,
+HTTP URLs containing
+.BR m3u8 ,
+youtube.com, youtu.be and twitch.tv URLs), 1000 ms otherwise.
+Per service: 100 to 30000.
+A source is taken as down only once its cache has played out.
+Changing the cache restarts the source beside the old one, without a cut.
+.SH BACKUP CLIP
+.B backup
+is played while the service's sources deliver nothing: after
+.B switch_timeout_ms
+(3000) of silence, once the cache has played out, the engine switches the service to it on a
+key frame; it switches back once the source has been stable for
+.B return_ms
+(10000).
+.PP
+The backup is any source form, looped, copied unless
+.BR "backup_encode = true" ;
+one process serves every service that names the same backup.
+The default is none; the packaged configuration sets
+.IR /var/lib/dvbtx/backup.ts ,
+made at installation by
+.BR "dvbtx make\-backup" :
+a 10 s 1080p H.264 clip with a text
+.RB ( \-\-text )
+or a picture
+.RB ( \-\-image ),
+silence or a 1 kHz tone
+.RB ( \-\-tone ),
+.B \-\-duration
+seconds, written to
+.B \-o
+.RI ( /var/lib/dvbtx/backup.ts ).
+.B backup = false
+on a service plays nothing instead.
+.SH SUPERVISION
+.TP
+.B Restart
+A source process that exits is restarted after
+.B ingest.restart_min_s
+(1 s), doubled at each failure up to
+.B ingest.restart_max_s
+(30 s), back to the minimum after 60 s of running.
+A producer (streamlink, a command) that dies takes its ffmpeg with it, and both restart.
+.TP
+.B Stall
+A source process running but delivering nothing for
+.B ingest.stall_restart_s
+(20 s: a frozen playlist, a half\-open connection) is restarted, so that the source comes back
+as soon as it is available.
+.TP
+.B Timestamp discontinuities
+A source whose ffmpeg reports
+.B ingest.discontinuity_restart
+(10) timestamp discontinuities within 30 s does not recover by itself: it is started again
+beside the running one and swapped in without a cut (a source received on a local port,
+.BR udp:// ,
+.BR rtp:// ,
+.BR srt:// ,
+.BR ?listen ,
+is stopped first: a short cut).
+.TP
+.B New PIDs
+When ffmpeg reports a video stream appearing mid\-way (an ad inserted on PIDs of its own), the
+streams mapped at the start fall silent: ffmpeg is started again at once (not twice within 10 s).
+.TP
+.B HLS standby
+When streamlink reports a discontinuity of an HLS stream (an ad, the next episode), its output
+may stop there for minutes.
+A second copy of the source is started beside it from the live edge, already past the
+discontinuity, and kept ready: it takes over without a cut as soon as the source in use stalls
+for 2 s or moves its video to new PIDs.
+It is stopped after 60 s if nothing stalled, or after 25 s if the source stalled and the standby
+is not delivering yet; the choice among several sources waits while a standby is starting.
+.TP
+.B Paused sources
+The sources of a multiplex stopped from the web page
+.RB ( "enabled = false" ),
+or of a multiplex whose radio is missing or unplugged, are stopped (paused) and the choice among
+several sources is suspended; they start again when the multiplex is started or its radio is
+back.
+Backup clips keep running.
+.SH CHANGES WHILE RUNNING
+.BR dvbtx\-channel (1),
+the web page, and
+.B systemctl reload dvbtx
+after an edit of the file change the source of one channel without touching the others: the new
+source starts beside the old one, which plays until the new one has a video key frame due, and
+the switch is made there.
+A change of a source setting
+.RB ( encode ,
+.BR ytdlp_format ,
+.BR readrate ,
+.BR map ,
+.BR buffer_ms ...)\&
+restarts the source the same way.
+.SH FILES
+.TP
+.I /etc/dvbtx/dvbtx.toml
+The configuration.
+.TP
+.I /var/lib/dvbtx/backup.ts
+Backup clip of the packaged configuration.
+.TP
+.I /var/lib/dvbtx/gpu.json
+Learnt GPU results
+.RB ( ingest.gpu_cache ).
+.TP
+.I /usr/share/dvbtx/configs/sources.toml
+One service of each source form.
+.SH EXAMPLES
+.EX
+[[carrier.service]]
+name = "Film"
+source = "/srv/videos/film.mkv"
+
+[[carrier.service]]
+name = "Playlist"
+source = "dir:/srv/videos/playlist"
+loop = true
+
+[[carrier.service]]
+name = "France 24"
+source = "m3u:/srv/iptv/france.m3u#France 24"
+
+[[carrier.service]]
+name = "News"                     # FHD, then SD of the same stream, then another provider
+source = ["https://host/live.m3u8#variant=3",
+          "https://host/live.m3u8#variant=0",
+          "http://other.example/news.m3u8#quality=720p"]
+preferred_retry_s = 600
+
+[[carrier.service]]
+name = "YouTube"
+source = "ytdlp:https://www.youtube.com/@SkyNews/live"
+ytdlp_format = "bv*[vcodec^=avc1][height<=720]+ba/b[height<=720]"
+buffer_ms = 8000
+
+[[carrier.service]]
+name = "Twitch"
+source = "twitch://some_channel?quality=720p"
+
+[[carrier.service]]
+name = "Tvheadend"
+source = "htsp://user:pass@tvh.lan:9982/France 2"
+
+[[carrier.service]]
+name = "OBS"
+source = "rtmp://0.0.0.0:1935/live/obs?listen"
+
+[[carrier.service]]
+name = "Camera"
+source = "rtsp://cam.lan:554/stream1"
+
+[[carrier.service]]
+name = "Multicast"
+source = "udp+direct://239.0.0.1:2000"
+
+[[carrier.service]]
+name = "HDMI"
+source = "v4l2:/dev/video2?size=1920x1080&fps=25&audio=alsa:hw:2,0"
+encode = { video_bitrate = "6M", deinterlace = true }
+
+[[carrier.service]]
+name = "Screen"
+source = "screen::0.0?size=1920x1080&fps=25&audio=pulse:default"
+encode = { hwaccel = "cpu", size = "1280x720" }
+
+[[carrier.service]]
+name = "Pattern"
+source = "lavfi:smptehdbars=size=1920x1080:rate=25"
+backup = false
+
+[[carrier.service]]
+name = "Command"
+source = "exec:streamlink \-\-stdout https://www.twitch.tv/some_channel best"
+.EE
+.PP
+On the command line:
+.PP
+.EX
+sudo dvbtx \-\-driver hackrf \-\-channel 22 \e
+     \-\-service \(dqPattern=lavfi:testsrc2=size=1280x720:rate=25\(dq \e
+     \-\-service \(dqMovie=/srv/videos/movie.mkv,lcn=2\(dq
+dvbtx channel source 3 http://a.example/fhd.ts http://a.example/hd.ts
+dvbtx channel source 5 \(dqytdlp:https://www.youtube.com/@SkyNews/live\(dq \-\-cache 8000
+dvbtx make\-backup \-\-text \(dqBack in a moment\(dq \-o /var/lib/dvbtx/backup.ts
+.EE
+.SH SEE ALSO
+.BR dvbtx (1),
+.BR dvbtx\-channel (1),
+.BR dvbtx.toml (5),
+.BR dvbtx (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR dvbtx\-power (8),
+.BR ffmpeg (1),
+.BR streamlink (1),
+.BR yt\-dlp (1)

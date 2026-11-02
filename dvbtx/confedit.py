@@ -398,6 +398,7 @@ def needs_restart(old, new):
     """True when applying changes more than the channels (radios, multiplexes, other settings)"""
     a, b = copy.deepcopy(old), copy.deepcopy(new)
     a["carrier"], b["carrier"] = _strip_services(a.get("carrier", [])), _strip_services(b.get("carrier", []))
-    a.pop("defaults", None)
-    b.pop("defaults", None)
+    for sec in ("defaults", "power"):       # power: read by "dvbtx power" at the next profile switch
+        a.pop(sec, None)
+        b.pop(sec, None)
     return a != b

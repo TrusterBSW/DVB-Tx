@@ -763,8 +763,8 @@ function chOpen(mode, c, sv) {
   $("#ch_maxbr").value = !mb ? "" : /m$/i.test(mb) ? parseFloat(mb) : /k$/i.test(mb) ? parseFloat(mb) / 1000 : Number(mb) / 1e6;
   chMode.before = Object.assign(chMode.before || {}, { prio, weight, maxbr: $("#ch_maxbr").value });
   $("#ch_err").textContent = "";
-  $("#ch_saved").textContent = last.config_path ? `Appliqué tout de suite à cette chaîne seulement, et enregistré dans ${last.config_path}.`
-    : "Appliqué tout de suite à cette chaîne seulement (pas de fichier de configuration : non enregistré).";
+  $("#ch_saved").textContent = last.config_path ? `Enregistré dans ${last.config_path}, à l'antenne avec « Appliquer » (cette chaîne seulement, les autres ne sont pas touchées).`
+    : "À l'antenne avec « Appliquer » (cette chaîne seulement ; pas de fichier de configuration : non enregistré).";
   chdlg.showModal();
 }
 function chAdd(ci) { const c = last.carriers.find((x) => x.index === ci); chOpen("add", c, null); }

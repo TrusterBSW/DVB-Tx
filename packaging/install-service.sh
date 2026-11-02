@@ -7,7 +7,7 @@
 #   -n NAME     unit name (default dvbtx): several transmitters, each with its own radios and ports
 #   --no-start  enabled at boot only, not started now
 #   --power     also dvbtx-power.service: the whole machine in power saving at boot and whenever
-#               nothing is on air, the transmit profile while NAME runs (packaging/dvbtx-power)
+#               nothing is on air, the transmit profile while NAME runs (dvbtx power, dvbtx-power(8))
 # Run it again after moving the checkout or changing CONFIG; "systemctl disable --now NAME" and
 # removing /etc/systemd/system/NAME.service uninstalls it.
 set -e
@@ -53,8 +53,8 @@ Wants=network-online.target
 Type=simple
 ExecStart=$PY -m dvbtx run --config $CONFIG
 # power profile transmit while on air, save after (only when dvbtx-power.service is enabled)
-ExecStartPre=-+$SRC/packaging/dvbtx-power hook start %n
-ExecStopPost=-+$SRC/packaging/dvbtx-power hook stop %n
+ExecStartPre=-+$PY -m dvbtx power hook start %n -c $CONFIG
+ExecStopPost=-+$PY -m dvbtx power hook stop %n -c $CONFIG
 # reload = re-read the EPG folder and the channels of the configuration file (applied channel by
 # channel); a change of the radios or multiplexes needs a restart
 ExecReload=/bin/kill -HUP \$MAINPID
@@ -78,15 +78,15 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 EOF
 if [ $POWER = 1 ]; then
-    sed "s|/usr/lib/dvbtx/dvbtx-power|$SRC/packaging/dvbtx-power|; s|^Before=.*|Before=$NAME.service|
-         s|^Documentation=.*|Documentation=file://$SRC/README.md|" \
+    sed -e "s|^ExecStart=.*|ExecStart=$PY -m dvbtx power default -c $CONFIG\\nWorkingDirectory=$SRC\\nEnvironment=PYTHONPATH=$SRC|" \
+        -e "s|^Before=.*|Before=$NAME.service|" -e "s|^Documentation=.*|Documentation=file://$SRC/man/dvbtx-power.8|" \
         "$SRC/packaging/dvbtx-power.service" > /etc/systemd/system/dvbtx-power.service
 fi
 systemctl daemon-reload
 if [ $POWER = 1 ]; then
     systemctl enable dvbtx-power
     # already on air (started before its unit had the hooks): transmit, else save now
-    systemctl -q is-active "$NAME" && "$SRC/packaging/dvbtx-power" hook start "$NAME.service"
+    systemctl -q is-active "$NAME" && PYTHONPATH=$SRC "$PY" -m dvbtx power hook start "$NAME.service" -c "$CONFIG"
     systemctl start dvbtx-power
 fi
 if [ $START = 1 ]; then

@@ -1,0 +1,416 @@
+.TH DVBTX 1 2026-11-02 "dvbtx 0.1.0" "dvbtx manual"
+.SH NAME
+dvbtx \- DVB transmitter on software radios: live streams, captures and files to DVB-T, DVB-T2, DVB-C, DVB-S, DVB-S2
+.SH SYNOPSIS
+.SY dvbtx
+.RI [ COMMAND ]
+.RI [ OPTIONS ]
+.YS
+.SY dvbtx
+.B run
+.RB [ \-c
+.IR FILE ]
+.RB [ \-s
+.IR KEY = VALUE ]...\&
+.RI [ "quick setup options" ]
+.RI [ "run options" ]
+.YS
+.SY dvbtx
+.B check
+|
+.B engine\-ini
+|
+.B epg
+.RB [ \-c
+.IR FILE ]
+.RB [ \-s
+.IR KEY = VALUE ]...\&
+.YS
+.SY dvbtx
+.B channel
+.RI [ COMMAND ]
+.RI [ ARGS ]
+.YS
+.SY dvbtx
+.B calc
+.I STANDARD
+.RI [ OPTIONS ]
+.YS
+.SY dvbtx
+.B devices
+|
+.B gpu
+.RB [ list | learn ]
+.YS
+.SY dvbtx
+.B make\-backup
+.RI [ OPTIONS ]
+.YS
+.SY dvbtx
+.B power
+.BR save | transmit | default | status | hook
+.YS
+.SY dvbtx
+.BR help " [" \fICOMMAND\fR "] | " \-h " | " \-\-version
+.YS
+.SH DESCRIPTION
+.B dvbtx
+builds complete DVB multiplexes from live streams (HLS, RTMP, SRT, RTSP, Twitch, YouTube, M3U
+playlists, tvheadend), capture devices (webcam, HDMI capture, screen), files and pipes, and
+modulates them on software radios: HackRF One, USRP B200/B210 (UHD) and any SoapySDR transmitter.
+A radio carries any number of carriers (multiplexes) in DVB-T, DVB-T2, DVB-C, DVB-S or DVB-S2;
+there can be any number of radios and of services per multiplex.
+It generates the PSI/SI tables (PAT, PMT, NIT with logical channel numbers, SDT, EIT from XMLTV,
+TDT/TOT), clocks every multiplex on its radio, switches a service to a backup clip when its
+source fails, and serves a monitoring and control web page.
+.PP
+Everything is described in one TOML file,
+.BR dvbtx.toml (5),
+or for a single radio and carrier on the command line.
+How the parts fit together is explained in
+.BR dvbtx (7).
+.PP
+.B Closed coax only.
+Radiating on broadcast frequencies is forbidden: dvbtx is meant for a private coaxial network or a
+cable to the TV set, with attenuators.
+.PP
+Without a command,
+.B run
+is meant:
+.B dvbtx \-c my.toml
+is
+.BR "dvbtx run \-c my.toml" .
+.B dvbtx \-h
+lists the commands,
+.BI "dvbtx " COMMAND " \-h"
+or
+.BI "dvbtx help " COMMAND
+gives the options of one.
+.SH COMMANDS
+.TP
+.B run
+Run the transmitter until stopped: the source processes, the C engine
+.RB ( dvbtx\-engine (8)),
+the SI tables and EPG, the alerts and the web page
+.RB ( dvbtx\-web (7)).
+SIGINT or SIGTERM stops it; SIGHUP re-reads the EPG folder and the channels of the
+configuration file (applied channel by channel, the others untouched).
+Needs the rights to open the radios and to take real-time priorities (root, or the systemd
+service).
+.TP
+.B check
+Validate the configuration and print the plan: radios with their local oscillator and sample
+rate, carriers with their useful bit rate, services with their service_id, logical channel
+number and PIDs.
+Nothing is transmitted.
+.TP
+.B channel
+List, add, remove, rename, renumber the channels of the running transmitter or change their
+source, without touching the others; written back to the configuration file.
+See
+.BR dvbtx\-channel (1).
+.TP
+.B calc
+Useful MPEG-TS bit rate of a carrier (see
+.B CALC OPTIONS
+below).
+.TP
+.B devices
+Ask
+.BR hackrf_info ,
+.B uhd_find_devices
+and
+.B SoapySDRUtil
+for the radios plugged in and print the
+.B driver
+and
+.B args
+to put in a
+.B [[radio]]
+table.
+.TP
+.BR gpu " [" list | learn ]
+List the graphics adapters and, for each one and each codec (H.264, HEVC, MPEG-2), the fastest
+working way to transcode with it, as learnt (VAAPI, QSV, NVENC; whole chain on the GPU, or only the
+encoding).
+.B learn
+tests every way again now; otherwise
+.B dvbtx run
+does it in the background when the adapters, their drivers or ffmpeg change.
+.TP
+.B epg
+Load the EPG (files of
+.BR epg.dir ,
+XMLTV or TSDuck EIT XML, and
+.BR epg.urls )
+and show for each service the number of events and what is on now and next.
+.TP
+.B make\-backup
+Create the looping clip a service plays while its source is down (see
+.B MAKE-BACKUP OPTIONS
+below).
+.TP
+.B power
+Power profiles of the whole machine, for a transmitter on battery: every saving while nothing is
+on air, a transmit profile while dvbtx runs.
+See
+.BR dvbtx\-power (8).
+.TP
+.B engine\-ini
+Write the INI file
+.B dvbtx run
+gives the engine, with its SI tables, and print its path
+.RB ( \-o
+.I FILE
+to choose it).
+.TP
+.BR help " [" \fICOMMAND " [" \fISUBCOMMAND ]]
+The help of a command, as
+.BR \-h .
+.SH CONFIGURATION OPTIONS
+Common to
+.BR run ,
+.BR check ,
+.B engine\-ini
+and
+.BR epg .
+.TP
+.BI \-c " FILE" "\fR, \fP\-\-config " FILE
+TOML configuration file.
+Default
+.I /etc/dvbtx/dvbtx.toml
+when it exists and no service or frequency is given on the command line.
+.TP
+.BI \-s " KEY" = VALUE "\fR, \fP\-\-set " KEY = VALUE
+Override any setting, repeatable.
+Lists are indexed by number:
+.BR radio.0.gain=40 ,
+.BR carrier.1.frequency=498MHz ,
+.BR carrier.0.service.2.source=/srv/clip.ts ,
+.BR web.listen=0.0.0.0:8080 .
+Values are read as TOML (numbers, booleans, arrays, strings), and
+.BR k ,
+.BR M ,
+.B G
+suffixes are accepted
+.RB ( 482MHz ,
+.BR 6.9M ).
+.SS Quick setup
+One radio and one carrier, without a file or on top of the first radio and carrier of the file.
+.TP
+.BI \-\-driver " DRIVER"
+.BR hackrf ,
+.BR uhd ,
+.B soapy
+or
+.B null
+(no radio: the samples are thrown away, for tests).
+.TP
+.BI \-\-args " ARGS"
+Radio arguments, e.g.
+.BR serial=0000000000000000a06063c8234e6c5f .
+.TP
+.BI \-\-gain " DB"
+Transmit gain.
+.TP
+.B \-\-amp
+HackRF RF amplifier on.
+.TP
+.BI \-\-rate " RATE" "\fR, \fP\-\-center " FREQ
+Radio sample rate and local oscillator; computed from the carriers by default.
+.TP
+.BI \-\-standard " STD"
+.B dvbt
+(default),
+.BR dvbt2 ,
+.BR dvbc ,
+.BR dvbs ,
+.B dvbs2
+or
+.B ts
+(no modulation: the multiplex is sent to
+.BR carrier.output ).
+.TP
+.BI \-\-frequency " FREQ" "\fR, \fP\-\-channel " N
+Carrier frequency
+.RB ( 482MHz ),
+or UHF (21\(en69) / VHF (5\(en12) channel number.
+.TP
+.BI \-\-bandwidth " BW" "\fR, \fP\-\-mode " 2k | 8k "\fR, \fP\-\-constellation " C "\fR, \fP\-\-code\-rate " R "\fR, \fP\-\-guard " G
+DVB-T modulation: default 8 MHz, 8k, 64-QAM, 7/8, 1/32.
+.TP
+.BI \-\-tsid " N"
+transport_stream_id.
+.TP
+.BI \-\-service " NAME" = SOURCE\fR[\fP, KEY = VALUE\fR...]
+Add a service, repeatable:
+.BR "\-\-service \(dqMovie=/srv/movie.mkv,lcn=2\(dq" .
+The source syntax is in
+.BR dvbtx\-sources (7).
+.SS Run options
+.TP
+.BI \-\-work\-dir " DIR"
+Runtime directory: engine.ini, SI tables (default
+.IR /run/dvbtx ).
+.TP
+.BI \-\-web " HOST" : PORT \fR|\fP none
+Address of the web page (default
+.BR 127.0.0.1:8080 ),
+or none.
+.TP
+.BI \-\-epg\-dir " DIR"
+Folder of XMLTV or TSDuck EIT XML files.
+.TP
+.BI \-\-analysis\-export " URL"
+Send the TSDuck analysis of every multiplex (JSON) to
+.BI udp:// host : port
+or
+.BI tcp:// host : port\fR,
+repeatable; turns TSDuck on.
+.TP
+.BI \-\-stats\-export " URL"
+Send the engine statistics and the alerts (JSON, every second) to
+.B udp://
+or
+.BR tcp:// ,
+repeatable.
+.TP
+.B \-\-no\-tsduck
+Do not run the TSDuck analysers.
+.TP
+.BR \-v ", " \-\-verbose
+Debug messages.
+.SH CALC OPTIONS
+.B dvbtx calc
+.BR dvbt | dvbt2 | dvbc | dvbs | dvbs2
+prints the useful MPEG-TS bit rate, PSI/SI included.
+.TP
+.BI \-\-bandwidth " BW"
+DVB-T and DVB-T2 channel width (default 8MHz).
+.TP
+.BR \-\-mode " 2k|8k"
+DVB-T (default 8k).
+.TP
+.BI \-\-constellation " C"
+DVB-T: qpsk, 16qam, 64qam; DVB-T2 up to 256qam; DVB-C: 16qam to 256qam.
+.TP
+.BI \-\-modulation " M"
+DVB-S2: qpsk, 8psk, 16apsk, 32apsk.
+.TP
+.BI \-\-code\-rate " R" "\fR, \fP\-\-guard " G
+Code rate and guard interval.
+.TP
+.BI \-\-symbol\-rate " S"
+DVB-C, DVB-S, DVB-S2 (e.g. 27.5M).
+.TP
+.BI \-\-fft " N" "\fR, \fP\-\-extended " yes | no "\fR, \fP\-\-pilot " PP N
+DVB-T2: FFT size (1k to 32k), extended carriers, pilot pattern.
+.TP
+.BR \-\-frame " normal|short" ", " \-\-no\-pilots
+DVB-S2 (and DVB-T2) FEC frame; DVB-S2 without pilots.
+.TP
+.BI \-\-services " N"
+Also the share of each of N services (3 % kept for PSI/SI).
+.TP
+.B \-\-table
+DVB-T: every constellation, code rate and guard interval.
+.SH MAKE-BACKUP OPTIONS
+.TP
+.BI \-o " FILE"
+Default
+.IR /var/lib/dvbtx/backup.ts .
+.TP
+.BI \-\-text " TEXT" "\fR, \fP\-\-image " PICTURE
+A text on a dark background (default
+.IR "Incident technique \- nous revenons dans un instant" ),
+or a picture.
+.TP
+.BI \-\-duration " S"
+Length (default 10 s), looped.
+.TP
+.B \-\-tone
+1 kHz tone instead of silence.
+.SH EXIT STATUS
+0 on success; 1 on an error (configuration error, file not found, command refused); 2 on a usage
+error.
+.SH ENVIRONMENT
+.TP
+.B DVBTX_TOKEN
+.B web.token
+used by
+.B dvbtx channel
+to talk to a running transmitter.
+.TP
+.B HOME
+UHD reads
+.I ~/.config/uhd.conf
+(FPGA image of a B210 clone...).
+.SH FILES
+.TP
+.I /etc/dvbtx/dvbtx.toml
+Configuration; other instances
+.IR /etc/dvbtx/ NAME .toml
+.RB ( dvbtx@ NAME .service ).
+.TP
+.I /usr/share/dvbtx/configs/
+Example configurations.
+.TP
+.I /var/lib/dvbtx/
+backup.ts, epg/ (EPG folder), gpu.json (transcoding ways learnt).
+.TP
+.I /run/dvbtx/
+Work directory: engine.ini, SI tables.
+.TP
+.I /usr/lib/dvbtx/
+dvbtx-engine, radio plugins dvbtx-sdr-*.so, the Python package.
+.TP
+.IR /usr/lib/systemd/system/dvbtx.service ", " dvbtx@.service ", " dvbtx\-power.service
+systemd units.
+.SH EXAMPLES
+Validate a configuration, then transmit with it:
+.PP
+.EX
+dvbtx check \-c /etc/dvbtx/dvbtx.toml
+sudo dvbtx run \-c /etc/dvbtx/dvbtx.toml
+.EE
+.PP
+No file: a pattern and a film on UHF channel 22 from a HackRF:
+.PP
+.EX
+sudo dvbtx \-\-driver hackrf \-\-channel 22 \e
+     \-\-service \(dqPattern=lavfi:testsrc2=size=1280x720:rate=25\(dq \e
+     \-\-service \(dqMovie=/srv/videos/movie.mkv,lcn=2\(dq
+.EE
+.PP
+Override settings of the file for one run:
+.PP
+.EX
+sudo dvbtx run \-c my.toml \-s radio.0.gain=40 \-s carrier.1.frequency=498MHz
+.EE
+.PP
+As a service:
+.PP
+.EX
+sudo systemctl enable \-\-now dvbtx
+sudo systemctl reload dvbtx          # EPG and channels of the file, live
+journalctl \-u dvbtx \-f
+.EE
+.PP
+Bit rates:
+.PP
+.EX
+dvbtx calc dvbt \-\-table
+dvbtx calc dvbt2 \-\-fft 32k \-\-extended yes \-\-constellation 256qam \-\-code\-rate 2/3
+dvbtx calc dvbs2 \-\-symbol\-rate 27.5M \-\-modulation 8psk \-\-code\-rate 3/4
+.EE
+.SH SEE ALSO
+.BR dvbtx\-channel (1),
+.BR dvbtx.toml (5),
+.BR dvbtx\-sources (7),
+.BR dvbtx (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR dvbtx\-power (8),
+.BR ffmpeg (1),
+.BR streamlink (1),
+.BR tsp (1)

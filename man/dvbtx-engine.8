@@ -1,0 +1,1013 @@
+.TH DVBTX-ENGINE 8 2026-11-02 "dvbtx 0.1.0" "dvbtx manual"
+.SH NAME
+dvbtx-engine \- multiplexer, DVB modulator and radio output of dvbtx
+.SH SYNOPSIS
+.B /usr/lib/dvbtx/dvbtx\-engine
+.RB [ \-v ]
+.I engine.ini
+.br
+.B /usr/lib/dvbtx/dvbtx\-engine \-\-probe
+.I engine.ini
+.I radio
+.br
+.B /usr/lib/dvbtx/dvbtx\-engine \-\-version
+.SH DESCRIPTION
+.B dvbtx\-engine
+is the real-time half of
+.BR dvbtx (1).
+It receives one MPEG\-TS program per UDP input, multiplexes the services of
+each carrier at the exact transport stream rate of that carrier, codes each
+carrier (DVB\-T, DVB\-T2, DVB\-C, DVB\-S, DVB\-S2), synthesises all the carriers
+of a radio into one stream of complex samples and hands them to a radio plugin
+(HackRF, UHD, SoapySDR or the null radio).
+.PP
+It is not meant to be run by hand.
+The
+.B dvbtx
+supervisor writes its configuration file
+.RI ( engine.ini ,
+in the work directory, by default
+.IR /run/dvbtx/engine.ini ),
+starts it with pipes on its standard input, output and error, sends it commands
+on standard input, reads one JSON object per line on standard output and its
+log on standard error.
+.B dvbtx engine\-ini
+writes the file the supervisor would use and prints its path, which is the
+easiest way to see a real one.
+.PP
+The engine asks the kernel to send it
+.B SIGTERM
+when its parent process dies
+.RB ( PR_SET_PDEATHSIG ),
+so that nothing stays on the air without the supervisor; for the same reason it
+refuses to start when its parent is already process 1
+.RI ( "fatal: parent already gone" ).
+.SH OPTIONS
+.TP
+.B \-v
+Debug log level, whatever
+.B log_level
+says in the file.
+.TP
+.B \-\-version
+Prints
+.I "dvbtx\-engine 0.1.0"
+and exits with status 0.
+.TP
+.BI \-\-probe " engine.ini radio"
+Loads the file, opens radio number
+.I radio
+(its
+.B [radio
+.IB N ]
+section) with its plugin and closes it at once, without transmitting.
+Exit status 0 when the radio could be opened, 1 otherwise (the reason on
+standard error).
+The supervisor runs this every 15 s for a radio that is missing.
+.TP
+.I engine.ini
+Any other argument is the configuration file (the last one given wins).
+Without one, a usage line is printed and the exit status is 2.
+.SH CONFIGURATION FILE
+The file is a plain INI file:
+.IP \(bu 2
+blank lines and lines starting with
+.B #
+or
+.B ;
+are ignored;
+.IP \(bu
+.BI [ "kind index" ]
+starts a section, for instance
+.B [carrier 0]
+or
+.BR "[service 3]" ;
+.IP \(bu
+.IB key " = " value
+lines belong to the last section; spaces around the key and the value are
+removed; a key may repeat (only
+.B table
+uses that); keys the engine does not know are ignored.
+.PP
+Integers are read with
+.BR strtoll (3)
+in base 0: decimal,
+.B 0x
+hexadecimal, and a leading
+.B 0
+means octal.
+Other numbers are decimal (or
+.BR 0x ).
+Frequencies and rates are in hertz and samples per second.
+A line that is not a section header or a
+.IB key = value
+pair inside a section is an error.
+Radios and carriers must be numbered 0, 1, 2... in the order of the file.
+Up to 16 radios, 128 carriers, 64 carriers per radio, 256 services per carrier
+and 1024 inputs.
+.SS [engine]
+.TP
+.B log_level
+.BR debug ,
+.BR info ,
+.B warn
+or
+.BR error .
+Default
+.BR info .
+.TP
+.B stats_interval_ms
+Period of the statistics lines on standard output.
+Default 1000.
+.TP
+.B cpus
+CPUs the engine's threads may run on (see
+.BR "CPU AFFINITY" ).
+.B auto
+(default),
+.BR all ,
+or a list such as
+.BR 1\-5 " or " 0,2,4\-7 .
+.TP
+.B cpu_latency_us
+Processor wake-up latency requested through
+.I /dev/cpu_dma_latency
+while the engine runs (see
+.BR "PROCESSOR LATENCY" ).
+Default 0;
+.B \-1
+makes no request.
+.SS [input N]
+One UDP input carrying one MPEG\-TS program (usually written by an ffmpeg
+ingest process).
+.I N
+is the input id, 0 to 1023; ids may have gaps.
+.TP
+.B addr
+Required.
+[\fBudp://\fR][\fIiface\fB@\fR]\fIhost\fB:\fIport\fR.
+An empty host,
+.B 0.0.0.0
+or
+.B *
+receive on every address; a multicast group is joined, on the interface
+.I iface
+when given; a host name is resolved.
+The socket asks for a 32 MiB receive buffer.
+.TP
+.B name
+Name shown in the statistics and the log.
+Default
+.BR input .
+.TP
+.B program
+program_number to keep from the stream; 0 (default) takes the first program of
+the PAT.
+.TP
+.B buffer_ms
+Fixed delay between the arrival of a packet and its ideal departure time.
+Default 1000.
+.TP
+.B ring_pkts
+Size of the ring of received packets, rounded up to a power of two, 1024 at
+least.
+Default 65536.
+.SS [radio N]
+.TP
+.B driver
+Radio plugin:
+.BR hackrf " (default), " uhd ", " soapy " or " null .
+.TP
+.B args
+Plugin arguments (see
+.BR "RADIO PLUGINS" ).
+Default empty.
+.TP
+.B freq
+Required.
+Centre (local oscillator) frequency in Hz.
+.TP
+.B rate
+Required.
+Sample rate in samples per second.
+.TP
+.B bandwidth
+Analog filter bandwidth in Hz; 0 (default) lets the plugin choose.
+.TP
+.B gain
+Transmit gain in dB, passed to the plugin.
+Default 0.
+.TP
+.B amp
+1 enables the HackRF front-end amplifier.
+Default 0.
+.TP
+.B ppm
+Frequency correction of the radio's reference, in parts per million.
+Default 0.
+.TP
+.B clock
+Clock source, used by the UHD plugin only:
+.B internal
+(default), or anything else UHD accepts, such as
+.BR external " or " gpsdo .
+.TP
+.B buffer_ms
+Host-side buffering of the plugin.
+Default 50.
+.TP
+.B backoff_db
+Level of the synthesised signal below full scale, in dB: the samples are scaled
+by 10^(\-backoff_db/20) before the plugin converts them.
+Default 13.
+.SS [carrier N]
+One multiplex.
+Keys common to every standard:
+.TP
+.B standard
+.BR dvbt " (default), " dvbt2 ", " dvbc ", " dvbs ", " dvbs2
+or
+.BR ts .
+.TP
+.B radio
+Radio index.
+Default 0.
+Not used by
+.BR ts .
+.TP
+.B offset
+Frequency of the carrier relative to the radio's
+.BR freq ,
+in Hz.
+Default 0.
+For DVB\-T it must be a whole number of subcarrier spacings.
+.TP
+.B gain_db
+Relative power of this carrier: the radio's power is shared between its
+carriers in proportion to 10^(gain_db/10).
+Default 0.
+.TP
+.B on
+0 starts the carrier off the air (see
+.BR "carrier set" ).
+Default 1.
+.TP
+.B synth
+Synthesis of a single-carrier or DVB\-T2 carrier:
+.B auto
+(default) uses the frequency-domain filter bank when the symbol rate is a simple
+fraction of the radio rate, else the time-domain polyphase filter;
+.B fft
+requires the filter bank (an error otherwise);
+.B fir
+always uses the polyphase filter.
+.TP
+.B tsid
+transport_stream_id of the PAT.
+Default
+.IR N +1.
+.TP
+.BR pat_period_ms ", " tdt_period_ms ", " tot_period_ms
+Repetition of the PAT, TDT and TOT generated by the engine.
+Defaults 100, 1000, 5000.
+.TP
+.B nit_pid
+NIT PID listed in the PAT (program 0); 0 lists none.
+Default 16.
+.TP
+.B tot_desc
+File holding the local_time_offset_descriptor of the TOT.
+Empty (default): no TOT.
+.TP
+.B monitor
+Comma-separated list of
+.BI udp:// host : port
+(IPv4 addresses, at most 16) receiving a copy of the multiplex as it goes on
+the air, 7 packets per datagram.
+.TP
+.BI "table = " pid , cycle_ms , path
+Repeatable.
+A file of concatenated binary sections, sent on
+.I pid
+once every
+.I cycle_ms
+(the NIT, SDT and EIT written by the supervisor).
+The files are re-read once a second when their modification time or size
+changes, and at once on
+.B reload
+or
+.BR SIGHUP .
+.PP
+.B dvbt
+keys:
+.B mode
+.RB ( 2k " or " 8k ,
+default 8k),
+.B constellation
+.RB ( qpsk ", " 16qam ", " 64qam ,
+default 64qam),
+.B code_rate
+(1/2, 2/3, 3/4, 5/6, 7/8; default 7/8),
+.B guard
+(denominator of the guard interval: 4, 8, 16 or 32; default 32),
+.B bandwidth
+(Hz, default 8000000),
+.B cell_id
+(default 0).
+All the DVB\-T carriers of a radio must have the same mode, guard interval and
+bandwidth, and the radio rate must be a whole multiple of their subcarrier
+spacing.
+.PP
+.B dvbc
+keys:
+.B constellation
+.RB ( 16qam ", " 32qam ", " 64qam ", " 128qam ", " 256qam ;
+default 256qam),
+.B symbol_rate
+(default 6900000),
+.B rolloff
+(default 0.15).
+.PP
+.B dvbs
+keys:
+.B code_rate
+(default 3/4),
+.B symbol_rate
+(default 27500000),
+.B rolloff
+(default 0.35).
+.PP
+.B dvbs2
+keys:
+.B modulation
+.RB ( qpsk ", " 8psk ", " 16apsk ", " 32apsk ;
+default 8psk),
+.B code_rate
+(default 3/4; the rates EN 302 307 defines for the modulation, no 9/10 with
+short frames),
+.B frame
+.RB ( normal " or " short ,
+default normal),
+.B pilots
+(default 1),
+.B rolloff
+(default 0.35),
+.B gold_code
+(0 to 262141, default 0),
+.B symbol_rate
+(default 27500000).
+.PP
+.B dvbt2
+keys (single PLP):
+.B bandwidth
+(Hz, default 8000000),
+.B fft
+.RB ( 1k ", " 2k ", " 4k ", " 8k ", " 16k ", " 32k ;
+default 32k),
+.B extended
+(default 1),
+.B guard
+(a fraction, default 1/128),
+.B pilot
+.RB ( PP1 " to " PP8 ,
+default PP7),
+.B constellation
+.RB ( qpsk ", " 16qam ", " 64qam ", " 256qam ;
+default 256qam),
+.B rotation
+(default 1),
+.B code_rate
+(default 2/3),
+.B frame
+.RB ( normal " or " short ,
+default normal),
+.B fec_blocks
+(0: the most that fit),
+.B data_symbols
+(0: the longest frame up to 250 ms),
+.B ti_blocks
+(0: the fewest that fit the time interleaver memory),
+.B l1_constellation
+.RB ( bpsk ", " qpsk ", " 16qam ", " 64qam ;
+default 64qam),
+.BR cell_id " (0), " network_id " (0x3085), " t2_system_id " (0x8001),"
+.B t2_frames
+(0: 2),
+.B frequency
+(signalled in L1, Hz; 0: 729833333).
+Combinations EN 302 755 forbids are refused.
+.PP
+.B ts
+keys (no radio: the multiplex is written out, paced by the system clock):
+.B ts_rate
+(required, bit/s) and
+.B output
+(required:
+.BI udp:// address : port
+with an IPv4 address, or a file path, optionally prefixed with
+.BR file:// ,
+opened for writing without truncation).
+.SS [service N]
+.TP
+.B carrier
+Carrier index.
+Default 0.
+.TP
+.B name
+Service name (the whole rest of the line).
+Default
+.BR service .
+.TP
+.B sid
+service_id (program_number in the PAT).
+.TP
+.B pid_base
+First output PID of the service: the PMT is on
+.IR pid_base ,
+the elementary streams on
+.IR pid_base +1
+onwards, a PCR-only PID if needed on
+.IR pid_base +31.
+Default 0x100 +
+.IR N \(mu0x20.
+.TP
+.B primary
+Required: id of the input of the service's source.
+.TP
+.B backup
+Id of the input played when the primary is down; \-1 (default) for none.
+.TP
+.B switch_timeout_ms
+The primary is down when nothing arrived for that long and what was buffered
+has played out.
+Default 3000.
+.TP
+.B return_ms
+The primary must have been up that long before the service leaves the backup.
+Default 10000.
+.TP
+.B max_late_ms
+A packet later than that behind its ideal departure time is dropped.
+Default 600.
+.TP
+.B early_ms
+A packet may leave that much before its ideal departure time.
+Default 0 in the engine (the supervisor writes 100 unless configured otherwise).
+.TP
+.B pcr_max_ms
+A PCR-only packet is inserted when no PCR has been sent for that long; 0 never.
+Default 35.
+.TP
+.B pmt_period_ms
+Repetition of the PMT.
+Default 100.
+.TP
+.B priority
+1 to 10 (other values become 5).
+When the multiplex is full, the packet deadline of a service is moved 100 ms
+earlier per step above 5 (later per step below): higher priorities are served
+first.
+Default 5.
+.SS Example
+What
+.B dvbtx engine\-ini
+writes for
+.I configs/hackrf\-1mux.toml
+of the source tree (the second service and its input left out):
+.PP
+.EX
+# generated by dvbtx - do not edit
+[engine]
+log_level = info
+stats_interval_ms = 1000
+cpus = auto
+cpu_latency_us = 0
+
+[input 0]
+name = Mire
+addr = 127.0.0.1:20100
+program = 0
+buffer_ms = 1000
+ring_pkts = 65536
+
+[radio 0]
+driver = hackrf
+args =
+freq = 478005580.357
+rate = 18285714.285714
+bandwidth = 20000000
+gain = 30.0
+amp = 0
+ppm = 0.0
+buffer_ms = 50
+backoff_db = 13.0
+clock = internal
+
+[carrier 0]
+standard = dvbt
+tsid = 1
+radio = 0
+offset = 3994419.643
+mode = 8k
+constellation = 64qam
+code_rate = 7/8
+guard = 32
+bandwidth = 8000000
+cell_id = 0
+gain_db = 0.0
+monitor = udp://127.0.0.1:20900
+table = 0x10,2000,/run/dvbtx/si/c0_nit.sec
+table = 0x11,1000,/run/dvbtx/si/c0_sdt.sec
+table = 0x12,1000,/run/dvbtx/si/c0_eit_pf.sec
+table = 0x12,10000,/run/dvbtx/si/c0_eit_sch.sec
+tot_desc = /run/dvbtx/si/tot_desc.bin
+nit_pid = 16
+
+[service 0]
+carrier = 0
+name = Mire
+sid = 257
+pid_base = 256
+primary = 0
+backup = \-1
+switch_timeout_ms = 3000
+return_ms = 10000
+max_late_ms = 600
+early_ms = 100
+pcr_max_ms = 35
+pmt_period_ms = 100
+priority = 5
+.EE
+.SH CONTROL CHANNEL
+Commands are read from standard input, one per line (at most 16383 bytes; a
+longer line is dropped), when standard input is not a terminal.
+Words are separated by spaces;
+.IB key = value
+arguments may come in any order, except
+.BI name= text\fR,
+which takes the rest of the line and must therefore come last.
+Any command may carry
+.BI seq= N\fR;
+every command except
+.B reload
+and
+.B quit
+is answered on standard output by one JSON line:
+.PP
+.EX
+{"type":"reply","seq":N,"ok":true}
+{"type":"reply","seq":N,"ok":true,"note":"..."}
+{"type":"reply","seq":N,"ok":false,"error":"..."}
+.EE
+.PP
+with
+.I seq
+\-1 when none was given.
+Changes to a multiplex are made by the thread that pulls it; the command waits
+for it up to 2 s.
+.TP
+.B reload
+Re-reads the section files and the TOT descriptor now (as
+.BR SIGHUP ).
+.TP
+.B quit
+Stops the engine (as
+.BR SIGTERM ).
+.TP
+\fBinput add id=\fIN\fB addr=\fIaddr\fR [\fBprogram=\fIP\fR] [\fBbuffer_ms=\fIms\fR] [\fBring_pkts=\fIn\fR] [\fBname=\fItext\fR]
+Adds an input, received at once.
+.I N
+is 0 to 1023 and must be free.
+Defaults as in
+.BR "[input N]" .
+.TP
+.BI "input del id=" N
+Removes an input: once no service uses it any more (as primary, backup or
+pending primary), it stops being received and is freed.
+.TP
+\fBservice add carrier=\fIC\fB sid=\fIS\fB pid_base=\fIB\fB primary=\fIID\fR [\fBbackup=\fIID\fR] [\fIoption\fB=\fIvalue\fR ...] [\fBname=\fItext\fR]
+Adds a service to a running multiplex.
+.I S
+must be 1 to 65535,
+.I B
+0x20 to 0x1FC0; the options are those of
+.B [service N]
+.RB ( switch_timeout_ms ", " return_ms ", " max_late_ms ", " early_ms ,
+.BR pcr_max_ms ", " pmt_period_ms ", " priority )
+with the same defaults.
+.TP
+.BI "service del carrier=" C " sid=" S
+Removes a service.
+.TP
+\fBservice set carrier=\fIC\fB sid=\fIS\fR [\fBprimary=\fIID\fR] [\fBbackup=\fIID\fR|\fB\-1\fR] [\fBname=\fItext\fR]
+Changes a service.
+A new primary is used as soon as it delivers: when the service is on its
+primary, the old source plays until the new one has a video key frame due
+(without video: data due), at most 15 s plus the new input's buffer later.
+.B backup=\-1
+removes the backup.
+.TP
+\fBcarrier set id=\fIN\fB on=0\fR|\fB1\fR
+Takes a carrier off the air or puts it back.
+It is still coded (its multiplex keeps its clock) but not added to the radio's
+samples (a
+.B ts
+carrier stops writing); its radio and the other carriers go on.
+When every carrier of a radio is off, the radio is closed (state
+.BR idle )
+and opened again when one comes back, its sample clock carried on.
+.TP
+\fBmonitor add\fR|\fBdel carrier=\fIN\fB addr=udp://\fIhost\fB:\fIport\fR
+Adds or removes a copy of the multiplex (as the
+.B monitor
+key), used by the web page for previews.
+.SH STATISTICS
+Every
+.B stats_interval_ms
+the engine prints one line:
+.PP
+.EX
+{"type":"stats","time":...,"uptime":...,"interval":...,
+ "inputs":[...],"radios":[...],"carriers":[...]}
+.EE
+.PP
+.I time
+is the wall clock (Unix seconds),
+.I uptime
+and
+.I interval
+in seconds.
+Rates are in bit/s over the interval.
+.TP
+.B inputs[]
+.BR index ", " name ", " addr ;
+.B rx_rate
+(received) and
+.B rate
+(packets of the selected program);
+.BR cc_errors ,
+.B discont
+(PCR discontinuities), cumulative;
+.B streams
+(elementary streams of the program);
+.B idle_ms
+since the last datagram (\-1: never received);
+.B slack_min_ms
+(smallest margin between arrival and ideal departure over the last 2 s window);
+.B pcr_interval_max_ms
+(longest PCR interval since the previous line);
+.B faster_than_realtime
+(1 when the stream arrives far ahead of its timestamps).
+.TP
+.B radios[]
+.BR index ", " driver ", " freq ", " rate ", " carriers ;
+.B underruns
+(gaps filled with zeros by the plugin, cumulative);
+.B late
+(gaps reported by the device: HackRF firmware FIFO shortfalls, UHD time or
+sequence errors);
+.B fill
+(host buffer, 0 to 1);
+.B cpu
+(radio thread, percent of one core);
+.B samples
+(consumed by the radio);
+.BR banks " and " bank_cpu
+(filter-bank and DVB\-T2 group threads);
+.B state
+.RB ( on ", " off
+(not found at start),
+.B lost
+(unplugged or failing since),
+.B idle
+(all its carriers off));
+.B error
+(the plugin's message when not
+.BR on ).
+.TP
+.B carriers[]
+.BR carrier " (index), " ts_rate " (channel capacity), " rate ,
+.BR null_rate ", " si_rate ", " es_rate ;
+.B clock_lead_ms
+(how far ahead of the present the multiplexer is stamping packets: the emission
+time of the slot being filled minus now);
+.BR standard ", " radio
+(\-1 for
+.BR ts ),
+.BR offset ", " cpu ;
+.B on
+(0 when stopped);
+.BR services[] .
+.TP
+.B services[]
+.BR index ", " name ", " sid ;
+.B source
+.RB ( primary ", " backup " or " none );
+.BR streams ", " rate ;
+.B dropped_late
+(packets dropped as later than
+.BR max_late_ms ),
+.B overruns
+(the multiplexer fell a whole ring behind),
+.B pcr_inserted
+and
+.B late_max_ms
+(latest packet sent), over the interval;
+.B switches
+(cumulative);
+.BR video_margin_min_ms ", " video_margin_avg_ms ,
+.BR audio_margin_min_ms ", " audio_margin_avg_ms
+(decoding margin: DTS minus the PCR at emission, over the interval, present
+only when such packets were sent);
+.BR video_type ", " audio_types
+(stream_type values);
+.B disc
+(discontinuities signalled over the interval);
+.B inputs
+(ids of the primary, the backup and a pending new primary, \-1 for none).
+.SH LOG
+Standard error carries
+.IR "HH:MM:SS.mmm LVL message"
+lines, LVL being
+.BR ERR ", " WRN ", " INF " or " DBG ;
+the supervisor copies them into its own log.
+Plugins may write their own lines
+.RI ( "hackrf: ..." ", " "uhd: ..." ).
+A fatal error prints
+.I "fatal: message"
+and exits.
+.SH SIGNALS
+.TP
+.BR SIGTERM ", " SIGINT
+Stop: the radio threads finish their current write, the radios are closed.
+.TP
+.B SIGHUP
+Re-read the section files now.
+.TP
+.B SIGPIPE
+Ignored.
+.SH REAL-TIME PRIORITIES
+The engine gives its time-critical threads
+.B SCHED_FIFO
+priorities:
+.IP \(bu 2
+radio threads (synthesis and writing to the plugin): 50;
+.IP \(bu
+carrier coding threads, filter-bank threads, DVB\-T2 group threads and their
+workers: 40;
+.IP \(bu
+HackRF: the libusb event thread of libhackrf, 60 (plugin argument
+.BR rt= );
+.IP \(bu
+UHD: the plugin's sender thread, 60; the threads UHD creates while the device
+opens, 55.
+.PP
+The UDP receive thread and the main thread keep the normal policy.
+Without the right to do so, the engine warns once
+.RI ( "no real-time priority ... give the service LimitRTPRIO or CAP_SYS_NICE" )
+and runs at normal priority; underruns are then likely under load.
+The packaged systemd units set
+.BR LimitRTPRIO=99 .
+.SH CPU AFFINITY
+.B cpus = auto
+(default) reads
+.I /proc/interrupts
+for the USB host controllers
+.RB ( xhci ", " ehci )
+and their
+.IR /proc/irq/N/effective_affinity_list ,
+and keeps every thread of the engine (those libhackrf and libusb start later
+included, by inheritance) off those CPUs, provided at least two CPUs are left;
+otherwise it uses every CPU.
+A real-time thread on the CPU that takes the USB interrupts delays the USB
+softirq work and the radio's FIFO runs dry.
+.B all
+leaves the affinity alone; a list such as
+.B 1\-5
+pins the engine to those CPUs.
+.SH PROCESSOR LATENCY
+Deep processor C-states delay the USB controller's DMA; at high sample rates the
+radio's FIFO (about 1 ms on a HackRF at 16 MS/s) runs dry.
+Unless
+.B cpu_latency_us
+is \-1, the engine writes it to
+.I /dev/cpu_dma_latency
+and keeps the file open while it runs, which holds the processor to that
+wake-up latency.
+The default, 0, blocks every deep C-state; a value such as 100 lets the cores
+sleep between two buffers and saves power (see
+.BR dvbtx\-power (8)).
+Writing the file needs root or
+.BR CAP_SYS_ADMIN ;
+on failure the engine warns and goes on.
+.SH RADIO PLUGINS
+Each driver is a shared object
+.BI dvbtx\-sdr\- name .so
+loaded with
+.BR dlopen (3)
+at start, so the engine only needs the libraries of the radios actually used.
+It is looked for in
+.BR $DVBTX_PLUGIN_DIR ,
+then in the directory of the
+.B dvbtx\-engine
+binary, then in the directory compiled in
+.RI ( /usr/lib/dvbtx ).
+A missing or incompatible plugin is a fatal error; a radio that cannot be
+opened is not (its carriers stay off the air, state
+.BR off ).
+A radio that stops taking samples for 5 s (after the first 10 s) or whose write
+fails is marked
+.B lost
+and its carriers go off the air; the other radios go on.
+.PP
+Plugin arguments
+.RB ( args )
+are comma-separated
+.IB key = value
+pairs.
+.SS hackrf
+HackRF One through libhackrf, 8-bit samples.
+.B gain
+is the TX VGA gain, clamped to 0\(en47 dB;
+.B amp
+switches the +14 dB amplifier;
+.B ppm
+corrects both the sample rate and the frequency;
+.B bandwidth
+0 means the baseband filter libhackrf computes for the sample rate (the
+supervisor writes one chosen from the band edges).
+The ring buffer holds
+.B buffer_ms
+of samples (40 ms when 0), rounded up to 256 KiB, 1 MiB at least; the radio
+starts once it has been filled.
+.TP
+.BI serial= S
+Open the HackRF with that serial number (default: the first one).
+.TP
+.BI if= Hz
+Below 2150 MHz, force the intermediate frequency of the MAX2837 (2150 to 2750
+MHz; the mixer LO is put on a whole MHz).
+Default: the firmware's choice.
+.TP
+.BI m0_poll= s
+How often the firmware's FIFO shortfall counter is read (reported as
+.BR late ),
+in seconds; default 1, 0 never.
+.TP
+.BI rt= N
+SCHED_FIFO priority of the libusb thread; default 60, 0 none.
+.TP
+.BI cb_log_ms= N
+Log a USB callback that comes more than
+.I N
+ms after the previous one, and the firmware shortfalls; default 0 (off).
+.SS uhd
+Ettus USRP (B200, B210...) through the UHD C API, one TX channel, samples sent
+as
+.BR sc16 .
+.B args
+is the UHD device string, to which the plugin adds
+.BI master_clock_rate= R
+(the largest whole multiple of the sample rate not above 56 MHz, or the rate
+itself) and
+.B num_send_frames=64
+unless given.
+The sample rate the device gives must be exact (otherwise set
+.B master_clock_rate
+yourself).
+The antenna is
+.B TX/RX
+unless
+.B antenna=
+appears in
+.BR args .
+.B gain
+is the UHD TX gain;
+.B bandwidth
+0 means min(56 MHz, rate);
+.B clock
+other than
+.B internal
+selects the clock source;
+.B ppm
+corrects the frequency only.
+A ring of
+.B buffer_ms
+(50 ms when 0) is drained by a sender thread; underflows come from the
+device's asynchronous messages.
+UHD reads
+.I ~/.config/uhd.conf
+and needs
+.BR HOME .
+.SS soapy
+Any SoapySDR transmitter (LimeSDR, PlutoSDR, bladeRF...), channel 0, CF32
+samples.
+.B args
+is the Soapy device string, for instance
+.B driver=lime
+or
+.BR driver=plutosdr,hostname=192.168.2.1 .
+The sample rate given must be within 10 ppm of the one asked;
+.B gain
+is the overall TX gain;
+.B bandwidth
+is set when not 0;
+.B ppm
+corrects the frequency;
+.B amp
+and
+.B clock
+are ignored.
+Built, not tested on hardware.
+.SS null
+No hardware: consumes the samples at the nominal rate of the system clock
+(30 ms ahead), for tests.
+.TP
+.BI file= path
+Write the I/Q samples to
+.I path
+(after the backoff scaling).
+.TP
+.BR format=cf32 | cs8 | cs16
+Sample format of that file: 32-bit float (default), signed 8-bit or signed
+16-bit I/Q.
+.TP
+.BI absent= path
+The radio is missing while
+.I path
+exists: opening fails, and a running radio stops (as if unplugged) once the
+file appears.
+Used to test the missing-radio handling.
+.SH EXIT STATUS
+.TP
+0
+Normal stop
+.RB ( quit ,
+.BR SIGTERM ,
+.BR SIGINT );
+.B \-\-version
+and
+.B \-\-probe
+with the radio found.
+.TP
+1
+Fatal error: unreadable or invalid configuration, input that cannot be bound,
+plugin not found, threads that cannot be started, parent already gone;
+.B \-\-probe
+with the radio not found.
+.TP
+2
+Usage error (no configuration file).
+.PP
+When a radio was lost, the engine leaves with
+.BR _exit (2)
+and status 0 without closing that radio: its driver may hang.
+.SH ENVIRONMENT
+.TP
+.B DVBTX_PLUGIN_DIR
+First directory searched for the radio plugins.
+.TP
+.B HOME
+Used by UHD for its configuration file.
+.PP
+The supervisor finds the engine binary through the
+.B engine.binary
+setting, then
+.BR DVBTX_ENGINE ,
+then
+.I engine/build/dvbtx\-engine
+next to its source tree, then
+.IR /usr/lib/dvbtx/dvbtx\-engine .
+.SH FILES
+.TP
+.I /usr/lib/dvbtx/dvbtx\-engine
+The engine.
+.TP
+.I /usr/lib/dvbtx/dvbtx\-sdr\-*.so
+Radio plugins
+.RB ( null
+always; the others when their library was found at build time).
+.TP
+.I /run/dvbtx/engine.ini
+Configuration written by the supervisor (work directory).
+.TP
+.I /run/dvbtx/si/
+NIT, SDT, EIT section files
+.RI ( c N _nit.sec ", " c N _sdt.sec ", " c N _eit_pf.sec ", " c N _eit_sch.sec )
+and
+.I tot_desc.bin
+written by the supervisor.
+.TP
+.I /dev/cpu_dma_latency
+Processor latency request.
+.SH SEE ALSO
+.BR dvbtx (1),
+.BR dvbtx\-channel (1),
+.BR dvbtx.toml (5),
+.BR dvbtx (7),
+.BR dvbtx\-sources (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-power (8),
+.BR hackrf_info (1),
+.BR uhd_find_devices (1),
+.BR tsp (1)

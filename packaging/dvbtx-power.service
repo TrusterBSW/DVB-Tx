@@ -1,13 +1,13 @@
 [Unit]
 Description=dvbtx power profile: every saving while nothing is on air, transmit while dvbtx runs
-Documentation=file:///usr/share/doc/dvbtx/README.md
+Documentation=man:dvbtx-power(8)
 # the dvbtx units switch to transmit when they start (ExecStartPre), back to save when they stop
 Before=dvbtx.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/lib/dvbtx/dvbtx-power default
+ExecStart=/usr/bin/dvbtx power default
 
 [Install]
 WantedBy=multi-user.target

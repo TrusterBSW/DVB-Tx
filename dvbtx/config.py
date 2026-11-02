@@ -46,6 +46,10 @@ DEFAULTS = {
                    "size": "", "fps": "", "hwaccel": "", "tune": "", "deinterlace": False,
                    "max_auto_bitrate": "8M"},
     },
+    # machine power profiles, applied by "dvbtx power" (dvbtx-power.service and the dvbtx units' hooks)
+    "power": {"save_epp": "power", "transmit_epp": "balance_power", "save_turbo": False, "transmit_turbo": True,
+              "save_aspm": "powersupersave", "transmit_aspm": "default", "save_command": "",
+              "transmit_command": ""},
     "work_dir": "/run/dvbtx",
 }
 

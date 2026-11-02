@@ -9,9 +9,10 @@ Type=simple
 ExecStart=/usr/bin/dvbtx run --config /etc/dvbtx/dvbtx.toml
 # reload = re-read the EPG folder and the channels of the configuration file (applied channel by channel,
 # the others untouched); a change of the radios or multiplexes needs a restart
-# power profile transmit while on air, save after (only when dvbtx-power.service is enabled)
-ExecStartPre=-+/usr/lib/dvbtx/dvbtx-power hook start %n
-ExecStopPost=-+/usr/lib/dvbtx/dvbtx-power hook stop %n
+# power profile transmit while on air, save after (only when dvbtx-power.service is enabled):
+# dvbtx-power(8)
+ExecStartPre=-+/usr/bin/dvbtx power hook start %n -c /etc/dvbtx/dvbtx.toml
+ExecStopPost=-+/usr/bin/dvbtx power hook stop %n -c /etc/dvbtx/dvbtx.toml
 ExecReload=/bin/kill -HUP $MAINPID
 # UHD reads ~/.config/uhd.conf (FPGA image of a B210 clone, ...) and needs $HOME
 Environment=HOME=/root PYTHONUNBUFFERED=1

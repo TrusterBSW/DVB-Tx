@@ -1,4 +1,4 @@
-"""Command line: dvbtx [run|check|calc|epg|engine-ini] ..."""
+"""Command line: dvbtx [run|check|calc|channel|epg|devices|gpu|make-backup|engine-ini|power] ..."""
 
 import argparse
 import datetime as dt
@@ -25,7 +25,7 @@ def _add_config_args(p):
     g.add_argument("--amp", action="store_true", default=None, help="HackRF RF amplifier on")
     g.add_argument("--rate", type=cfgmod.parse_value, help="radio sample rate (default: automatic)")
     g.add_argument("--center", type=cfgmod.parse_value, help="radio LO frequency (default: automatic)")
-    g.add_argument("--standard", help="dvbt (default) or ts")
+    g.add_argument("--standard", help="dvbt (default), dvbt2, dvbc, dvbs, dvbs2, or ts (no modulation: the multiplex to carrier.output)")
     g.add_argument("--frequency", type=cfgmod.parse_value, help="carrier frequency, e.g. 482MHz")
     g.add_argument("--channel", type=int, help="UHF/VHF channel number instead of --frequency")
     g.add_argument("--bandwidth", type=cfgmod.parse_value, help="channel bandwidth, e.g. 8MHz")
@@ -45,7 +45,7 @@ def _add_config_args(p):
     o.add_argument("--stats-export", action="append", metavar="URL",
                    help="send the engine statistics + alerts (JSON, every second) to udp:// or tcp://")
     o.add_argument("--no-tsduck", action="store_true", help="do not run the TSDuck analysers")
-    o.add_argument("-v", "--verbose", action="store_true")
+    o.add_argument("-v", "--verbose", action="store_true", help="debug messages of the supervisor")
 
 
 def config_path(a):
@@ -429,6 +429,30 @@ def cmd_channel(a):
           "applied at its next start (or now: systemctl reload dvbtx)")
 
 
+def cmd_power(a):
+    from . import power
+    path = a.config or ("/etc/dvbtx/dvbtx.toml" if os.path.exists("/etc/dvbtx/dvbtx.toml") else None)
+    pw = dict(cfgmod.DEFAULTS["power"])
+    if path:
+        try:
+            pw.update(cfgmod.load(path).get("power") or {})
+        except (cfgmod.ConfigError, OSError) as e:          # a hook must not fail: the defaults then
+            print(f"warning: {path}: {e}; default [power] settings", file=sys.stderr)
+    if a.action == "status":
+        power.status()
+        return
+    if os.geteuid():
+        sys.exit("error: dvbtx power changes the whole machine: run it as root")
+    if a.action == "hook":
+        if not a.args or a.args[0] not in ("start", "stop"):
+            sys.exit("error: dvbtx power hook start|stop [UNIT]")
+        power.hook(a.args[0], a.args[1] if len(a.args) > 1 else "dvbtx", pw)
+    elif a.action == "default":
+        power.apply("transmit" if power.on_air() else "save", pw)
+    else:
+        power.apply(a.action, pw)
+
+
 def cmd_calc(a):
     std = a.standard
     try:
@@ -472,29 +496,111 @@ def cmd_calc(a):
         print(f"{a.services} services: {r * 0.97 / a.services / 1e6:.3f} Mbit/s each (3 % kept for PSI/SI)")
 
 
+MAIN_HELP = """DVB transmitter: live streams, capture devices, files and pipes made into complete DVB
+multiplexes (PSI/SI, EPG, logical channel numbers) and modulated on software radios (HackRF One,
+USRP B200/B210, SoapySDR): DVB-T, DVB-T2, DVB-C, DVB-S, DVB-S2, any number of carriers per radio.
+Closed coax only: radiating on broadcast frequencies is forbidden.
+
+Without a command, "run" is meant: dvbtx -c my.toml is dvbtx run -c my.toml."""
+
+MAIN_EPILOG = """examples:
+  dvbtx check -c /etc/dvbtx/dvbtx.toml          validate, show the frequency plan (no transmission)
+  sudo dvbtx run -c /etc/dvbtx/dvbtx.toml       transmit; web page on http://127.0.0.1:8080/
+  sudo dvbtx --driver hackrf --channel 22 --service "Pattern=lavfi:testsrc2"
+  dvbtx channel list                             channels of the running transmitter
+  dvbtx calc dvbt --table                        useful bit rates of DVB-T
+  sudo systemctl enable --now dvbtx              as a service (/etc/dvbtx/dvbtx.toml)
+
+"dvbtx COMMAND -h" (or "dvbtx help COMMAND") gives the options of a command.
+manual: dvbtx(1), dvbtx-channel(1), dvbtx.toml(5), dvbtx-sources(7), dvbtx(7), dvbtx-web(7),
+dvbtx-engine(8), dvbtx-power(8)"""
+
+RUN_HELP = """Run the transmitter: the sources (one process each), the C engine (multiplexing, modulation,
+radios), the SI tables and EPG, the alerts and the web page, until stopped (SIGINT / SIGTERM;
+SIGHUP re-reads the EPG folder and the channels of the configuration file).
+
+The configuration comes from the file (-c, default /etc/dvbtx/dvbtx.toml when nothing is set on the
+command line), the quick setup options (one radio, one carrier, built on top of the file or
+without it), then -s KEY=VALUE overrides. See dvbtx.toml(5) and dvbtx-sources(7)."""
+
+RUN_EPILOG = """examples:
+  sudo dvbtx run -c /etc/dvbtx/dvbtx.toml
+  sudo dvbtx run -c my.toml -s radio.0.gain=40 -s carrier.1.frequency=498MHz
+  sudo dvbtx --driver hackrf --channel 22 --service "Pattern=lavfi:testsrc2=size=1280x720:rate=25" \\
+             --service "Movie=/srv/videos/movie.mkv,lcn=2"
+  sudo dvbtx --driver uhd --frequency 482MHz --standard dvbt --service "Cam=v4l2:/dev/video0"
+  dvbtx run -c my.toml --web 0.0.0.0:8080 --stats-export udp://192.168.1.10:5000"""
+
+POWER_HELP = """Power profiles of the whole machine, for a transmitter on battery:
+
+  save       nothing on air: every saving the hardware offers (processor EPP "power", turbo off,
+             USB autosuspend, PCIe ASPM, PCI runtime PM, SATA ALPM, audio, NMI watchdog, Wi-Fi)
+  transmit   a dvbtx unit runs: EPP "balance_power", turbo allowed, USB never suspended, the
+             other savings kept
+  default    save, or transmit while a dvbtx unit is on air (what dvbtx-power.service runs at boot)
+  status     the profile, governor, EPP, turbo, ASPM, USB and the processor's power (RAPL)
+  hook start|stop [UNIT]
+             called by the dvbtx units (ExecStartPre / ExecStopPost): transmit while any unit runs,
+             save after the last one, also after a crash; does nothing unless dvbtx-power.service
+             is enabled
+
+Opt-in: sudo systemctl enable --now dvbtx-power. Settings: [power] of the configuration file
+(save_epp, transmit_epp, save_turbo, transmit_turbo, save_aspm, transmit_aspm, save_command,
+transmit_command). See dvbtx-power(8)."""
+
+
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="dvbtx", description="DVB transmitter: live/file/device sources -> SDR")
+    raw = argparse.RawDescriptionHelpFormatter
+    p = argparse.ArgumentParser(prog="dvbtx", description=MAIN_HELP, epilog=MAIN_EPILOG, formatter_class=raw)
     p.add_argument("--version", action="version", version=f"dvbtx {__version__}")
-    sub = p.add_subparsers(dest="cmd")
-    r = sub.add_parser("run", help="run the transmitter (default)")
+    sub = p.add_subparsers(dest="cmd", title="commands", metavar="COMMAND")
+    r = sub.add_parser("run", help="run the transmitter (the default command)", description=RUN_HELP,
+                       epilog=RUN_EPILOG, formatter_class=raw)
     _add_config_args(r)
-    c = sub.add_parser("check", help="validate the configuration and show the frequency plan")
+    c = sub.add_parser("check", help="validate the configuration and show the frequency plan",
+                       description="Validate the configuration (file, quick options, -s overrides) and show "
+                       "the plan: radios with their LO and sample rate, carriers with their useful bit rate, "
+                       "services with their service_id, LCN and PIDs. Nothing is transmitted.",
+                       epilog="example:\n  dvbtx check -c /etc/dvbtx/dvbtx.toml -s carrier.0.constellation=16qam",
+                       formatter_class=raw)
     _add_config_args(c)
-    e = sub.add_parser("engine-ini", help="write the engine configuration")
+    e = sub.add_parser("engine-ini", help="write the engine configuration (engine.ini) and print its path",
+                       description="Write the INI file that dvbtx run gives the C engine (dvbtx-engine(8)), "
+                       "with its SI tables, without transmitting: to read it or to run the engine by hand.")
     _add_config_args(e)
-    e.add_argument("-o", "--output")
-    g = sub.add_parser("epg", help="show what the EPG folder gives for each service")
+    e.add_argument("-o", "--output", help="file to write (default WORK_DIR/engine.ini)")
+    g = sub.add_parser("epg", help="show what the EPG folder and URLs give for each service",
+                       description="Load the EPG (epg.dir: XMLTV or TSDuck EIT XML files; epg.urls) and "
+                       "show, for each service, the number of events and what is on now and next.")
     _add_config_args(g)
-    sub.add_parser("devices", help="list the radios that are plugged in")
-    gp = sub.add_parser("gpu", help="graphics adapters used for the transcodes; 'gpu learn' tests them again")
+    sub.add_parser("devices", help="list the radios that are plugged in",
+                   description="Ask hackrf_info, uhd_find_devices and SoapySDRUtil for the radios plugged "
+                   "in and print the driver and args to put in a [[radio]] of the configuration.")
+    gp = sub.add_parser("gpu", help="graphics adapters used for the transcodes; 'gpu learn' tests them again",
+                        description="List the graphics adapters and, for each one and each codec (H.264, "
+                        "HEVC, MPEG-2), the fastest way it transcodes as learnt (VAAPI, QSV, NVENC...). "
+                        "'learn' tests every way again now (else done by dvbtx run when the adapters, "
+                        "their drivers or ffmpeg change).")
     gp.add_argument("action", nargs="?", choices=["list", "learn"], default="list")
     gp.add_argument("-c", "--config", help="configuration file (ingest.ffmpeg, ingest.gpu, ingest.gpu_cache)")
-    b = sub.add_parser("make-backup", help="create the clip played when a source fails")
-    b.add_argument("-o", "--output", default="/var/lib/dvbtx/backup.ts")
-    b.add_argument("--text", default="Incident technique - nous revenons dans un instant")
+    b = sub.add_parser("make-backup", help="create the clip played when a source fails",
+                       description="Create the looping clip (MPEG-TS, H.264 + AAC) a service plays while its "
+                       "source is down: a text or a picture on a dark background.",
+                       epilog="examples:\n  dvbtx make-backup --text \"Back in a moment\"\n"
+                       "  dvbtx make-backup --image logo.png -o /var/lib/dvbtx/backup.ts",
+                       formatter_class=raw)
+    b.add_argument("-o", "--output", default="/var/lib/dvbtx/backup.ts", help="file to write (default %(default)s)")
+    b.add_argument("--text", default="Incident technique - nous revenons dans un instant",
+                   help="text shown (default: %(default)r)")
     b.add_argument("--image", help="picture to show instead of the text")
-    b.add_argument("--duration", type=int, default=10)
+    b.add_argument("--duration", type=int, default=10, help="length in seconds (default %(default)s)")
     b.add_argument("--tone", action="store_true", help="1 kHz tone instead of silence")
+    pw = sub.add_parser("power", help="power profiles of the machine (save / transmit), for battery use",
+                        description=POWER_HELP, formatter_class=raw)
+    pw.add_argument("action", choices=["save", "transmit", "default", "status", "hook"])
+    pw.add_argument("args", nargs="*", metavar="ARG", help="hook: start|stop and the unit name")
+    pw.add_argument("-c", "--config", help="configuration file with the [power] settings "
+                    "(default /etc/dvbtx/dvbtx.toml)")
     ch = sub.add_parser("channel", aliases=["channels"], help="list, add, remove, rename, renumber channels, "
                         "change their source (while running)", description=CHANNEL_HELP,
                         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -552,24 +658,36 @@ def main(argv=None):
     x = cs.add_parser("set", help="change any setting of a channel (KEY= removes it)")
     x.add_argument("channel")
     x.add_argument("values", nargs="+", metavar="KEY=VALUE")
-    k = sub.add_parser("calc", help="useful MPEG-TS bit rate of a channel")
+    k = sub.add_parser("calc", help="useful MPEG-TS bit rate of a channel",
+                       description="Useful MPEG-TS bit rate (PSI/SI included) of a carrier with the given "
+                       "modulation, and optionally the share of each service.",
+                       epilog="examples:\n  dvbtx calc dvbt --table\n"
+                       "  dvbtx calc dvbt --constellation 64qam --code-rate 3/4 --guard 1/8 --services 6\n"
+                       "  dvbtx calc dvbt2 --fft 32k --extended yes --constellation 256qam --code-rate 2/3\n"
+                       "  dvbtx calc dvbc --symbol-rate 6.9M --constellation 256qam\n"
+                       "  dvbtx calc dvbs2 --symbol-rate 27.5M --modulation 8psk --code-rate 3/4",
+                       formatter_class=raw)
     k.add_argument("standard", choices=["dvbt", "dvbt2", "dvbc", "dvbs", "dvbs2"])
     k.add_argument("--fft", help="DVB-T2: 1k 2k 4k 8k 16k 32k")
     k.add_argument("--extended", choices=["yes", "no"], help="DVB-T2 extended carriers")
     k.add_argument("--pilot", help="DVB-T2: PP1..PP8")
-    k.add_argument("--bandwidth")
-    k.add_argument("--mode", choices=["2k", "8k"])
-    k.add_argument("--constellation")
-    k.add_argument("--modulation")
-    k.add_argument("--code-rate", dest="code_rate")
-    k.add_argument("--guard")
-    k.add_argument("--symbol-rate", dest="symbol_rate")
-    k.add_argument("--frame", choices=["normal", "short"])
-    k.add_argument("--no-pilots", action="store_true")
+    k.add_argument("--bandwidth", help="DVB-T/T2 channel bandwidth (default 8MHz)")
+    k.add_argument("--mode", choices=["2k", "8k"], help="DVB-T (default 8k)")
+    k.add_argument("--constellation", help="DVB-T: qpsk 16qam 64qam; DVB-T2 up to 256qam; DVB-C: 16qam-256qam")
+    k.add_argument("--modulation", help="DVB-S2: qpsk 8psk 16apsk 32apsk")
+    k.add_argument("--code-rate", dest="code_rate", help="e.g. 3/4")
+    k.add_argument("--guard", help="guard interval, e.g. 1/32")
+    k.add_argument("--symbol-rate", dest="symbol_rate", help="DVB-C/S/S2, e.g. 27.5M")
+    k.add_argument("--frame", choices=["normal", "short"], help="DVB-S2 / DVB-T2 FEC frame")
+    k.add_argument("--no-pilots", action="store_true", help="DVB-S2 without pilots")
     k.add_argument("--services", type=int, help="also show the share per service")
     k.add_argument("--table", action="store_true", help="DVB-T: every constellation / code rate / guard")
 
+    order = ["run", "check", "channel", "calc", "devices", "epg", "gpu", "make-backup", "power", "engine-ini"]
+    sub._choices_actions.sort(key=lambda x: order.index(x.dest) if x.dest in order else len(order))
     argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["help"]:                                # dvbtx help [COMMAND [SUBCOMMAND]]
+        argv = argv[1:] + ["-h"]
     if not argv or argv[0].startswith("-") and argv[0] not in ("-h", "--help", "--version"):
         argv = ["run"] + argv
     a = p.parse_args(argv)
@@ -582,7 +700,7 @@ def main(argv=None):
             a.channel_cmd = "remove"
         {"run": cmd_run, "check": cmd_check, "calc": cmd_calc, "epg": cmd_epg, "engine-ini": cmd_engine_ini,
          "make-backup": cmd_make_backup, "devices": cmd_devices, "gpu": cmd_gpu, "channel": cmd_channel,
-         "channels": cmd_channel}[a.cmd](a)
+         "channels": cmd_channel, "power": cmd_power}[a.cmd](a)
     except cfgmod.ConfigError as e:
         sys.exit(f"configuration error: {e}")
     except FileNotFoundError as e:

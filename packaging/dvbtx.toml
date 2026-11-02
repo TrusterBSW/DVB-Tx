@@ -84,6 +84,18 @@ cpus = "auto"                           # auto: every engine thread kept off the
 cpu_latency_us = 0                      # processor wake-up latency allowed while transmitting (/dev/cpu_dma_latency):
                                         # deep C-states delay the USB DMA and empty the radio's FIFO (-1: no request)
 
+# Power profiles of the whole machine (dvbtx power, dvbtx-power(8)): only once enabled with
+# "systemctl enable --now dvbtx-power"; save while nothing is on air, transmit while dvbtx runs
+[power]
+save_epp = "power"                      # processor energy/performance preference: performance,
+transmit_epp = "balance_power"          # balance_performance, balance_power, power
+save_turbo = false                      # turbo / boost allowed
+transmit_turbo = true
+save_aspm = "powersupersave"            # PCIe link power: default (firmware), performance, powersave,
+transmit_aspm = "default"               # powersupersave (refused when the firmware keeps it)
+save_command = ""                       # shell command run after the profile (a backlight, a fan...)
+transmit_command = ""
+
 # Defaults of every service (each key can be set per service too)
 [defaults]
 backup = "/var/lib/dvbtx/backup.ts"     # played when the source stops (false: none); dvbtx make-backup creates one
