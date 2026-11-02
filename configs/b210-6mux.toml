@@ -1,0 +1,60 @@
+# Six adjacent DVB-T multiplexes (474-514 MHz, UHF 21-26) on one USRP B210: 6 x 31.67 = 190 Mbit/s.
+# One 49152-point OFDM synthesis at 54.857 MS/s (the B210 analog bandwidth is 56 MHz).
+# More carriers: add a second radio (args = "serial=...") and give it its own carriers.
+[network]
+name = "BsT"
+provider = "BillysTV"
+
+[[radio]]
+name = "b210"
+driver = "uhd"
+args = ""                       # e.g. "serial=JN76WAJ"
+gain = 50
+
+[[carrier]]
+name = "Mux 1"
+radio = "b210"
+channel = 21
+  [[carrier.service]]
+  name = "Chaine 1"
+  source = "/srv/videos/a.mkv"
+
+[[carrier]]
+name = "Mux 2"
+radio = "b210"
+channel = 22
+  [[carrier.service]]
+  name = "Chaine 2"
+  source = "/srv/videos/b.mkv"
+
+[[carrier]]
+name = "Mux 3"
+radio = "b210"
+channel = 23
+  [[carrier.service]]
+  name = "Chaine 3"
+  source = "/srv/videos/c.mkv"
+
+[[carrier]]
+name = "Mux 4"
+radio = "b210"
+channel = 24
+  [[carrier.service]]
+  name = "Chaine 4"
+  source = "/srv/videos/d.mkv"
+
+[[carrier]]
+name = "Mux 5"
+radio = "b210"
+channel = 25
+  [[carrier.service]]
+  name = "Chaine 5"
+  source = "/srv/videos/e.mkv"
+
+[[carrier]]
+name = "Mux 6"
+radio = "b210"
+channel = 26
+  [[carrier.service]]
+  name = "Chaine 6"
+  source = "/srv/videos/f.mkv"

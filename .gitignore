@@ -1,0 +1,8 @@
+engine/build/
+__pycache__/
+*.pyc
+*.deb
+/work/
+/run24/
+/.wt/
+/dist/

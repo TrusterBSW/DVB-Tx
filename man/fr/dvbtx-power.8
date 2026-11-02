@@ -1,0 +1,233 @@
+'\" t
+.\" -*- coding: UTF-8 -*-
+.nr HY 0
+.TH DVBTX-POWER 8 2026-11-02 "dvbtx 0.1.0" "manuel dvbtx"
+.SH NOM
+dvbtx\-power \- profils d'énergie de la machine pour un émetteur sur batterie\~: toutes les économies tant que rien n'est à l'antenne, un profil d'émission pendant que dvbtx tourne
+.SH SYNOPSIS
+.SY "dvbtx power"
+.BR save | transmit | default | status
+.RB [ \-c
+.IR FICHIER ]
+.YS
+.SY "dvbtx power hook"
+.BR start | stop
+.RI [ UNITÉ ]
+.RB [ \-c
+.IR FICHIER ]
+.YS
+.SY "systemctl enable \-\-now dvbtx\-power"
+.YS
+.SH DESCRIPTION
+Un émetteur transporté avec ses radios dans un sac fonctionne sur batterie\~: chaque watt économisé est
+de l'autonomie gagnée, et de la chaleur en moins.
+.B dvbtx power
+fait passer toute la machine d'un profil à l'autre\~:
+.TP
+.B save
+Rien n'est à l'antenne\~: toutes les économies que le matériel propose.
+Appliqué au démarrage, et quand la dernière unité dvbtx s'arrête (y compris après un plantage).
+.TP
+.B transmit
+Une unité dvbtx tourne\~: ce dont a besoin le travail temps réel des radios, les autres économies étant
+conservées.
+Appliqué par chaque unité dvbtx à son démarrage.
+.PP
+Il est
+.BR "désactivé par défaut" "\~:"
+rien ne change tant que
+.B dvbtx\-power.service
+n'est pas activé.
+Les réglages s'appliquent à toute la machine, y compris aux autres programmes et aux machines
+virtuelles qui y tournent.
+.SS Ce que règle chaque profil
+.TS
+allbox tab(@);
+lb lb lb
+l lx lx.
+réglage@save@transmit
+gouverneur cpufreq@powersave@powersave
+préférence énergie/performance (EPP)@power@balance_power
+turbo / boost@désactivé@autorisé
+politique PCIe ASPM@powersupersave@default (micrologiciel)
+mise en veille automatique USB@T{
+.na
+activée, claviers et souris épargnés
+T}@T{
+.na
+désactivée\~: radios jamais mises en veille
+T}
+gestion d'énergie dynamique PCI@auto@auto
+économie d'énergie du lien SATA (ALPM)@med_power_with_dipm@med_power_with_dipm
+économie d'énergie audio HDA / AC97@activée@activée
+watchdog NMI@désactivé@désactivé
+écriture différée des pages modifiées@15 s@15 s
+économie d'énergie Wi-Fi (iw)@activée@activée
+.TE
+.PP
+Chaque valeur n'est écrite que là où la machine la propose\~: un processeur AMD ou Intel plus ancien
+sans EPP ne garde que son réglage de gouverneur, un micrologiciel qui se réserve l'ASPM PCIe (ACPI FADT)
+refuse la politique, qui est alors laissée telle quelle.
+.PP
+Dans le profil transmit, la mise en veille automatique USB est désactivée car une radio dont tous les
+multiplex sont arrêtés est fermée puis rouverte plus tard\~: elle ne doit pas être mise en veille
+entre-temps.
+La politique PCIe revient à celle du micrologiciel afin qu'un contrôleur USB situé derrière un lien
+PCIe réponde sans délai au DMA de la radio.
+.SS États de veille du processeur
+Le moteur tient aussi
+.I /dev/cpu_dma_latency
+ouvert pendant qu'il tourne
+.RB ( "[engine] cpu_latency_us" ,
+voir
+.BR dvbtx\-engine (8)
+et
+.BR dvbtx.toml (5)).
+Cette requête vaut elle aussi pour tout le système, et dure exactement autant que le moteur\~: le noyau
+l'abandonne quand le moteur se termine, même après un plantage.
+0 garde tous les cœurs éveillés (aucun état de veille\~: la plus forte consommation).
+100 laisse les cœurs dormir jusqu'à C6 (85 \(mcs pour se réveiller sur un Intel de 8e génération) et
+n'interdit que les états les plus profonds (C7 à C10, de 124 à 890 \(mcs), dont la latence de sortie
+retarde le DMA USB assez longtemps pour vider la FIFO de 1 ms du HackRF\~: des trous à l'antenne.
+\-1 ne fait aucune requête.
+.SS Mesures
+Intel Core i3-8100T, quatre multiplex sur un HackRF et un B210 (DVB-T, DVB-T2, DVB-C), puissance du
+package processeur lue par RAPL\~:
+.TS
+allbox tab(@);
+lb lb lb
+l r lx.
+configuration@puissance@à l'antenne
+au repos, gouverneur performance@1,37 W@\(em
+au repos, save@0,62 W@\(em
+à l'antenne, cpu_latency_us 0, gouverneur performance@22,1 W@aucun sous-débit
+à l'antenne, cpu_latency_us 100, transmit@13,9 W@T{
+.na
+aucun sous-débit, marges inchangées
+T}
+à l'antenne, cpu_latency_us 100, EPP power@14,2 W@aucun sous-débit
+.TE
+.PP
+L'EPP
+.B power
+n'apporte rien quand le processeur travaille à 75\~%, d'où
+.B balance_power
+pour transmit.
+.SH COMMANDES
+.TP
+.B save
+Appliquer immédiatement le profil save.
+.TP
+.B transmit
+Appliquer immédiatement le profil transmit.
+.TP
+.B default
+save, ou transmit quand une unité dvbtx est à l'antenne.
+C'est ce que
+.B dvbtx\-power.service
+lance au démarrage (ordonné avant les unités dvbtx).
+.TP
+.B status
+Le profil appliqué en dernier, les unités dvbtx à l'antenne, si
+.B dvbtx\-power.service
+est activé, le gouverneur, l'EPP, le turbo, la politique ASPM, les périphériques USB par mode de
+contrôle d'alimentation, et la puissance du package processeur sur 2 secondes (RAPL, root uniquement).
+.TP
+.BR "hook start" | stop " [\fIUNIT\fR]"
+Appelé par les unités dvbtx en tant que root
+.RB ( ExecStartPre=
+et
+.BR ExecStopPost= ).
+.B start
+marque l'unité comme étant à l'antenne et applique transmit\~;
+.B stop
+retire la marque et applique save quand aucune autre unité n'est à l'antenne.
+Ne fait rien tant que
+.B dvbtx\-power.service
+n'est pas activé.
+.PP
+Toutes les commandes sauf
+.B status
+nécessitent root.
+.SH OPTIONS
+.TP
+.BI \-c " FICHIER" "\fR, \fP\-\-config " FICHIER
+Fichier de configuration dont la table
+.B [power]
+est lue (par défaut
+.IR /etc/dvbtx/dvbtx.toml ).
+Un fichier illisible donne les réglages par défaut, avec un avertissement\~: un hook n'échoue jamais.
+.SH CONFIGURATION
+Dans la table
+.B [power]
+de
+.BR dvbtx.toml "(5)\~;"
+une modification est prise en compte au prochain changement de profil (ou immédiatement avec
+.BR "dvbtx power transmit" ),
+elle ne redémarre pas l'émission.
+.TP
+.BR save_epp " (\(dqpower\(dq), " transmit_epp " (\(dqbalance_power\(dq)"
+Préférence énergie/performance\~:
+.BR performance ,
+.BR balance_performance ,
+.BR balance_power ,
+.BR power .
+.TP
+.BR save_turbo " (false), " transmit_turbo " (true)"
+Turbo ou boost autorisé.
+.TP
+.BR save_aspm " (\(dqpowersupersave\(dq), " transmit_aspm " (\(dqdefault\(dq)"
+Politique PCIe ASPM\~:
+.BR default ,
+.BR performance ,
+.BR powersave ,
+.BR powersupersave
+(powersave quand powersupersave est refusé).
+.TP
+.BR save_command ", " transmit_command " (\(dq\(dq)"
+Commande shell lancée après le profil, par exemple pour baisser un rétroéclairage ou ralentir un
+ventilateur.
+.SH FICHIERS
+.TP
+.I /usr/lib/systemd/system/dvbtx\-power.service
+Unité oneshot, activée par l'administrateur\~: lance
+.B dvbtx power default
+au démarrage.
+.TP
+.IR /usr/lib/systemd/system/dvbtx.service ", " dvbtx@.service
+Appellent
+.B dvbtx power hook start|stop
+.BR %n .
+.TP
+.I /run/dvbtx\-power/profile
+Le profil appliqué en dernier.
+.TP
+.IR /run/dvbtx\-power/on/ UNITÉ
+Un fichier par unité dvbtx à l'antenne.
+.SH EXEMPLES
+.EX
+sudo systemctl enable \-\-now dvbtx\-power     # save maintenant et à chaque démarrage
+sudo dvbtx power status
+sudo systemctl start dvbtx                   # transmit
+sudo systemctl stop dvbtx                    # de nouveau save
+.EE
+.PP
+Depuis une copie de travail des sources, la même chose avec
+.BR "sudo packaging/install\-service.sh \-c FICHIER \-\-power" .
+.PP
+Ne jamais laisser le processeur accélérer, même à l'antenne\~:
+.PP
+.EX
+[power]
+transmit_turbo = false
+.EE
+.SH VOIR AUSSI
+.BR dvbtx (1),
+.BR dvbtx\-channel (1),
+.BR dvbtx.toml (5),
+.BR dvbtx\-sources (7),
+.BR dvbtx (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR systemctl (1),
+.BR iw (8)

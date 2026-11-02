@@ -1,0 +1,242 @@
+'\" t
+.\" -*- coding: UTF-8 -*-
+.nr HY 0
+.TH DVBTX-CHANNEL 1 2026-11-02 "dvbtx 0.1.0" "manuel dvbtx"
+.SH NOM
+dvbtx\-channel \- lister, ajouter, supprimer, renommer, renuméroter les chaînes et changer leur source pendant que dvbtx est à l'antenne
+.SH SYNOPSIS
+.EX
+dvbtx channel [\-c FICHIER] [\-\-url URL] [\-\-token JETON] [\-\-offline] COMMANDE ...
+
+dvbtx channel list [\-\-json]
+dvbtx channel add NOM SOURCE... [\-\-number N] [\-\-mux MUX] [\-\-sid SID] [\-\-backup SRC | \-\-no\-backup]
+                                 [\-\-cache MS|auto] [\-\-option CLÉ=VALEUR]...
+dvbtx channel remove CHAÎNE
+dvbtx channel rename CHAÎNE NOUVEAU_NOM
+dvbtx channel renumber CHAÎNE NUMÉRO [\-\-swap]
+dvbtx channel source CHAÎNE SOURCE... [\-\-backup SRC | \-\-no\-backup] [\-\-cache MS|auto] [\-\-option CLÉ=VALEUR]...
+dvbtx channel set CHAÎNE CLÉ=VALEUR...
+.EE
+.PP
+\fBchannels\fR est accepté pour \fBchannel\fR, \fBrm\fR et \fBdelete\fR pour \fBremove\fR. Les options communes peuvent
+être données avant ou après la commande.
+.SH DESCRIPTION
+.PP
+Une chaîne est un service d'un multiplex (un \fB[[carrier.service]]\fR de la configuration). Pendant que
+dvbtx tourne, \fBdvbtx channel\fR lui envoie la modification par son API web (\fBweb.listen\fR)\~: la
+modification est appliquée immédiatement à cette seule chaîne, et réécrite dans le fichier de
+configuration, de sorte que le démarrage suivant donne les mêmes chaînes. Les autres chaînes du
+multiplex, et les autres multiplex, ne sont pas interrompus\~: aucun paquet perdu, aucun retard
+supplémentaire (mesuré\~: le plus grand écart entre deux paquets vidéo d'une chaîne voisine reste de
+25\-33 ms, comme sans modification).
+.PP
+Quand rien ne répond à l'adresse web, dvbtx ne tourne pas\~: seul le fichier de configuration est
+modifié, et la modification est appliquée au prochain démarrage (ou immédiatement avec
+\fBsystemctl reload dvbtx\fR s'il tournait en fait avec sa page web désactivée).
+.PP
+\fBCHANNEL\fR désigne une chaîne par son numéro (LCN\~: \fB5\fR), son service_id (\fB0x0105\fR, \fBsid:261\fR) ou
+son nom (\fB"France 24"\fR, casse indifférente\~; un nom fait de chiffres est pris comme un numéro).
+.SS Effet de chaque modification à l'antenne
+.PP
+.TS
+allbox tab(@);
+lb lb
+l lx.
+modification@à l'antenne
+\fBadd\fR@T{
+nouveau service dans la PAT (nouvelle version), la SDT, la NIT (numéro) et l'EIT\~; sa source démarre, le flux de secours est diffusé en attendant (après \fBswitch_timeout_ms\fR)
+T}
+\fBremove\fR@T{
+retiré de la PAT, de la SDT, de la NIT et de l'EIT\~; sa source est arrêtée (un flux de secours partagé avec d'autres chaînes est conservé)
+T}
+\fBrename\fR@T{
+SDT (le téléviseur affiche le nouveau nom à sa prochaine lecture de la SDT, en général en quelques secondes)
+T}
+\fBrenumber\fR@T{
+logical_channel_descriptor de la NIT (la plupart des téléviseurs ne réordonnent les chaînes qu'à une nouvelle recherche)
+T}
+\fBsource\fR@T{
+\fBsans coupure\fR\~: la nouvelle source démarre à côté de l'ancienne\~; la chaîne bascule sur elle sur une image clé vidéo à émettre à ce moment (ou, sans vidéo, dès qu'elle a des données à émettre), l'ancienne source est diffusée jusque-là (15 s au plus, ensuite la chaîne continue comme d'habitude\~: son flux de secours si la nouvelle source ne vient pas)
+T}
+\fB\-\-backup\fR@T{
+le nouveau flux de secours est utilisé dès la prochaine panne de la source (immédiatement si la chaîne est sur son flux de secours)
+T}
+\fBset\fR@T{
+tout autre réglage de la chaîne\~: un réglage de la source (\fBytdlp_format\fR, \fBencode\fR, \fBreadrate\fR, \fBmap\fR...) redémarre la source comme \fBsource\fR (sans coupure)\~; un réglage du moteur (\fBswitch_timeout_ms\fR, \fBreturn_ms\fR, \fBmax_late_ms\fR, \fBearly_ms\fR, \fBpcr_max_ms\fR, \fBpmt_period_ms\fR, \fBpriority\fR, \fBpid_base\fR) recrée le service (coupure de quelques secondes)
+T}
+.TE
+.PP
+Le service_id et le multiplex d'une chaîne ne peuvent pas être changés\~: supprimez-la et ajoutez-la de
+nouveau.
+.SS Plusieurs sources, par ordre de préférence
+.PP
+Plusieurs \fBSOURCE\fR (une liste TOML dans le fichier\~: \fBsource = ["first", "second", ...]\fR, une par
+ligne sur la page web, une liste JSON dans l'API), autant que nécessaire. La première est diffusée.
+Quand la source diffusée n'a rien livré pendant \fBfailover_s\fR (10 s), ou n'a pas démarré en
+\fBsource_start_s\fR (30 s), elle est arrêtée et la suivante est démarrée (après la dernière, de nouveau
+la première)\~; la chaîne diffuse son flux de secours en attendant. Une source est aussi abandonnée
+quand elle est instable\~: la chaîne est retombée sur son flux de secours \fBunstable_switches\fR fois (3)
+en \fBunstable_window_s\fR (600 s), ou y est restée \fBfailover_s\fR + \fBreturn_ms\fR (20 s). Une source
+abandonnée est réessayée plus tard, après un délai chaque fois plus long (5 min, puis 10, 20...
+jusqu'à une heure), et pardonnée une fois qu'elle a tenu 30 min. Tant que la chaîne n'est pas sur la première, les sources préférées sont réessayées, dans l'ordre,
+toutes les \fBpreferred_retry_s\fR (300 s\~; 0\~: jamais), à côté de celle qui est diffusée\~: dès que l'une
+d'elles livre pendant 2 s, la chaîne y revient sans coupure. Quand aucune ne fonctionne, le flux de
+secours (\fBbackup\fR) est diffusé.
+\fBlist\fR, la page web et les alertes indiquent laquelle est diffusée (\fB*2\fR, \fBsource 2/3\fR).
+.PP
+Une source en panne est arrêtée avant que la suivante ne démarre, si bien qu'on peut donner plusieurs
+flux d'un même compte IPTV qui n'autorise qu'une connexion. Essayer une source préférée pendant qu'une
+autre est diffusée ouvre une seconde connexion pendant quelques secondes (démarrage, 2 s de flux, la
+bascule, puis l'autre est fermée)\~: la plupart des comptes le tolèrent, comme lors d'un zapping\~; sinon
+le fournisseur la refuse (rien ne change) ou coupe l'autre (quelques secondes de flux de secours, puis
+la source préférée)\~; \fBpreferred_retry_s = 0\fR évite ces essais.
+.SS Cache
+.PP
+\fB\-\-cache MS\fR (\fBbuffer_ms\fR, de 100 à 30000) est le délai accepté entre l'arrivée de la source et
+son émission. Plus grand, il laisse passer une source irrégulière sans paquets perdus ni bascule sur le
+flux de secours, la chaîne étant plus en retard sur le direct. \fBauto\fR (par défaut)\~: 6000 ms pour les
+sources livrées par segments (YouTube, Twitch, \fB.m3u8\fR\~: au plus près du direct de la liste de
+lecture, elles arrivent par rafales, une par segment de 2 à 5 s), 1000 ms sinon. Une source n'est
+considérée comme en panne qu'une fois son cache épuisé. Un changement de cache redémarre la source à
+côté de l'ancienne (sans coupure).
+.SS Les numéros, service_id et PID restent en place
+.PP
+Par défaut, le service_id, le numéro et les PID d'une chaîne découlent de sa position dans le fichier.
+Les téléviseurs identifient une chaîne par son service_id\~: une suppression ne doit pas décaler les
+autres. Aussi chaque modification structurelle (\fBadd\fR, \fBremove\fR, \fBrenumber\fR) écrit-elle
+explicitement \fBsid\fR, \fBlcn\fR et \fBpid_base\fR dans les chaînes du fichier qui s'appuyaient sur les
+valeurs par défaut. Une nouvelle chaîne prend le premier service_id libre de son multiplex
+(TSID × 256 + n), le premier numéro libre et la première plage de PID libre (32 PID à partir de 0x100).
+.SS Le fichier de configuration
+.PP
+Seuls les blocs \fB[[carrier.service]]\fR concernés sont réécrits\~; les commentaires et la mise en page du
+reste sont conservés, la version précédente est gardée sous \fBFILE.bak\fR, et le résultat est relu\~:
+s'il ne dit pas exactement ce qui était voulu (mise en page inhabituelle, par exemple un réglage donné
+dans une sous-table \fB[carrier.service.encode]\fR changé en une autre forme), le fichier est laissé tel
+quel et la modification n'est appliquée qu'à chaud (\fBwarning: not saved ...\fR).
+.PP
+Le fichier n'est pas écrit quand il diffère de ce qui tourne (modifié à la main entre-temps\~: appliquez
+d'abord votre modification avec \fBsystemctl reload dvbtx\fR), ou quand les chaînes viennent de la ligne
+de commande (\fB\-\-service\fR, \fB\-\-set carrier.N.service...\fR).
+.SS Modifier le fichier à la main
+.PP
+\fBsystemctl reload dvbtx\fR (SIGHUP) relit le fichier et applique de la même façon les différences des
+chaînes, chaîne par chaîne (l'EPG et les tables SI sont relus aussi). Les modifications des radios ou
+des multiplex nécessitent un redémarrage (signalé dans le journal, les chaînes étant alors laissées
+telles quelles)\~; les autres réglages hors des chaînes sont signalés dans le journal comme nécessitant
+un redémarrage. Donnez explicitement un \fBsid\fR aux chaînes que vous déplacez ou supprimez à la main,
+sinon les suivantes changent de service_id.
+.SH COMMANDES
+.TP
+\fBlist [\-\-json]\fR
+les chaînes\~: numéro, service_id, nom, multiplex, ce qui est à l'antenne (\fBprimary\fR, \fBbackup\fR,
+\fBnone\fR), source et flux de secours. Lues dans le fichier quand dvbtx ne tourne pas.
+.TP
+\fBadd NOM SOURCE...\fR
+\fBSOURCE\fR est toute source que dvbtx sait lire (plusieurs\~: par ordre de préférence, voir plus haut) (fichier, \fBdir:\fR, URL, HLS, \fBytdlp:\fR, \fBtwitch://\fR, \fBm3u:\fR,
+\fBudp://\fR, \fBrtmp://\fR, \fBsrt://\fR, \fBv4l2:\fR, \fBlavfi:\fR...). \fB\-\-number N\fR (par défaut\~: le premier libre),
+\fB\-\-mux MUX\fR (index ou nom du multiplex\~; obligatoire quand il y en a plusieurs), \fB\-\-sid SID\fR,
+\fB\-\-backup SRC\fR (par défaut\~: \fBdefaults.backup\fR) ou \fB\-\-no\-backup\fR, \fB\-\-option CLÉ=VALEUR\fR pour
+n'importe quel réglage de la chaîne (répétable\~; valeurs comme en TOML\~: \fBencode=true\fR,
+\fBytdlp_format=b\fR, \fBpriority=7\fR).
+.TP
+\fBremove CHAÎNE\fR
+supprime la chaîne.
+.TP
+\fBrename CHAÎNE NOUVEAU_NOM\fR
+de 1 à 60 caractères, sans guillemets ni barres obliques inverses.
+.TP
+\fBrenumber CHAÎNE NUMÉRO [\-\-swap]\fR
+refusé si le numéro est pris, sauf avec \fB\-\-swap\fR\~: l'autre chaîne reçoit alors l'ancien numéro.
+.TP
+\fBsource CHAÎNE SOURCE... [\-\-backup SRC | \-\-no\-backup] [\-\-cache MS|auto] [\-\-option CLÉ=VALEUR]...\fR
+diffuse une autre source (ou liste de sources) sur la chaîne sans la couper. \fB\-\-option\fR fixe les
+réglages de la chaîne qui vont avec la nouvelle source (\fBKEY=\fR sans rien en supprime un, par exemple
+un \fBytdlp_format\fR qui ne s'applique pas à la nouvelle source).
+.TP
+\fBset CHAÎNE CLÉ=VALEUR...\fR
+change n'importe quel réglage de la chaîne (\fBKEY=\fR le supprime\~: retour à la valeur par défaut).
+.SH OPTIONS
+.TP
+\fB\-c, \-\-config FICHIER\fR
+fichier de configuration (par défaut \fB/etc/dvbtx/dvbtx.toml\fR)\~: ses \fBweb.listen\fR et \fBweb.token\fR
+servent à joindre le dvbtx en marche, et c'est le fichier modifié quand dvbtx ne tourne pas.
+.TP
+\fB\-\-url URL\fR
+adresse web du dvbtx en marche (par défaut \fBhttp://\fR + \fBweb.listen\fR, \fB0.0.0.0\fR étant lu comme
+\fB127.0.0.1\fR).
+.TP
+\fB\-\-token JETON\fR
+\fBweb.token\fR du dvbtx en marche (aussi \fBDVBTX_TOKEN\fR dans l'environnement).
+.TP
+\fB\-\-offline\fR
+ne modifier que le fichier de configuration, même si dvbtx tourne (pour préparer plusieurs
+modifications, puis \fBsystemctl reload dvbtx\fR).
+.SH PAGE WEB ET API
+.PP
+La page web a un bouton \fB+ Ajouter une chaîne\fR par multiplex et des boutons \fBModifier\fR / \fB✕\fR par
+chaîne (nom, numéro avec échange, sources, cache, flux de secours)\~; le résultat de chaque modification
+est affiché, ainsi que le fait qu'elle a été écrite ou non dans le fichier.
+.PP
+.EX
+GET    /api/channels                  [{"lcn", "sid", "name", "source", "backup", "carrier", "on", ...}]
+POST   /api/channels                  {"name", "source", "carrier"?, "lcn"?, "sid"?, "backup"?, options...}
+PATCH  /api/channels/<channel>        {"name"?, "lcn"?, "swap"?, "source"?, "backup"?, "buffer_ms"?, options...}
+DELETE /api/channels/<channel>
+.EE
+.PP
+\fB<channel>\fR comme CHAÎNE plus haut, encodé en URL. \fB"source"\fR\~: une chaîne de caractères ou une
+liste (par ordre de préférence)\~; \fB"buffer_ms": null\fR revient à auto. \fB"backup": ""\fR (ou \fBfalse\fR)
+supprime le flux de secours, une option mise à \fBnull\fR est supprimée. Réponse `{"ok": true, "sid", "changes": [text], "detail": [{"what", "name",
+"from", "to"}], "saved", "warning"?}\fB, ou \fR{"ok": false, "error"}` avec le statut 400 (403, 401, 415\~:
+voir plus bas).
+.SH SÉCURITÉ
+.PP
+L'API web peut changer ce qui est diffusé, donc\~:
+.IP \(bu 2
+les requêtes qui modifient quelque chose sont refusées quand elles viennent d'un autre site web
+(\fBOrigin\fR vérifié\~: une page que vous visitez ne peut pas piloter l'émetteur à travers votre
+navigateur) et doivent envoyer du JSON (\fBContent\-Type: application/json\fR)\~;
+.IP \(bu 2
+\fBweb.token = "..."\fR\~: ces requêtes nécessitent alors \fBAuthorization: Bearer <token>\fR (la page le
+demande une fois, \fBdvbtx channel\fR le lit dans le fichier de configuration ou dans \fB\-\-token\fR).
+Définissez-en un quand \fBweb.listen\fR n'est pas \fB127.0.0.1\fR\~;
+.IP \(bu 2
+les sources qui lancent une commande ou lisent l'entrée standard (\fBexec:\fR, \fBpipe:\fR, \fBstdin:\fR), ainsi
+que les arguments bruts de ffmpeg \fBffmpeg_input\fR / \fBffmpeg_output\fR (ils peuvent désigner un fichier
+de sortie), sont refusés depuis l'API sauf si \fBweb.allow_exec_sources = true\fR\~; ils restent possibles
+dans le fichier.
+.SH FICHIERS
+.TP
+\fB/etc/dvbtx/dvbtx.toml\fR
+configuration, réécrite par les modifications (c'est un conffile du paquet\~: une mise à jour qui en
+apporte une nouvelle version demande quoi faire, comme pour toute modification).
+.TP
+\fB/etc/dvbtx/dvbtx.toml.bak\fR
+la version d'avant la dernière modification.
+.SH EXEMPLES
+.PP
+.EX
+dvbtx channel list
+dvbtx channel add "France 24" "http://provider.example/live/user/pass/976" \-\-number 3
+dvbtx channel add "Sky News" "ytdlp:https://www.youtube.com/@SkyNews/live" \e
+      \-\-option 'ytdlp_format=bv*[vcodec^=avc1][height<=720]+ba/b[height<=720]'
+dvbtx channel source "Sky News" "https://example.org/sky/index.m3u8" \-\-option ytdlp_format=
+dvbtx channel source "France 24" http://provider.example/u/p/289 http://provider.example/u/p/319 \e
+      http://provider.example/u/p/976          # FHD, puis HD, puis Caraïbes, puis le flux de secours
+dvbtx channel source "Seismic" twitch://dynamicearthcommunitylive \-\-cache 8000
+dvbtx channel rename 3 "France 24 FR"
+dvbtx channel renumber "France 24 FR" 1 \-\-swap
+dvbtx channel set 3 epg_id=France24.fr
+dvbtx channel remove 0x0103
+dvbtx channel \-\-offline \-c /etc/dvbtx/dvbtx.toml add "Mire" lavfi:smptehdbars && sudo systemctl reload dvbtx
+curl \-s \-X PATCH \-H 'Content\-Type: application/json' \-d '{"name": "Info"}' http://127.0.0.1:8080/api/channels/3
+.EE
+.SH VOIR AUSSI
+.BR dvbtx (1),
+.BR dvbtx.toml (5),
+.BR dvbtx\-sources (7),
+.BR dvbtx (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR dvbtx\-power (8)

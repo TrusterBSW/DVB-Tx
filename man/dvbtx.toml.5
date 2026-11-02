@@ -1,0 +1,1454 @@
+.TH DVBTX.TOML 5 2026-11-02 "dvbtx 0.1.0" "dvbtx manual"
+.SH NAME
+dvbtx.toml \- configuration file of the dvbtx DVB transmitter
+.SH SYNOPSIS
+.B /etc/dvbtx/dvbtx.toml
+.br
+.B /etc/dvbtx/dvbtx.toml.\fIprofile\fP
+.br
+.B /etc/dvbtx/\fIinstance\fP.toml
+.SH DESCRIPTION
+.B dvbtx
+reads one TOML file that describes the whole transmitter: global settings in plain tables
+.RB ( [network] ,
+.BR [epg] ,
+.BR [web] ,
+.BR [monitoring] ,
+.BR [alerts] ,
+.BR [ingest] ,
+.BR [engine] ,
+.BR [power] ,
+.BR [defaults] ),
+then any number of radios
+.RB ( [[radio]] ),
+multiplexes
+.RB ( [[carrier]] ,
+each placed on a radio) and services
+.RB ( [[carrier.service]] ,
+each in the multiplex above it).
+Nothing is fixed in advance: as many radios, carriers per radio and services per carrier as the
+hardware and the capacity allow.
+.PP
+Every key is optional except where stated; a missing key takes the default shown here.
+Unknown keys of the plain tables are ignored.
+The file is checked without transmitting by
+.BR "dvbtx check \-c" " FILE,"
+which also prints the frequency plan (LO, sample rate, offsets, useful rate of each multiplex and
+the services with their LCN and service_id).
+.PP
+The file used is the one given with
+.BR \-c ;
+without
+.BR \-c ,
+.I /etc/dvbtx/dvbtx.toml
+when it exists and the command line does not itself define a service, a frequency or a channel.
+The configuration is merged in this order, each step overriding the previous one: built-in
+defaults, the file, the quick setup options of
+.BR dvbtx (1)
+.RB ( \-\-driver ,
+.BR \-\-channel ,
+.BR \-\-service ...),
+the
+.B \-s
+overrides, then the run options
+.RB ( \-\-work\-dir ,
+.BR \-\-web ,
+.BR \-\-epg\-dir ,
+.BR \-\-analysis\-export ,
+.BR \-\-stats\-export ,
+.BR \-\-no\-tsduck ).
+.SH VALUES
+.TP
+.B Frequencies and rates
+are in Hz and bit/s.
+TOML integers
+.RB ( 482000000 ,
+.BR 482_000_000 ),
+floats
+.RB ( 482e6 )
+and strings with a k, M or G multiplier optionally followed by Hz, b or bps
+.RB ( \(dq482MHz\(dq ,
+.BR \(dq27.5M\(dq ,
+.BR \(dq8MHz\(dq )
+are accepted by the radio keys
+.BR gain ,
+.BR center ,
+.BR rate ,
+.BR bandwidth ,
+.BR lo_offset
+and the carrier keys
+.BR frequency ,
+.BR bandwidth ,
+.BR symbol_rate .
+.BR ts_rate ,
+.B lnb_lo
+too.
+.TP
+.B Bit rates of the encoder
+.RB ( video_bitrate ,
+.BR max_auto_bitrate ,
+.BR max_bitrate )
+are numbers in bit/s or strings such as
+.B \(dq4M\(dq
+or
+.BR \(dq3500k\(dq .
+.B audio_bitrate
+is handed to ffmpeg as written
+.RB ( \(dq128k\(dq ).
+.TP
+.B Identifiers
+.RB ( sid ,
+.BR onid ,
+.BR network_id ,
+.BR pid_base ...)
+are TOML integers, hexadecimal ones included
+.RB ( 0x20FA ).
+.B sid
+may also be a string such as
+.BR \(dq0x0101\(dq .
+.TP
+.B Durations
+are in the unit their name ends with:
+.B _ms
+milliseconds,
+.B _s
+seconds,
+.B _us
+microseconds.
+.SH TOP-LEVEL KEYS
+.TP
+\fBwork_dir\fR (string; default "/run/dvbtx")
+Runtime directory: the generated engine configuration
+.I engine.ini
+and the SI tables
+.RI ( si/ ).
+Overridden by
+.BR \-\-work\-dir .
+.SH [network]
+Network-wide service information (NIT, SDT, TOT) and text encoding.
+.TP
+\fBname\fR (string; default "dvbtx")
+network_name_descriptor of the NIT, shown by some TVs.
+.TP
+\fBnetwork_id\fR (integer; default 0x20FA)
+network_id of the NIT.
+.TP
+\fBonid\fR (integer; default 0x20FA)
+original_network_id of every multiplex (a carrier may override it).
+Many TVs ignore the logical channel numbers of an ONID that does not belong to their country;
+0x20FA is France (terrestrial: 0x2000 + ISO 3166 numeric code).
+.TP
+\fBprovider\fR (string; default "dvbtx")
+Default service provider name (SDT) of the services.
+.TP
+\fBcountry\fR (string; default "FRA")
+Country of the TOT local_time_offset_descriptor, ISO 3166 alpha\-3.
+.TP
+\fBtimezone\fR (string; default "Europe/Paris")
+IANA time zone of the TOT, and of XMLTV times given without offset.
+An unknown zone is a configuration error.
+.TP
+\fBcharset\fR (string; default "iso8859\-9")
+Encoding of the DVB text fields (names, EPG):
+.B iso8859\-9
+(0x05 prefix, as the French DTT; accents shown by the TVs),
+.BR iso8859\-1 " to " iso8859\-15
+(those of EN 300 468 annex A),
+.B iso6937
+(no prefix),
+.BR utf8 ;
+aliases
+.BR latin1 ,
+.BR latin5 ,
+.BR latin9 ,
+.BR tnt .
+Pure ASCII text is sent without prefix, except in
+.B iso6937
+and
+.BR utf8 .
+.TP
+\fBlcn_pds\fR (integer; default 0x28)
+private_data_specifier sent before the logical_channel_descriptor (0x28: EACEM, as the French
+DTT); 0: none.
+.TP
+\fBfrequency_in_nit\fR (boolean; default true)
+false: centre_frequency 0xFFFFFFFF in the terrestrial delivery descriptors (DVB\-T, DVB\-T2), as
+the French DTT does.
+.TP
+\fBsdt_other\fR (boolean; default false)
+Also send SDT other (the services of the other multiplexes) on each multiplex.
+.TP
+\fBnit_period_ms\fR (integer; default 2000)
+Repetition period of the NIT.
+.TP
+\fBsdt_period_ms\fR (integer; default 1000)
+Repetition period of the SDT.
+.SH [epg]
+Programme guide: EIT present/following and schedule.
+The guide is read only when
+.B dir
+or
+.B urls
+is set.
+.TP
+\fBdir\fR (string; default "")
+Folder whose XMLTV files
+.RI ( *.xml ,
+.IR *.xml.gz )
+and TSDuck EIT XML files are loaded, and re\-read when they change.
+XMLTV channels are matched to a service by its
+.BR epg_id ,
+else by name; TSDuck EIT by service_id.
+The package uses
+.IR /var/lib/dvbtx/epg .
+.TP
+\fBurls\fR (list of strings; default [])
+XMLTV URLs fetched every
+.BR url_refresh_s .
+.TP
+\fBurl_refresh_s\fR (integer; default 3600)
+Period of the URL fetches.
+.TP
+\fBdays\fR (integer; default 7)
+Depth of the EIT schedule.
+.TP
+\fBschedule\fR (boolean; default true)
+Send the EIT schedule; present/following is always sent.
+.TP
+\fBpf_cycle_ms\fR (integer; default 1000)
+Repetition period of EIT present/following.
+.TP
+\fBschedule_cycle_ms\fR (integer; default 10000)
+Repetition period of EIT schedule.
+.SH [web]
+The monitoring and control page, and its API (see
+.BR dvbtx\-web (7)).
+.TP
+\fBenabled\fR (boolean; default true)
+Serve the page.
+.B \-\-web none
+disables it.
+.TP
+\fBlisten\fR (string; default "127.0.0.1:8080")
+HOST:PORT of the page;
+.B \(dq0.0.0.0:8080\(dq
+for the whole LAN.
+Also the address
+.BR dvbtx\-channel (1)
+talks to.
+.TP
+\fBtoken\fR (string; default "")
+If set, every request that changes something needs
+.BR "Authorization: Bearer" " TOKEN."
+.TP
+\fBallow_exec_sources\fR (boolean; default false)
+Let the web API (and
+.B dvbtx channel
+talking to it) set
+.BR exec: ,
+.BR pipe: ,
+.B stdin:
+sources and the raw
+.BR ffmpeg_input / ffmpeg_output
+options; the file may always use them.
+.TP
+\fBpreview_max_live\fR (integer; default 4)
+Live channel previews at once.
+.TP
+\fBpreview_thumbnails\fR (boolean; default true)
+Show the channel pictures on the page by default.
+.TP
+\fBpreview_thumb_every_s\fR (integer; default 60, at least 2)
+A new picture per channel this often, while a page shows them; the CPU taken is about
+proportional to 1/this.
+.SH [monitoring]
+.TP
+\fBtsduck\fR (boolean or "auto"; default "auto")
+Run
+.B tsp \-P analyze
+on the copy of each multiplex: true, false, or
+.B auto
+(when
+.B tsp
+is found).
+.TP
+\fBinterval\fR (integer; default 5)
+Seconds between TSDuck reports.
+.TP
+\fBexport\fR (list of strings; default [])
+Send each TSDuck JSON report to these
+.BI udp:// host : port
+or
+.BI tcp:// host : port
+addresses (also
+.BR \-\-analysis\-export ).
+.TP
+\fBstats_export\fR (list of strings; default [])
+Send the engine statistics and the active alerts (JSON, every second) there (also
+.BR \-\-stats\-export ).
+.TP
+\fBtsp\fR (string; default "tsp")
+TSDuck
+.B tsp
+command.
+.SH [alerts]
+Alerts are logged, shown on the page, and optionally sent out.
+.TP
+\fBmargin_min_ms\fR (number; default 150)
+Warn when the decoding margin of a service drops below this (critical below 0).
+.TP
+\fBoverload_percent\fR (number; default 98.0)
+Warn when a multiplex is this full.
+.TP
+\fBlate_ms\fR (number; default 300)
+Warn when packets of a service leave this late.
+.TP
+\fBhold_s\fR (number; default 4)
+A condition must last this long to raise an alert (radio underruns are raised at once).
+.TP
+\fBrepeat_s\fR (number; default 300)
+An active alert is notified again this often.
+.TP
+\fBwebhook\fR (string; default "")
+POST every alert event (JSON) to this URL.
+.TP
+\fBcommand\fR (string; default "")
+Run this shell command for every alert event, with
+.BR DVBTX_ALERT_EVENT " (raise, repeat, clear),"
+.BR DVBTX_ALERT_LEVEL ,
+.B DVBTX_ALERT_KEY
+and
+.B DVBTX_ALERT_MESSAGE
+in its environment.
+.TP
+\fBinput_down_s\fR (number; default 10)
+Warning when a running source has sent nothing for this long (its process alive, its multiplex on
+the air); 0: never.
+.SH [ingest]
+The processes that turn each source into an MPEG\-TS on a local UDP port (see
+.BR dvbtx\-sources (7)).
+.TP
+\fBbase_port\fR (integer; default 20100)
+Local UDP port of input
+.IR n :
+.BR base_port " + " \fIn\fP.
+.TP
+\fBmonitor_base_port\fR (integer; default 20900)
+Each multiplex
+.I n
+is copied to
+.BI udp://127.0.0.1: port
+with port =
+.BR monitor_base_port " + " \fIn\fP
+(TSDuck, previews; watch it with VLC).
+.TP
+\fBffmpeg\fR, \fBffprobe\fR, \fBstreamlink\fR, \fBytdlp\fR (strings; defaults "ffmpeg", "ffprobe", "streamlink", "yt\-dlp")
+Commands used for the sources.
+.TP
+\fBloglevel\fR (string; default "warning")
+ffmpeg
+.BR \-loglevel .
+.TP
+\fBrestart_min_s\fR, \fBrestart_max_s\fR (numbers; defaults 1, 30)
+Back\-off of a source process that exits: restarted after
+.BR restart_min_s ,
+doubled at each failure up to
+.BR restart_max_s ,
+back to the minimum after 60 s of running.
+.TP
+\fBstall_restart_s\fR (number; default 20)
+A running source process that delivers nothing for this long is restarted; 0: never.
+.TP
+\fBdiscontinuity_restart\fR (integer; default 10)
+A source whose ffmpeg reports this many timestamp discontinuities within 30 s is started again
+beside the running one and swapped in without a cut; 0: never.
+.TP
+\fBgpu\fR (string; default "auto")
+GPUs for the transcodes:
+.B auto
+(also
+.BR \(dq\(dq ,
+.BR on ,
+.BR true ,
+.BR yes ):
+every usable adapter;
+.BR off ,
+.BR none ,
+.BR cpu ,
+.BR no ,
+.B false
+(or the boolean false): the CPU only;
+or a comma\-separated list of adapter ids as
+.B dvbtx gpu
+prints them
+.RB ( \(dq/dev/dri/renderD128,cuda:0\(dq ).
+.TP
+\fBgpu_cache\fR (string; default "")
+File of the learnt GPU results;
+.B \(dq\(dq
+means
+.I /var/lib/dvbtx/gpu.json
+when that folder is writable, else
+.IR ~/.cache/dvbtx/gpu.json .
+.SH [engine]
+The C engine
+.BR dvbtx\-engine (8).
+.TP
+\fBbinary\fR (string; default "")
+Path of the engine.
+Empty: the
+.B DVBTX_ENGINE
+environment variable, then
+.I engine/build/dvbtx\-engine
+of the source checkout, then
+.IR /usr/lib/dvbtx/dvbtx\-engine .
+.TP
+\fBlog_level\fR (string; default "info")
+.BR debug ,
+.BR info ,
+.BR warn ,
+.BR error .
+.TP
+\fBstats_interval_ms\fR (integer; default 1000)
+Period of the engine statistics.
+.TP
+\fBcpus\fR (string; default "auto")
+Where the engine threads run:
+.B auto
+keeps them off the cores that take the USB interrupts (a real\-time thread there delays the USB
+work: gaps on air);
+.BR all ;
+or a CPU list such as
+.BR \(dq1\-5\(dq .
+.TP
+\fBcpu_latency_us\fR (integer; default 0)
+Processor wake\-up latency allowed while transmitting, held through
+.IR /dev/cpu_dma_latency :
+deep C\-states delay the USB DMA and empty the radio's FIFO.
+0 blocks them all; a value such as 100 lets the cores sleep in shallow states; \-1: no request.
+.SH [power]
+Machine power profiles applied by
+.B dvbtx power
+(see
+.BR dvbtx\-power (8)):
+.B save
+while nothing is on air,
+.B transmit
+while a dvbtx unit runs.
+Read at each profile switch; never needs a restart of dvbtx.
+.TP
+\fBsave_epp\fR, \fBtransmit_epp\fR (strings; defaults "power", "balance_power")
+Energy/performance preference of the processor:
+.BR performance ,
+.BR balance_performance ,
+.BR balance_power ,
+.BR power .
+.TP
+\fBsave_turbo\fR, \fBtransmit_turbo\fR (booleans; defaults false, true)
+Turbo / boost allowed.
+.TP
+\fBsave_aspm\fR, \fBtransmit_aspm\fR (strings; defaults "powersupersave", "default")
+PCIe ASPM policy:
+.BR default ,
+.BR performance ,
+.BR powersave ,
+.BR powersupersave .
+.TP
+\fBsave_command\fR, \fBtransmit_command\fR (strings; default "")
+Shell command run after the profile is applied.
+.SH [defaults]
+Settings of every service.
+Each key can also be set in a
+.B [[carrier.service]]
+table, where it overrides the default for that service only.
+.SS Backup and buffering
+.TP
+\fBbackup\fR (string or false; default "")
+Source played while the service's own sources deliver nothing (any source form, looped; one
+process shared by the services with the same backup).
+"" or false: none.
+The packaged
+.I /etc/dvbtx/dvbtx.toml
+sets
+.IR /var/lib/dvbtx/backup.ts ,
+created by
+.BR "dvbtx make\-backup" .
+.TP
+\fBbackup_encode\fR (boolean; default false)
+Re\-encode the backup clip instead of copying it.
+.TP
+\fBbuffer_ms\fR ("auto" or integer 100\(en30000; default "auto")
+Cache between the arrival of a source and its transmission.
+.BR auto :
+6000 for live sources delivered in segments
+.RB ( twitch:// ,
+.BR ytdlp: ,
+.BR streamlink: ,
+HTTP URLs containing
+.BR m3u8 ,
+YouTube and Twitch URLs), 1000 otherwise.
+.TP
+\fBring_pkts\fR ("auto" or integer; default "auto")
+Packets held per input;
+.B auto
+is the smallest power of two from 65536 holding the buffer plus 4 s at 15 Mbit/s.
+.TP
+\fBswitch_timeout_ms\fR (integer; default 3000)
+Silence of the source, once its buffer has played out, before the service switches to its backup
+(on a key frame).
+.TP
+\fBreturn_ms\fR (integer; default 10000)
+The source must be stable this long before the service switches back from the backup.
+.SS Several sources
+.TP
+\fBfailover_s\fR (number; default 10)
+With several sources: the next one when the one playing has delivered nothing for this long.
+.TP
+\fBsource_start_s\fR (number; default 30)
+\&... or has not started within this time.
+.TP
+\fBpreferred_retry_s\fR (number; default 300)
+Not on the first source: the preferred ones are tried again this often; 0: never.
+.TP
+\fBunstable_switches\fR (integer; default 3)
+A source is also left when its service fell to the backup this many times...
+.TP
+\fBunstable_window_s\fR (number; default 600)
+\&... within this time; 0 switches: never.
+.SS Multiplexing
+.TP
+\fBmax_late_ms\fR (integer; default 600)
+Packets later than this are dropped.
+.TP
+\fBearly_ms\fR (integer; default 100)
+Packets may leave this much in advance, to smooth the peaks.
+.TP
+\fBpcr_max_ms\fR (integer; default 35)
+A PCR is inserted when the source leaves a longer gap.
+.TP
+\fBpmt_period_ms\fR (integer; default 100)
+Repetition period of the service's PMT.
+.TP
+\fBpriority\fR (integer 1\(en10; default 5)
+When a multiplex is overloaded, higher priorities are served first; the lower ones get the delays,
+then the losses.
+.TP
+\fBbitrate_weight\fR (number; default 1)
+Share of a re\-encoded service with
+.BR "video_bitrate = \(dqauto\(dq" :
+what the copied services (counted 6 Mbit/s each) and the fixed rates leave is split by weight
+(SD 1, HD 2, Full HD 3, 4K 6).
+.TP
+\fBmax_bitrate\fR (bit rate; default "")
+Cap of that share;
+.B \(dq\(dq
+means
+.BR encode.max_auto_bitrate .
+What a capped service does not take goes to the others.
+.SS Reading the source
+.TP
+\fBmux_delay\fR (number; default 0.7)
+ffmpeg
+.B \-muxdelay
+in seconds: the decoding margin given to the receiver.
+Also sizes the encoder's buffer.
+.TP
+\fBreadrate\fR (boolean or "auto"; default "auto")
+Read the input at real time (ffmpeg
+.BR \-re ).
+.BR auto :
+yes, except for the sources that arrive at real time by themselves
+.RB ( stdin: ,
+.BR pipe: ,
+FIFOs, RTMP, RTSP, SRT, UDP, RTP, TCP, V4L2, screen).
+.TP
+\fBreadrate_catchup\fR (number; default 2)
+ffmpeg
+.B \-readrate_catchup
+of the network inputs read with
+.BR \-re ,
+when ffmpeg has it.
+.TP
+\fBhls\fR (string; default "auto")
+How HLS URLs are read:
+.B auto
+(through streamlink when it is installed and nothing ffmpeg\-specific is asked),
+.BR ffmpeg ,
+.BR streamlink .
+.TP
+\fBloop\fR (boolean; default true)
+Loop files and folders.
+.TP
+\fBmap\fR (list of strings; default ["0:v:0?", "0:a?"])
+ffmpeg
+.B \-map
+of the streams kept: the first video, every audio track.
+.TP
+\fBcopy_audio_codecs\fR (list; default ["aac", "mp2", "mp3", "ac3", "eac3", "aac_latm"])
+Audio codecs copied as they are; any other is re\-encoded (video copied).
+Only DVB codecs count: a TV without E\-AC\-3 is served by removing
+.BR eac3 .
+.TP
+\fBcodec_check\fR (boolean; default true)
+Before copying a file, folder, HTTP URL, M3U entry or yt\-dlp stream, probe it with ffprobe:
+video other than H.264, HEVC, MPEG\-2/1 is encoded, audio outside
+.B copy_audio_codecs
+too.
+Skipped when
+.B encode
+is given explicitly.
+.TP
+\fBytdlp_format\fR (string; default "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/b[vcodec^=avc1]/bv*[height<=1080]+ba/b")
+yt\-dlp
+.B \-f
+selection of
+.B ytdlp:
+sources.
+.TP
+\fBrtsp_transport\fR (string; default "tcp")
+ffmpeg
+.B \-rtsp_transport
+of
+.B rtsp://
+sources.
+.TP
+\fBffmpeg_input\fR, \fBffmpeg_output\fR (lists of strings; default none)
+Extra ffmpeg arguments before the input, and before the output.
+.SS [defaults.encode]
+Encoder settings, used when a service is encoded: a capture source
+.RB ( v4l2: ,
+.BR screen: ,
+.BR lavfi: ),
+.B encode = true
+or an
+.B encode
+table, or a codec found by
+.BR codec_check .
+A service's
+.B encode = { key = value, ... }
+table is merged over these.
+.TP
+\fBvideo_codec\fR (string; default "libx264")
+.BR libx264 ,
+.B libx265
+and
+.B mpeg2video
+are generic: a GPU encoder of that family is used when one works (see
+.BR hwaccel ).
+Other names
+.RB ( h264_vaapi ,
+.BR hevc_nvenc ...)
+are used as given; the encoder must exist in ffmpeg.
+.TP
+\fBpreset\fR (string; default "veryfast")
+Encoder preset (libx264, libx265).
+An NVENC encoder takes its own presets
+.RB ( p1 " to " p7 ,
+.BR fast ,
+.BR hq ...);
+an x264 one such as the default
+.B veryfast
+gives it
+.BR p4 .
+.TP
+\fBtune\fR (string; default "")
+libx264/libx265
+.BR \-tune .
+.TP
+\fBvideo_bitrate\fR (bit rate or "auto"; default "auto")
+Constant video rate.
+.BR auto :
+the share of the multiplex left by the other services (see
+.BR bitrate_weight ),
+at least 500 kbit/s.
+Fixed rates that add up to more than the multiplex carries are a configuration error.
+.TP
+\fBmax_auto_bitrate\fR (bit rate; default "8M")
+Cap of the
+.B auto
+rate.
+.TP
+\fBgop_s\fR (number; default 1.0)
+Key frame interval in seconds (with
+.BR fps ,
+25 when unset).
+.TP
+\fBaudio_codec\fR (string; default "aac")
+.BR aac ,
+.BR mp2 ,
+.BR ac3 ,
+.BR eac3 .
+.TP
+\fBaudio_bitrate\fR (string; default "128k")
+Audio rate; stereo always.
+.TP
+\fBaudio_rate\fR (integer; default 48000)
+Audio sample rate.
+.TP
+\fBpix_fmt\fR (string; default "yuv420p")
+Pixel format of a CPU encode.
+.TP
+\fBsize\fR (string; default "")
+.IB W x H
+such as
+.BR \(dq1280x720\(dq :
+scaled, aspect kept with black bars.
+.TP
+\fBfps\fR (string or number; default "")
+Output frame rate.
+.TP
+\fBdeinterlace\fR (boolean; default false)
+Deinterlace (yadif, or the GPU's).
+.TP
+\fBhwaccel\fR (string; default "")
+.B \(dq\(dq
+or
+.BR auto :
+a GPU when one works for the codec (according to
+.BR ingest.gpu );
+.B cpu
+(or
+.BR off ,
+.BR none ,
+.BR no ,
+.BR false ):
+never;
+.BR vaapi ,
+.BR qsv ,
+.BR nvenc :
+only that kind.
+.TP
+\fBdevice\fR (string; default "/dev/dri/renderD128")
+Render node of an explicit
+.B *_vaapi
+codec.
+.SH [[radio]]
+One table per software radio.
+All the carriers of a radio are synthesised together at one sample rate; the LO and the rate are
+computed unless forced.
+.TP
+\fBname\fR (string; default "radio\fIN\fP")
+Name the carriers refer to.
+.TP
+\fBdriver\fR (string; default "hackrf")
+.B hackrf
+(HackRF One),
+.B uhd
+(USRP B200/B210...),
+.B soapy
+(any SoapySDR transmitter),
+.B null
+(no radio: samples consumed at the nominal rate, for tests).
+.TP
+\fBargs\fR (string; default "")
+Device arguments.
+hackrf:
+.BI serial= S ,
+.BI rt= N
+(SCHED_FIFO priority of its USB thread, default 60, 0: none),
+.BI m0_poll= S
+(seconds between reads of its gap counter),
+.BI cb_log_ms= MS
+(log USB callbacks later than that).
+uhd:
+.BR serial=...,type=b200 ,
+.BR master_clock_rate=... .
+soapy:
+.BR driver=lime .
+null:
+.BI file= PATH
+(writes the I/Q samples) with
+.BR format=cs8 " or " cs16
+(default cf32),
+.BI absent= PATH
+(the radio is missing while that file exists).
+.B dvbtx devices
+prints the arguments of the radios plugged in.
+.TP
+\fBgain\fR (number; default 30)
+TX gain in dB: hackrf TX VGA 0\(en47, uhd 0\(en89.75.
+.TP
+\fBamp\fR (boolean; default false)
+HackRF +14 dB amplifier.
+.TP
+\fBppm\fR (number; default 0.0)
+Error of the radio's crystal in parts per million: the sample rate and the LO asked from the radio
+are both divided by 1 + ppm/10^6 (HackRF, UHD, SoapySDR alike).
+.TP
+\fBcenter\fR (Hz; default 0)
+LO frequency; 0: automatic, see
+.BR "COMPUTED VALUES" .
+A forced LO must lie on the subcarrier grid of the DVB\-T carriers.
+.TP
+\fBrate\fR (samples/s; default 0)
+Sample rate; 0: automatic.
+With DVB\-T carriers, a forced rate must be a multiple of their subcarrier spacing.
+.TP
+\fBbandwidth\fR (Hz; default 0)
+Analog filter; 0: automatic (hackrf: the narrowest baseband filter that passes the band edges).
+.TP
+\fBlo_offset\fR ("auto" or Hz; default "auto")
+With a single carrier and an automatic LO, the LO is put this far below the carrier, to keep its
+leakage out of the channel;
+.BR auto :
+1.05 times half the occupied bandwidth.
+.TP
+\fBbackoff_db\fR (number; default 13.0)
+RMS level below full scale (room for the OFDM peaks).
+.TP
+\fBbuffer_ms\fR (integer; default 50)
+Radio sample buffer.
+.TP
+\fBclock\fR (string; default "internal")
+Reference clock source of a
+.B uhd
+radio
+.RB ( external ,
+.BR gpsdo ...).
+.SH [[carrier]]
+One table per multiplex.
+.SS Common keys
+.TP
+\fBname\fR (string; default "Mux \fIN\fP")
+Name of the multiplex.
+.TP
+\fBradio\fR (string or integer; default 0)
+Name or index of the
+.B [[radio]]
+that transmits it (not for
+.BR ts ).
+.TP
+\fBstandard\fR (string; default "dvbt")
+.BR dvbt ,
+.BR dvbt2 ,
+.BR dvbc ,
+.BR dvbs ,
+.BR dvbs2 ,
+or
+.B ts
+(no radio: the multiplex is sent to
+.BR output ).
+.TP
+\fBfrequency\fR (Hz)
+Centre frequency.
+Required for a radio standard, unless
+.B channel
+is given.
+For DVB\-S/S2 it is the L\-band frequency transmitted.
+.TP
+\fBchannel\fR (integer)
+UHF channel 21\(en69 ((306 + 8 \(mu ch) MHz) or VHF band III 5\(en12 ((142.5 + 7 \(mu ch) MHz),
+used when
+.B frequency
+is absent.
+.TP
+\fBtsid\fR (integer; default carrier index + 1)
+transport_stream_id.
+.TP
+\fBonid\fR (integer; default network.onid)
+original_network_id of this multiplex.
+.TP
+\fBgain_db\fR (number; default 0.0)
+Relative level of this carrier among those of its radio.
+.TP
+\fBcell_id\fR (integer; default 0)
+cell_id (DVB\-T TPS, DVB\-T2 L1 and delivery descriptor).
+.TP
+\fBsynth\fR (string; default "auto")
+Synthesis of a non\-DVB\-T carrier:
+.B auto
+and
+.B fft
+(frequency\-domain filter bank, or direct DVB\-T2 synthesis when the radio rate allows),
+.B fir
+(polyphase filter).
+.TP
+\fBsi_reserve\fR (number; default 0.03)
+Fraction of the capacity kept for PSI/SI when bit rates are shared out.
+.TP
+\fBmonitor\fR (string or list; default [])
+Extra copies of the multiplex, such as
+.BR \(dqudp://239.1.1.1:1234\(dq .
+.TP
+\fBoutput\fR (string)
+.B ts
+only, required:
+.BI udp:// IPv4 : port
+or a file path (or
+.BR file:// path).
+.TP
+\fBenabled\fR (boolean; default true)
+false: the multiplex is stopped: off the air, its sources paused; a radio whose multiplexes are
+all stopped is switched off.
+Written (and removed) by the Stop / Start buttons of the web page, so it survives restarts.
+.SS standard = \(dqdvbt\(dq
+DVB\-T carriers sharing a radio must have the same
+.BR mode ,
+.B guard
+and
+.BR bandwidth ,
+and lie on one subcarrier grid (adjacent 8 MHz channels do).
+.TP
+\fBbandwidth\fR (Hz; default 8_000_000)
+5, 6, 7 or 8 MHz.
+.TP
+\fBmode\fR (string; default "8k")
+.BR 2k ,
+.BR 8k .
+.TP
+\fBconstellation\fR (string; default "64qam")
+.BR qpsk ,
+.BR 16qam ,
+.BR 64qam .
+.TP
+\fBcode_rate\fR (string; default "7/8")
+.BR 1/2 ,
+.BR 2/3 ,
+.BR 3/4 ,
+.BR 5/6 ,
+.BR 7/8 .
+.TP
+\fBguard\fR (string; default "1/32")
+.BR 1/4 ,
+.BR 1/8 ,
+.BR 1/16 ,
+.BR 1/32 .
+The defaults give 31.67 Mbit/s;
+.B dvbtx calc dvbt \-\-table
+lists every combination.
+.SS standard = \(dqdvbt2\(dq
+Single PLP.
+.TP
+\fBbandwidth\fR (Hz or MHz; default 8 MHz)
+1.7, 5, 6, 7, 8, 10 MHz.
+.TP
+\fBfft\fR (string; default "32k")
+.BR 1k ,
+.BR 2k ,
+.BR 4k ,
+.BR 8k ,
+.BR 16k ,
+.BR 32k .
+.TP
+\fBextended\fR (boolean; default true)
+Extended carrier mode (8k, 16k, 32k only).
+.TP
+\fBguard\fR (string; default "1/128")
+.BR 1/128 ,
+.BR 1/32 ,
+.BR 1/16 ,
+.BR 19/256 ,
+.BR 1/8 ,
+.BR 19/128 ,
+.BR 1/4 ,
+as EN 302 755 allows for the FFT size.
+.TP
+\fBpilot\fR (string; default "PP7")
+.BR PP1 " to " PP8 ,
+as allowed for the FFT size and guard.
+.TP
+\fBconstellation\fR (string; default "256qam")
+.BR qpsk ,
+.BR 16qam ,
+.BR 64qam ,
+.BR 256qam .
+.TP
+\fBrotation\fR (boolean; default true)
+Rotated constellation.
+.TP
+\fBcode_rate\fR (string; default "5/6")
+.BR 1/2 ,
+.BR 3/5 ,
+.BR 2/3 ,
+.BR 3/4 ,
+.BR 4/5 ,
+.BR 5/6 .
+.TP
+\fBframe\fR (string; default "normal")
+FEC frame:
+.B normal
+(64800) or
+.B short
+(16200).
+.TP
+\fBfec_blocks\fR (integer; default 0)
+FEC blocks per T2 frame; 0: the most that fit.
+.TP
+\fBdata_symbols\fR (integer; default 0)
+L_data; 0: the longest frame up to 250 ms.
+.TP
+\fBti_blocks\fR (integer; default 0)
+Time interleaving blocks; 0: the fewest that fit the TI memory.
+.TP
+\fBl1_constellation\fR (string; default "64qam")
+L1\-post:
+.BR bpsk ,
+.BR qpsk ,
+.BR 16qam ,
+.BR 64qam .
+.TP
+\fBnetwork_id\fR (integer; default 0x3085)
+network_id of the L1 signalling.
+.TP
+\fBt2_system_id\fR (integer; default 0x8001)
+T2_system_id (L1 and delivery descriptor).
+.TP
+\fBt2_frames\fR (integer 1\(en255; default 0)
+T2 frames per super\-frame; 0 means 2.
+.PP
+.B dvbtx calc dvbt2
+gives the useful rate of a combination; the defaults are the maximum capacity validated over the air.
+.SS standard = \(dqdvbc\(dq
+.TP
+\fBconstellation\fR (string; default "256qam", "128qam" on a hackrf radio)
+.BR 16qam ,
+.BR 32qam ,
+.BR 64qam ,
+.BR 128qam ,
+.BR 256qam .
+.TP
+\fBsymbol_rate\fR (symbols/s; default 6_900_000)
+.TP
+\fBrolloff\fR (number; default 0.15)
+.SS standard = \(dqdvbs\(dq
+QPSK.
+.TP
+\fBcode_rate\fR (string; default "3/4")
+.BR 1/2 ,
+.BR 2/3 ,
+.BR 3/4 ,
+.BR 5/6 ,
+.BR 7/8 .
+.TP
+\fBsymbol_rate\fR (symbols/s; default 27_500_000)
+.TP
+\fBrolloff\fR (number; default 0.35)
+.TP
+\fBpolarization\fR (string; default "h")
+.BR h ,
+.BR v ,
+.BR l ,
+.B r
+(NIT satellite delivery descriptor only).
+.TP
+\fBorbital\fR (degrees east; default 19.2)
+Orbital position in the NIT.
+.TP
+\fBlnb_lo\fR (Hz; default 9_750_000_000)
+LNB oscillator added to the carrier frequency in the NIT.
+.SS standard = \(dqdvbs2\(dq
+CCM, single TS input.
+.TP
+\fBmodulation\fR (string; default "8psk")
+.BR qpsk ,
+.BR 8psk ,
+.BR 16apsk ,
+.BR 32apsk .
+.TP
+\fBcode_rate\fR (string; default "3/4")
+qpsk: 1/4 1/3 2/5 1/2 3/5 2/3 3/4 4/5 5/6 8/9 9/10; 8psk: 3/5 2/3 3/4 5/6 8/9 9/10;
+16apsk: 2/3 3/4 4/5 5/6 8/9 9/10; 32apsk: 3/4 4/5 5/6 8/9 9/10 (9/10 not with short frames).
+.TP
+\fBsymbol_rate\fR (symbols/s; default 27_500_000)
+.TP
+\fBrolloff\fR (number; default 0.35)
+0.35, 0.25 or 0.20.
+.TP
+\fBpilots\fR (boolean; default true)
+.TP
+\fBframe\fR (string; default "normal")
+.B normal
+or
+.BR short .
+.TP
+\fBgold_code\fR (integer 0\(en262141; default 0)
+Physical layer scrambling.
+.TP
+\fBpolarization\fR, \fBorbital\fR
+As for DVB\-S.
+.TP
+\fBlnb_lo\fR (Hz; default 9_750_000_000)
+LNB oscillator added to the carrier frequency in the NIT.
+.SS standard = \(dqts\(dq
+.TP
+\fBts_rate\fR (bit/s, required)
+Exact rate of the multiplex, null packets included, PCRs restamped to it.
+.TP
+\fBoutput\fR (required)
+See above.
+.PP
+With a
+.B frequency
+(or
+.BR channel ),
+the DVB\-T keys above describe the terrestrial delivery descriptor of the NIT for an external
+modulator.
+.SH [[carrier.service]]
+One table per service (channel) of the multiplex above it.
+.TP
+\fBname\fR (string; default "Service \fIN\fP")
+Service name (SDT): 1 to 60 characters, no quotes, backslashes or control characters.
+.TP
+\fBsource\fR (string or list of strings, required)
+What the service plays; a list gives several sources in order of preference, each one once.
+See
+.BR dvbtx\-sources (7).
+.TP
+\fBlcn\fR (integer 1\(en1023; default: the next free one)
+Logical channel number; unique over all multiplexes.
+.TP
+\fBsid\fR (integer; default tsid \(mu 256 + position)
+service_id, unique; the position counts from 1 in the multiplex.
+.TP
+\fBpid_base\fR (integer 0x20\(en0x1FC0; default 0x100 + 0x20 \(mu (position \- 1))
+First of the 32 PIDs of the service.
+.TP
+\fBprovider\fR (string; default network.provider)
+.TP
+\fBtype\fR (string or integer; default "auto")
+service_type:
+.B auto
+(from the streams of the source; H.264 HD until they are known),
+.BR tv / sd / mpeg2 ,
+.BR mpeg2hd ,
+.BR h264sd ,
+.BR h264 / hd / advanced_hd ,
+.BR hevc / uhd ,
+.BR radio ,
+.BR advanced_radio ,
+.BR teletext ,
+.BR data ,
+or a number.
+.TP
+\fBvisible\fR (boolean; default true)
+visible_service_flag of the LCN.
+.TP
+\fBepg_id\fR (string; default "")
+XMLTV channel id; empty: matched by name.
+.TP
+\fBencode\fR (boolean, "auto" or table; default "auto")
+.BR true :
+always encoded;
+.BR false :
+always copied (no codec check);
+a table: encoded with these
+.B [defaults.encode]
+keys changed, such as
+.BR "{ video_bitrate = \(dq4M\(dq }" .
+Capture sources are encoded whatever this says.
+.TP
+\fBprogram\fR (integer; default 0)
+program_number taken from an input carrying several programs; 0: the first one.
+.TP
+\fBdirect\fR (boolean; default false)
+Receive a
+.B udp://
+source in the engine itself, as
+.BR udp+direct:// .
+.PP
+Every
+.B [defaults]
+key may be given too, and replaces the default for this service.
+.SH COMPUTED VALUES
+.TP
+.B LO frequency
+One carrier: the frequency minus
+.BR lo_offset .
+Several: the middle of the occupied span.
+Then snapped to the DVB\-T subcarrier grid, or to the DVB\-T2 P1 grid, else to a kHz.
+.TP
+.B Sample rate
+At least twice the farthest band edge from the LO plus 150 kHz, within the driver's range
+(hackrf 8\(en20 MS/s, uhd 0.2\(en61.44 MS/s).
+With DVB\-T: a whole FFT size (factors 2, 3, 5, 7) times the subcarrier spacing.
+Otherwise a rate of which every symbol rate is a simple fraction (exact frequency\-domain
+synthesis), a whole multiple of the DVB\-T2 elementary rate when the radio carries T2.
+Too many carriers for one radio is an error: split them over several radios.
+.TP
+.B Services
+.BR sid ,
+.BR lcn ,
+.B pid_base
+and
+.B type
+as above;
+.B tsid
+from the carrier position.
+Changes made from
+.BR dvbtx\-channel (1)
+or the web page write
+.BR sid ,
+.B lcn
+and
+.B pid_base
+explicitly into the services that relied on their position, so that nothing shifts.
+.SH COMMAND-LINE OVERRIDES
+.B \-s
+.IR KEY = VALUE
+(or
+.BR \-\-set ,
+repeatable) sets any key.
+.I KEY
+is a dotted path; a number selects an element of an array of tables (from 0), elements missing
+are created:
+.PP
+.RS
+.EX
+\-s radio.0.gain=40
+\-s carrier.1.frequency=498MHz
+\-s carrier.0.service.1.source=/srv/videos/film.ts
+\-s defaults.encode.video_bitrate=4M
+\-s web.listen=0.0.0.0:8080
+\-s \(aqcarrier.0.service.0.source=["http://a/1.m3u8", "http://a/2.m3u8"]\(aq
+.EE
+.RE
+.PP
+.I VALUE
+is a number with a k/M/G multiplier
+.RB ( 498MHz
+becomes 498000000.0), else a TOML value (number, boolean, array, quoted string), else a plain
+string.
+The DVB\-T
+.B mode
+and DVB\-T2
+.B fft
+are names: read as numbers
+.RB ( "\-s carrier.0.mode=8k"
+gives 8000), they are turned back into
+.BR 8k .
+When
+.B \-s
+sets a
+.B carrier.N.service
+key, channel changes are not written back to the file.
+.SH PROFILES
+A profile is a copy of the file beside it, named
+.IB FILE . NAME
+.RI ( /etc/dvbtx/dvbtx.toml.night ),
+.I NAME
+being 1 to 40 letters, digits,
+.B \-
+or
+.B _
+.RB ( bak
+and
+.B tmp
+excepted).
+The web page saves the file as a profile, loads one over the file (validated first, the previous
+file kept as
+.IB FILE .bak\fR),
+or deletes one.
+Only the file itself is ever applied: a loaded profile waits for
+.B Apply
+like any other pending change.
+.SH RELOAD
+.B systemctl reload dvbtx
+(SIGHUP) re\-reads the EPG folder, rebuilds the SI tables, and re\-reads the file:
+.IP \(bu 2
+the services are compared with those running and only the changed ones are touched: a new
+source starts beside the old one and is swapped in without a cut; a change of name, number,
+provider, type or EPG id only updates the SI tables; a change of
+.BR sid ,
+.BR pid_base ,
+.BR switch_timeout_ms ,
+.BR return_ms ,
+.BR max_late_ms ,
+.BR early_ms ,
+.BR pcr_max_ms ,
+.B pmt_period_ms
+or
+.B priority
+re\-creates the service (a short cut);
+.B [defaults]
+changes apply this way to every service they affect;
+.IP \(bu 2
+a change in a
+.B [[radio]]
+or in a
+.B [[carrier]]
+table (its own keys,
+.B enabled
+included), or radios or multiplexes added or removed: nothing is applied, an error is logged;
+restart dvbtx;
+.IP \(bu 2
+other changes (the plain tables) are logged as needing a restart, the channels being applied.
+.PP
+Reload works only when the configuration came from a file and the services were not set on the
+command line.
+.PP
+.B Apply
+on the web page goes further: when radios or multiplexes changed, the engine is restarted on the
+new plan (a cut of a second or two on air), the sources that did not change keep running.
+.SH FILES
+.TP
+.I /etc/dvbtx/dvbtx.toml
+The configuration; rewritten (comments kept) by channel changes from
+.BR dvbtx\-channel (1)
+and the web page.
+.TP
+.I /etc/dvbtx/dvbtx.toml.bak
+The version before the last change.
+.TP
+.IB /etc/dvbtx/dvbtx.toml. NAME
+Profiles.
+.TP
+.IB /etc/dvbtx/ INSTANCE .toml
+Configuration of the unit
+.BI dvbtx@ INSTANCE .service
+(own radios, web port and ingest ports needed).
+.TP
+.I /usr/share/dvbtx/configs/
+Examples: one and two multiplexes on a HackRF, six on a B210, every kind of source, TS output.
+.TP
+.I /var/lib/dvbtx/backup.ts
+Backup clip of the packaged configuration.
+.TP
+.I /var/lib/dvbtx/epg/
+EPG folder of the packaged configuration.
+.TP
+.I /var/lib/dvbtx/gpu.json
+Learnt GPU results.
+.TP
+.I /run/dvbtx/
+Default
+.BR work_dir .
+.SH EXAMPLES
+One DVB\-T multiplex on a HackRF, a test pattern and a film:
+.PP
+.RS
+.EX
+[network]
+name = "Ma TV"
+provider = "Ma TV"
+
+[[radio]]
+name = "hackrf"
+driver = "hackrf"
+gain = 30
+
+[[carrier]]
+name = "Mux 1"
+radio = "hackrf"
+channel = 22                       # 482 MHz, DVB\-T 8k 64\-QAM 7/8 1/32
+  [[carrier.service]]
+  name = "Mire"
+  source = "lavfi:testsrc2=size=1280x720:rate=25"
+  encode = { video_bitrate = "3M" }
+  [[carrier.service]]
+  name = "Film"
+  source = "/srv/videos/film.mkv"
+.EE
+.RE
+.PP
+Two adjacent multiplexes on one radio (LO 486 MHz, 18.29 MS/s), live sources with a guide:
+.PP
+.RS
+.EX
+[network]
+name = "BsT"
+onid = 0x20FA
+network_id = 0x20FA
+
+[epg]
+dir = "/var/lib/dvbtx/epg"
+
+[defaults]
+backup = "/var/lib/dvbtx/backup.ts"
+
+[[radio]]
+name = "hackrf"
+driver = "hackrf"
+
+[[carrier]]
+name = "Mux 1"
+radio = "hackrf"
+frequency = 482_000_000
+  [[carrier.service]]
+  name = "Info"
+  lcn = 1
+  source = ["http://provider.example/u/p/289",
+            "http://provider.example/u/p/319"]
+  epg_id = "Info.fr"
+  [[carrier.service]]
+  name = "Twitch"
+  lcn = 2
+  source = "twitch://some_channel"
+  buffer_ms = 8000
+
+[[carrier]]
+name = "Mux 2"
+radio = "hackrf"
+frequency = "490MHz"
+  [[carrier.service]]
+  name = "Sintel"
+  lcn = 10
+  source = "dir:/srv/videos/films"
+.EE
+.RE
+.PP
+DVB\-T2 and DVB\-C on a USRP, one stopped:
+.PP
+.RS
+.EX
+[[radio]]
+name = "b210"
+driver = "uhd"
+args = "serial=30AD2F1"
+gain = 50
+
+[[carrier]]
+name = "T2"
+radio = "b210"
+standard = "dvbt2"
+channel = 30                       # 32k ext 256\-QAM 5/6 1/128 PP7
+  [[carrier.service]]
+  name = "UHD"
+  source = "udp+direct://239.0.0.1:2000"
+
+[[carrier]]
+name = "Cable"
+radio = "b210"
+standard = "dvbc"
+frequency = 498_000_000
+symbol_rate = 6_900_000
+enabled = false
+  [[carrier.service]]
+  name = "Webcam"
+  source = "v4l2:/dev/video0?size=1280x720&fps=25"
+  encode = { video_bitrate = "auto", hwaccel = "cpu" }
+.EE
+.RE
+.PP
+A multiplex sent to UDP for an external modulator:
+.PP
+.RS
+.EX
+[[carrier]]
+name = "Mux TS"
+standard = "ts"
+ts_rate = 31_668_449
+output = "udp://239.1.1.1:1234"
+  [[carrier.service]]
+  name = "Mire"
+  source = "lavfi:smptehdbars=size=1920x1080:rate=25"
+  encode = { video_bitrate = "5M" }
+.EE
+.RE
+.PP
+Checking, then running with overrides:
+.PP
+.RS
+.EX
+dvbtx check \-c /etc/dvbtx/dvbtx.toml
+sudo dvbtx run \-c my.toml \-s radio.0.gain=40 \-s carrier.1.frequency=498MHz
+.EE
+.RE
+.SH SEE ALSO
+.BR dvbtx (1),
+.BR dvbtx\-channel (1),
+.BR dvbtx\-sources (7),
+.BR dvbtx (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR dvbtx\-power (8),
+.BR ffmpeg (1)

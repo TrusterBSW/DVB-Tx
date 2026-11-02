@@ -1,0 +1,677 @@
+.\" -*- coding: UTF-8 -*-
+.nr HY 0
+.TH DVBTX 7 2026-11-02 "dvbtx 0.1.0" "manuel dvbtx"
+.SH NOM
+dvbtx \- fonctionnement de l'émetteur DVB dvbtx\~: composants, circulation des données, horloge, pannes
+.SH DESCRIPTION
+.B dvbtx
+construit des multiplex DVB complets à partir de flux en direct, de périphériques de
+capture, de fichiers ou de tubes, et les module sur des radios logicielles (HackRF One,
+USRP B200/B210, tout émetteur SoapySDR).
+Un nombre quelconque de radios, de porteuses (multiplex) par radio et de chaînes
+(services) par porteuse se décrit dans un seul fichier TOML
+.RB ( dvbtx.toml (5))
+ou sur la ligne de commande
+.RB ( dvbtx (1)).
+Toutes les porteuses d'une radio sont synthétisées ensemble à la cadence
+d'échantillonnage de la radio, dans n'importe quel mélange de DVB\-T, DVB\-T2, DVB\-C,
+DVB\-S et DVB\-S2.
+.PP
+Le système se compose de processus distincts\~:
+.IP \(bu 2
+le
+.B superviseur
+.RB ( "dvbtx run" ,
+Python)\~: configuration, plan de fréquences, tables SI, EPG, alertes, supervision
+des autres processus, page web\~;
+.IP \(bu
+un
+.RB "processus d'" ingest
+(ffmpeg, éventuellement alimenté par streamlink ou par une commande) par source, qui
+la transforme en MPEG\-TS à programme unique sur un port UDP local\~;
+.IP \(bu
+le
+.B moteur
+.RB ( dvbtx\-engine (8),
+C)\~: réception UDP, multiplexage, codage canal, synthèse et sortie radio,
+cadencé par les radios\~;
+.IP \(bu
+éventuellement un
+analyseur
+.B TSDuck
+.RB ( tsp (1))
+par multiplex.
+.PP
+Une source qui plante, se fige ou prend du retard n'est qu'un processus qui cesse
+d'écrire sur un port UDP\~: elle ne perturbe jamais les autres chaînes\~; sa propre
+chaîne diffuse son flux de secours et reprend d'elle-même.
+.SH AVERTISSEMENT LÉGAL
+.B Câble coaxial fermé uniquement.
+Émettre sur les fréquences de la télévision hertzienne sans licence est illégal.
+dvbtx est destiné à un réseau coaxial privé ou à un câble direct vers le téléviseur,
+avec des atténuateurs, jamais à une antenne.
+.SH CIRCULATION DES DONNÉES
+.EX
+ sources             ingest : un processus   dvbtx-engine
+                     par source
+ HLS, HTTP, M3U --+
+ YouTube, Twitch -+  [streamlink|yt-dlp]
+ RTMP, RTSP, SRT -+-> ffmpeg -c copy ou  --> UDP 127.0.0.1:base_port+id
+ tvheadend (HTSP) +   encodage (CPU/GPU)        |
+ v4l2, screen ----+   relancé en cas d'échec    v
+ fichiers, dir: --+                      entrée : démux PAT/PMT,
+ pipe:, stdin:, --+                      heure de départ idéale par
+ exec:                                   paquet (tampon anti-gigue)
+ udp+direct:// ------------------------->       |
+                                                v
+   superviseur : NIT, SDT, EIT ------->  multiplexeur par porteuse,
+   fichiers de section, descripteur TOT  tiré par son modulateur :
+                                         SI > paquet dû > PCR > nul
+                                         PCR réestampillés, PID remappés,
+                                         PAT/PMT/TDT/TOT, bascule secours
+                                                |
+                                                v
+                                         codage canal par porteuse :
+                                         DVB-T, T2, C, S, S2
+                                                |
+                                                v
+                                         synthèse/radio : 1 IFFT (DVB-T),
+                                         bancs de filtres, groupes T2
+                                                |
+                                                v
+                                         module : hackrf, uhd, soapy,
+                                         null  -->  radio  -->  coax
+ copie de chaque multiplex :
+ udp://127.0.0.1:monitor_base_port+n --> TSDuck tsp, aperçus web,
+                                         adresses carrier.monitor
+ stdout moteur : statistiques JSON ---> superviseur --> web, alertes
+ stdin moteur : commandes <------------ superviseur
+.EE
+.SH COMPOSANTS
+.SS Superviseur
+.B dvbtx run
+(normalement le service
+.B dvbtx
+de systemd) lit la configuration, la valide et calcule le plan
+.RB ( "dvbtx check"
+l'affiche sans émettre), écrit le fichier INI du moteur
+.RI ( work_dir /engine.ini ,
+voir
+.BR dvbtx\-engine (8))
+et les fichiers de sections SI, lance le moteur, la page web, les processus
+d'ingest et les analyseurs, puis exécute une boucle une fois par seconde.
+.TP
+.B Configuration
+Fichier TOML
+.RI ( /etc/dvbtx/dvbtx.toml )
+et/ou ligne de commande, avec
+.B \-s
+.IB key = value
+pour surcharger des valeurs.
+Les sections
+.B [[radio]]
+contiennent les multiplex
+.B [[carrier]]
+(norme, fréquence ou canal UHF/VHF, modulation, TSID), qui contiennent les
+chaînes
+.B [[carrier.service]]
+(nom, LCN, source ou sources, flux de secours, identifiant EPG, encodage).
+Les chaînes peuvent être ajoutées, supprimées, renommées, renumérotées ou changer
+de source à l'antenne
+.RB ( dvbtx\-channel (1),
+la page web,
+.BR "systemctl reload dvbtx" ")\~;"
+seule cette chaîne est touchée, par des commandes envoyées au moteur, et la
+modification est réécrite dans le fichier.
+Un changement de radios ou de multiplex relance le moteur sur le nouveau plan (une
+coupure d'une ou deux secondes\~; les sources inchangées continuent de tourner).
+.TP
+.B Plan de fréquences
+Sauf s'ils sont imposés, le superviseur calcule la fréquence centrale et la cadence
+d'échantillonnage de chaque radio.
+Une seule porteuse\~: le centre est placé juste en dehors de la bande occupée
+(1,05 fois sa demi-largeur sous la porteuse), afin que la fuite de l'oscillateur
+local reste hors du canal\~; plusieurs porteuses\~: le milieu de la bande.
+Sur une même radio, les porteuses DVB\-T doivent partager le mode, l'intervalle de
+garde et la largeur de bande, et se placer sur sa grille de sous-porteuses\~; la
+cadence d'échantillonnage est alors un multiple entier de l'espacement des
+sous-porteuses (une seule taille de FFT pour toutes).
+En DVB\-T2, le planificateur préfère une cadence d'échantillonnage multiple entier
+de la cadence élémentaire T2, avec le centre sur la grille de sous-porteuses du
+P1\~; en DVB\-C, \-S, \-S2, une cadence dont les débits symbole sont des fractions
+simples.
+Pour un HackRF, le filtre analogique est choisi de façon à couvrir les bords de la
+bande.
+Les porteuses distantes de moins de 50 kHz sont refusées, de même qu'un plan qui
+demande plus que ce que permet le pilote (HackRF 8\(en20 MS/s, UHD 0,2\(en61,44 MS/s).
+Le service_id (TSID\(mu256 + la position du service, à partir de 1), le LCN (le
+prochain numéro libre à partir de 1), les PID (0x100 +
+n\(mu0x20 par service) et le type de service (d'après les flux que voit le moteur)
+sont calculés s'ils ne sont pas fournis.
+.TP
+.B Tables SI
+Le superviseur construit, sous forme de fichiers de sections binaires dans
+.IR work_dir /si/,
+la NIT (nom du réseau, descripteur de système de diffusion de chaque multiplex,
+private_data_specifier EACEM et logical_channel_descriptor 0x83 pour les LCN), la
+SDT (actual, et other avec
+.BR network.sdt_other ),
+l'EIT present/following et schedule, et le local_time_offset_descriptor
+de la TOT (pays et fuseau horaire).
+Les numéros de version ne changent que lorsque le contenu d'une table change.
+Le moteur les diffuse en carrousel (NIT toutes les 2 s, SDT 1 s, EIT p/f 1 s, EIT
+schedule 10 s par défaut) et génère lui-même les PAT, PMT, TDT et TOT\~; il relit un
+fichier dans la seconde qui suit sa modification.
+Beaucoup de téléviseurs ignorent les LCN lorsque l'original_network_id n'est pas
+celui de leur pays\~:
+.B onid
+et
+.B network_id
+valent 0x20FA (France) par défaut.
+Le texte est par défaut en ISO 8859\-9 avec son octet de préfixe
+.RB ( network.charset ).
+.TP
+.B EPG
+Tous les fichiers XMLTV ou EIT XML de TSDuck présents dans
+.B epg.dir
+.RI ( /var/lib/dvbtx/epg/
+dans la configuration du paquet) sont chargés, et les URL XMLTV
+.RB ( epg.urls )
+sont récupérées toutes les
+.B epg.url_refresh_s
+(3600 s).
+Les événements sont associés aux chaînes par
+.BR epg_id ,
+nom affiché ou service_id, et deviennent l'EIT present/following (réécrite à
+chaque changement d'événement) et schedule
+.RB ( epg.days ,
+7 jours, reconstruite toutes les 10 minutes et sur
+.BR SIGHUP ),
+avec genre et classification parentale.
+.B dvbtx epg
+montre ce que reçoit chaque chaîne.
+.TP
+.B Alertes
+Évaluées toutes les 2 s à partir des statistiques du moteur\~: moteur arrêté (aucune
+statistique pendant 10 s), demande des entrées supérieure à la capacité du canal,
+multiplex rempli au-delà de
+.B alerts.overload_percent
+(98 %), marge de décodage inférieure à
+.B alerts.margin_min_ms
+(150 ms\~; critique en dessous de zéro), paquets en retard rejetés ou en retard de
+plus de
+.B alerts.late_ms
+(300 ms), chaîne sur son flux de secours ou sur une source de repli, aucune
+source, entrée plus rapide que le temps réel, radio introuvable ou perdue,
+sous-débits de la radio ou trous qu'elle signale, processus d'ingest en échec
+répété, erreurs de transport TSDuck.
+Elles sont envoyées au journal, à la page web, en POST JSON vers
+.BR alerts.webhook ,
+et à
+.BR alerts.command .
+.TP
+.B Supervision
+Chaque seconde, le superviseur relance le moteur s'il s'est arrêté, suit les
+radios, interroge les processus d'ingest, relance les sources bloquées ou
+discontinues, change de source pour les chaînes qui en ont plusieurs, et maintient
+en marche les analyseurs et les aperçus (voir
+.BR PANNES ).
+.B systemctl reload dvbtx
+.RB ( SIGHUP )
+relit l'EPG et les chaînes du fichier.
+.SS Processus d'ingest
+Un processus par entrée\~: la source principale de chaque chaîne, plus un par
+source de secours distincte (partagé par les chaînes qui utilisent la même).
+Chacun écrit un MPEG\-TS à programme unique vers
+.BI udp://127.0.0.1: port
+(datagrammes de 1316 octets) avec
+.B \-muxdelay 0.7
+et un PCR toutes les 20 ms.
+.IP \(bu 2
+ffmpeg copie les flux
+.RB ( "\-c copy" ")\~;"
+les sources de capture (v4l2, screen, lavfi...), les sources dont les récepteurs
+DVB ne décodent pas les codecs, et les chaînes avec
+.B encode
+sont encodées, sur un GPU quand l'un d'eux fonctionne (VAAPI ou QSV Intel/AMD,
+NVENC NVIDIA, appris une fois, puis de nouveau quand les cartes ou les pilotes
+changent), sinon avec libx264\~;
+.IP \(bu
+les URL HLS passent par
+.B streamlink
+lorsqu'il est installé, qui franchit les discontinuités du flux sur lesquelles le
+lecteur HLS de ffmpeg se bloque\~;
+.B twitch://
+aussi\~; les URL
+.B ytdlp:
+sont résolues par
+.BR yt\-dlp "\~;"
+.B exec:
+et
+.B stdin:
+alimentent l'entrée standard de ffmpeg\~;
+.IP \(bu
+les sources
+.B udp+direct://
+n'ont pas de processus\~: le moteur les reçoit lui-même.
+.PP
+Un processus qui s'arrête est relancé après
+.B ingest.restart_min_s
+(1 s), délai doublé à chaque échec jusqu'à
+.B ingest.restart_max_s
+(30 s), et ramené au minimum une fois qu'il a tourné 60 s.
+Tous les processus enfants meurent avec le superviseur.
+Les sources d'un multiplex arrêté, ou dont la radio est absente, sont mises en
+pause.
+Voir
+.BR dvbtx\-sources (7).
+.SS Moteur
+.BR dvbtx\-engine (8)
+effectue le travail temps réel en C, avec des priorités de threads temps réel\~:
+.TP
+.B Réception UDP
+Un thread reçoit toutes les entrées, démultiplexe PAT et PMT et conserve les
+paquets du programme sélectionné.
+.TP
+.B Tampon anti-gigue
+Chaque paquet reçoit une heure de départ idéale\~: l'heure d'arrivée du premier PCR
+plus un tampon fixe
+.RB ( buffer_ms ),
+puis une interpolation entre les PCR, de sorte que les rafales et la gigue réseau
+disparaissent.
+L'ancre est ajustée progressivement d'au plus 30 ppm pour maintenir la marge
+minimale de chaque fenêtre de 2 secondes entre un quart et une fois et demie le
+tampon, et réinitialisée après trois fenêtres très en dehors de cette plage.
+.B buffer_ms
+vaut, sauf réglage explicite, 6000 ms pour les sources livrées par segments
+(YouTube, Twitch, .m3u8) et 1000 ms sinon (de 100 à 30000).
+.TP
+.B Multiplexeur
+Un par porteuse, tiré paquet par paquet par son modulateur au débit exact du flux
+de transport du canal, si bien que le débit est exact par construction.
+Chaque créneau reçoit, dans cet ordre\~: un paquet PSI/SI dû\~; le paquet de chaîne
+le plus urgent dont l'heure idéale est arrivée (échéance la plus proche d'abord,
+l'échéance étant décalée de 100 ms par niveau de priorité)\~; un paquet ne portant
+qu'un PCR lorsqu'une chaîne n'en a pas eu depuis
+.B pcr_max_ms
+(35 ms)\~; sinon un paquet nul.
+Les PID sont renumérotés par service, les compteurs de continuité réécrits, la PAT
+et la PMT reconstruites.
+.TP
+.B Réestampillage des PCR
+Un PCR part avec le PCR de la source plus le retard du paquet sur son heure
+idéale\~: il correspond à l'heure réelle d'émission (gigue mesurée inférieure à
+0,5 \(mcs).
+.TP
+.B Bascule sur le secours
+Une chaîne dont l'entrée principale est en panne (rien pendant
+.B switch_timeout_ms
+une fois son tampon épuisé) bascule sur son entrée de secours sur une image clé,
+et revient lorsque l'entrée principale fonctionne depuis
+.BR return_ms .
+Une nouvelle source donnée à une chaîne en cours de diffusion remplace l'ancienne
+sur une image clé vidéo, sans coupure.
+.TP
+.B Codage canal
+DVB\-T (EN 300 744\~: 2k/8k, QPSK à 64\-QAM, tous les rendements et intervalles de
+garde), DVB\-T2 (EN 302 755, PLP unique\~: 1K à 32K, porteuses normales et
+étendues, PP1 à PP8, QPSK à 256\-QAM avec constellations tournées, trames FEC
+normales et courtes\~; un portage de gr\-dtv de GNU Radio), DVB\-C (J.83 annexe A,
+16 à 256\-QAM), DVB\-S
+(QPSK, 1/2 à 7/8) et DVB\-S2 (QPSK, 8PSK, 16APSK, 32APSK, trames normales et
+courtes, pilotes).
+Une porteuse de norme
+.B ts
+est seulement multiplexée, et envoyée à son débit vers une adresse UDP ou un
+fichier.
+.TP
+.B Synthèse à FFT unique
+Toutes les porteuses DVB\-T d'une radio passent par une seule IFFT par symbole
+OFDM, à la cadence de la radio\~: la taille de FFT est la cadence de la radio
+divisée par l'espacement des sous-porteuses, chaque porteuse étant placée à son
+décalage.
+.TP
+.B Synthèse par bancs de filtres
+Les porteuses DVB\-C, DVB\-S, DVB\-S2 et DVB\-T2 sont synthétisées directement à la
+cadence de la radio par des bancs de filtres dans le domaine fréquentiel
+(overlap-save)\~: chaque bloc de symboles passe par une FFT, est pondéré par la
+réponse exacte en racine de cosinus surélevé (plate pour le rééchantillonnage
+DVB\-T2), placé à la fréquence de la porteuse, et une IFFT par banc donne les
+échantillons de la radio.
+Cela exige des débits symbole qui soient des fractions simples de la cadence de la
+radio\~; sinon, ou avec
+.BR "synth = \(dqfir\(dq" ,
+un filtre polyphase de 16 symboles est utilisé.
+Lorsque la cadence de la radio est un multiple entier k de la cadence DVB\-T2, les
+porteuses T2 ne sont pas rééchantillonnées du tout\~: chaque symbole OFDM est une
+IFFT de k fois la taille de FFT à la cadence de la radio, partagée par les
+porteuses T2 ayant même taille de FFT, même intervalle de garde et même longueur
+de trame.
+La puissance de la radio est répartie entre ses porteuses par
+.BR gain_db ,
+à 13 dB sous la pleine échelle
+.RB ( backoff_db ).
+.TP
+.B Modules radio
+.BR hackrf ,
+.BR uhd ,
+.B soapy
+et
+.B null
+(sans matériel, écrivant éventuellement les échantillons dans un fichier), chargés
+à l'exécution, de sorte que seules les bibliothèques des radios utilisées sont
+nécessaires.
+.PP
+Le moteur écrit ses statistiques sous forme d'une ligne JSON par seconde sur sa
+sortie standard et reçoit des commandes sur son entrée standard (ajouter ou
+retirer des entrées et des chaînes, changer la source d'une chaîne, arrêter ou
+démarrer une porteuse, ajouter une copie d'un multiplex).
+.SS Analyse TSDuck
+Lorsque
+.B monitoring.tsduck
+vaut
+.B auto
+(défaut) et que
+.BR tsp (1)
+est installé, ou vaut
+.BR true ,
+un
+.B "tsp \-I ip \-P continuity \-P analyze"
+lit la copie de chaque multiplex sur son port de surveillance et produit un
+rapport JSON à chaque intervalle
+.B monitoring.interval
+(5 s)\~: débits par service et par PID, erreurs de continuité, erreurs de transport.
+Le rapport est affiché sur la page web et envoyé aux adresses
+.B monitoring.export
+.RB ( \-\-analysis\-export
+.BR udp:// " ou " tcp:// ")\~;"
+les erreurs de transport déclenchent une alerte.
+.B monitoring.stats_export
+.RB ( \-\-stats\-export )
+reçoit chaque seconde les statistiques du moteur et les alertes actives.
+.SS Page web
+.B http://127.0.0.1:8080/
+par défaut
+.RB ( web.listen ")\~:"
+radios, multiplex, chaînes, sources, alertes et journaux, en direct\~; aperçus et
+image en direct de chaque chaîne, multiplex brut
+.RI ( /api/mux/ n .ts ")\~;"
+édition des chaînes, radios, multiplex et réglages réseau (validés, enregistrés
+dans le fichier, appliqués à la demande)\~; « Arrêter » et « Démarrer » par multiplex\~; une API
+JSON et
+.I /metrics
+pour Prometheus.
+Elle démarre avant les sources.
+Voir
+.BR dvbtx\-web (7).
+.SS Profils d'énergie
+Sur batterie,
+.B dvbtx power
+(à activer explicitement\~:
+.BR "systemctl enable dvbtx\-power" )
+maintient la machine dans un profil d'économie tant que rien n'est à l'antenne et
+passe à un profil d'émission tant qu'une unité dvbtx tourne (appelé par les unités
+au démarrage et à l'arrêt, y compris après un plantage).
+Avec
+.B engine.cpu_latency_us = 100
+les cœurs peuvent encore se mettre en veille entre deux tampons radio.
+Voir
+.BR dvbtx\-power (8).
+.SH HORLOGE
+Deux horloges se rencontrent dans le moteur\~: celle des sources (leurs PCR,
+rapportés à l'horloge monotone du système par le tampon anti-gigue) et celle de
+chaque radio (son compteur d'échantillons).
+.TP
+.B Horloge radio
+Pour chaque radio, le moteur tient l'heure monotone à laquelle l'échantillon 0 est
+à l'antenne.
+Elle part de l'heure de démarrage plus le tampon de la radio
+.RB ( buffer_ms ,
+50 ms) et l'anneau propre au moteur de 32 symboles ou blocs, puis suit le compteur
+d'échantillons que signale la radio\~: le plus petit décalage de chaque fenêtre de
+1 seconde, pris tel quel pendant les 4 premières secondes, puis approché d'un
+huitième de l'écart, au plus 50 \(mcs par seconde (50 ppm).
+Le créneau de paquet n d'une porteuse part à cette heure plus n durées de paquet.
+.TP
+.B Avance d'horloge
+Le multiplexeur remplit les créneaux en avance sur l'antenne de la durée du tampon
+radio plus les symboles présents dans les anneaux (et, en DVB\-T2, d'une trame T2
+entière\~: une à deux trames entre le multiplexage et l'antenne).
+Les statistiques l'indiquent par porteuse
+.RB ( clock_lead_ms ).
+Un paquet est envoyé lorsque son heure idéale est au plus
+.B early_ms
+(100 ms) après l'heure d'émission de son créneau, et rejeté lorsqu'il a plus de
+.B max_late_ms
+(600 ms) de retard.
+.TP
+.B Marge de décodage
+Pour chaque trame, le moteur mesure le temps entre son émission et son instant de
+décodage dans le récepteur\~: DTS moins le PCR à l'émission (minimum et moyenne par
+seconde, vidéo et audio).
+Elle est normalement d'environ 700 ms (le
+.B \-muxdelay
+de ffmpeg), plus faible lorsque le multiplex est trop plein\~; en dessous de zéro,
+le téléviseur se fige.
+.SH PANNES
+.TP
+.B Source en panne
+Rien de reçu pendant
+.B switch_timeout_ms
+(3 s) une fois son tampon épuisé\~: la chaîne bascule sur son flux de secours
+.RB ( backup "\~;"
+la configuration du paquet utilise
+.IR /var/lib/dvbtx/backup.ts ,
+créé par
+.BR "dvbtx make\-backup" )
+sur une image clé, et revient lorsque la source fonctionne depuis
+.B return_ms
+(10 s).
+Sans flux de secours, la chaîne est vide pendant ce temps.
+Un ffmpeg qui tourne mais ne livre rien pendant
+.B ingest.stall_restart_s
+(20 s) est relancé\~; un ffmpeg qui voit
+.B ingest.discontinuity_restart
+(10) discontinuités d'horodatage en 30 s est relancé à côté de l'ancien puis lui
+est substitué\~; un ffmpeg dont la vidéo est passée sur de nouveaux PID (une
+publicité insérée) est relancé immédiatement\~; une source streamlink qui franchit
+une discontinuité HLS reçoit une copie de relève démarrée depuis la pointe du
+direct, utilisée si la première se bloque.
+.TP
+.B Plusieurs sources
+Lorsque
+.B source
+est une liste, la source suivante est lancée quand celle en cours n'a rien livré
+pendant
+.B failover_s
+(10 s) ou n'a pas démarré dans les
+.B source_start_s
+(30 s), la chaîne diffusant son flux de secours pendant ce temps\~; la source
+défaillante est d'abord arrêtée (comptes IPTV limités à une connexion).
+Les sources préférées sont réessayées toutes les
+.B preferred_retry_s
+(300 s) à côté de celle qui joue, et reprises sans coupure dès qu'elles livrent.
+.TP
+.B Source instable
+Une source est également abandonnée lorsque sa chaîne est retombée sur le flux de
+secours
+.B unstable_switches
+(3) fois en
+.B unstable_window_s
+(600 s), ou y est restée
+.BR failover_s " + " return_ms .
+Une source abandonnée est réessayée chaque fois plus tard (5, 10, 20 minutes...
+jusqu'à une heure) et pardonnée une fois qu'elle a tenu 30 minutes.
+.TP
+.B Radio absente ou débranchée
+Une radio qui ne peut pas être ouverte au démarrage, ou qui tombe en panne à
+l'antenne (une erreur d'écriture, ou aucun échantillon consommé pendant 5 s), ne
+retire de l'antenne que ses propres multiplex\~: les autres radios continuent, ses
+sources sont mises en pause et une alerte est levée.
+Le superviseur la recherche toutes les 15 s
+.RB ( "dvbtx\-engine \-\-probe" )
+et relance le moteur dès qu'elle est revenue (une brève coupure des autres
+radios)\~; une radio perdue et non retrouvée dans les 120 s provoque aussi un
+redémarrage du moteur, une fois, au cas où le moteur lui-même tiendrait un
+périphérique bloqué.
+Sans aucune radio, dvbtx tourne sans émettre et la page web reste disponible.
+.TP
+.B Multiplex arrêtés
+« Arrêter » sur la page web retire immédiatement un multiplex de l'antenne (il est
+toujours codé, ses sources sont mises en pause), et cet arrêt est conservé dans le
+fichier
+.RB ( "enabled = false" ).
+Une radio dont tous les multiplex sont arrêtés est fermée, et rouverte quand l'un
+d'eux redémarre.
+.TP
+.B Plantage du moteur
+Le superviseur relance le moteur après 2, 4, 8, 16, puis 30 s\~; les sources
+continuent de tourner pendant ce temps.
+Une modification que le moteur refuse le relance aussi à partir du plan.
+Le moteur s'arrête quand le superviseur meurt, afin que rien ne reste à l'antenne
+sans supervision\~; l'unité systemd relance le superviseur après 5 s
+.RB ( Restart=on\-failure ).
+.SH PORTS
+.TP
+.IB ingest.base_port " + " id
+(20100 + id)\~: port UDP sur 127.0.0.1 du processus d'ingest de l'entrée
+.IR id .
+Les identifiants d'entrée sont pris en dessous de
+.BR "ingest.monitor_base_port \- ingest.base_port"
+(800 par défaut) et en dessous de 1024.
+.TP
+.IB ingest.monitor_base_port " + " n
+(20900 + n)\~: copie du multiplex
+.I n
+envoyée par le moteur vers 127.0.0.1, lue par l'analyseur TSDuck.
+Les aperçus web demandent au moteur des copies supplémentaires sur des ports
+libres, uniquement pendant que quelqu'un regarde.
+.TP
+.B carrier.monitor
+Copies supplémentaires d'un multiplex, vers toute adresse
+.BI udp:// host : port\fR.
+.TP
+.B web.listen
+127.0.0.1:8080 par défaut.
+.PP
+Les sources reçues directement
+.RB ( udp+direct:// )
+et en mode écoute (RTMP, SRT, UDP) utilisent les adresses données dans leur URL.
+.SH NORMES ET RADIOS
+.TP
+DVB\-T
+2k/8k, QPSK à 64\-QAM\~: reçu en émission réelle\~; identique à l'échantillon près
+à gr\-dtv de GNU Radio sur tous les modes, constellations, rendements et
+intervalles de garde.
+.TP
+DVB\-T2
+PLP unique, 1K à 32K, porteuses étendues, PP1 à PP8, jusqu'à 256\-QAM avec
+constellation tournée, trames normales et courtes\~: reçu en émission réelle (32K
+256\-QAM 5/6, 50 Mbit/s, sans erreur)\~; identique à l'échantillon près à gr\-dtv
+sur 23 configurations.
+Non pris en charge\~: MISO, réduction du PAPR, PLP multiples, FEF, T2\-Lite.
+.TP
+DVB\-C
+16 à 256\-QAM\~: identique au symbole près au codeur J.83A de mini\-cmts\~; reçu en
+émission réelle (256\-QAM sans erreur depuis un B210, 128\-QAM depuis un HackRF,
+constellation par défaut sur un HackRF).
+.TP
+DVB\-S
+QPSK 1/2 à 7/8\~: démodulé par leandvb.
+.TP
+DVB\-S2
+QPSK, 8PSK, 16APSK, 32APSK\~: identique au symbole près à gr\-dtv\~; 8PSK 9/10 à
+20 Msym/s décodé sans erreur par gr\-dvbs2rx.
+.TP
+HackRF One
+Validé, jusqu'à 20 MS/s\~: 2 multiplex adjacents de 8 MHz.
+.TP
+USRP B200/B210 (UHD)
+Validé, 56 MHz\~: 6 multiplex adjacents de 8 MHz (190 Mbit/s de débit utile en
+DVB\-T).
+.TP
+Émetteurs SoapySDR
+Compilé, non essayé.
+.SH MESURES
+Sortie radio reliée par câble à un récepteur\~:
+.IP \(bu 2
+HackRF, 1 multiplex DVB\-T 64\-QAM 7/8\~: C/N 30,9 dB, BER 0.
+.IP \(bu
+HackRF, 2 multiplex DVB\-T (482 et 490 MHz)\~: tous deux verrouillés, C/N
+d'environ 29 dB, BER 0\~; thread radio 25 % d'un cœur, 26 % par multiplex.
+.IP \(bu
+B210, 6 multiplex DVB\-T (474 à 514 MHz)\~: tous verrouillés, C/N de 26 à 34 dB,
+BER 0\~; radio 38 % d'un cœur, environ 25 % par multiplex, aucun sous-débit.
+.IP \(bu
+DVB\-T2 32K 256\-QAM 5/6 (50,08 Mbit/s)\~: HackRF C/N 31,7 dB, B210 40 dB, aucune
+erreur.
+.IP \(bu
+DVB\-C 256\-QAM 6,9 Msym/s (50,87 Mbit/s)\~: B210 C/N 41,5 dB, aucune erreur.
+.IP \(bu
+Flux reçu passé dans TSDuck\~: aucune erreur de continuité, PCR conformes, NIT,
+SDT, EIT et TOT correctes\~; un téléviseur trouve les chaînes avec noms, numéros,
+EPG, son AAC et E\-AC\-3 5.1.
+.PP
+Synthèse, mesurée avec un récepteur idéal sur la radio null (échantillons de
+16 bits)\~: 85,6 dB de MER pour une porteuse DVB\-C 256\-QAM à côté d'une autre avec
+les bancs de filtres, contre 21 dB avec l'ancien filtre polyphase de 16 symboles\~;
+rééchantillonnage DVB\-T2 à moins de \-110 dB de l'idéal\~; synthèse T2 directe
+148 dB sur les pilotes continus pour une porteuse, 145,5 dB pour deux porteuses
+adjacentes.
+Les lobes secondaires OFDM ne sont pas filtrés (\-49 dB au bord de la bande)\~: une
+porteuse DVB\-C à côté d'une porteuse DVB\-T2 mesure 59 dB de MER au lieu de 85.
+CPU du moteur, T2 32K 256\-QAM 5/6\~: 0,42 cœur à 18,29 MS/s en synthèse directe
+contre 1,16 avec le banc de filtres à 16,33 MS/s\~; deux porteuses T2 et une
+DVB\-C 256\-QAM\~: 1,06 cœur à 27,43 MS/s contre 2,68 à 24,18 MS/s.
+.PP
+Consommation, Intel i3\-8100T, quatre multiplex sur deux radios\~: 22,1 W avec les
+C-states profonds bloqués et le gouverneur performance, 13,9 W avec le profil
+d'émission et
+.BR "cpu_latency_us = 100" ,
+sans sous-débit\~; au repos 1,37 W, 0,62 W avec le profil d'économie (package
+processeur).
+.PP
+Les quelques paquets erronés que signale une clé USB DVB\-T2 Astrometa (5 à 15 par
+minute) viennent de la clé\~: les flux émis et reçus, alignés paquet par paquet, ne
+montrent aucune erreur binaire.
+.SH FICHIERS
+.TP
+.I /etc/dvbtx/dvbtx.toml
+Configuration
+.RI ( /etc/dvbtx/ name .toml
+pour les unités
+.BI dvbtx@ name \fR).
+.TP
+.I /run/dvbtx/
+Répertoire de travail\~:
+.I engine.ini
+et
+.I si/
+(fichiers de sections).
+.TP
+.I /var/lib/dvbtx/backup.ts
+Flux de secours de la configuration du paquet (là où
+.B dvbtx make\-backup
+écrit par défaut).
+.TP
+.I /var/lib/dvbtx/epg/
+Dossier EPG de la configuration du paquet.
+.TP
+.I /var/lib/dvbtx/gpu.json
+Résultat de l'apprentissage GPU (sauf réglage de
+.BR ingest.gpu_cache ).
+.TP
+.I /usr/lib/dvbtx/
+.B dvbtx\-engine
+et ses modules radio.
+.SH VOIR AUSSI
+.BR dvbtx (1),
+.BR dvbtx\-channel (1),
+.BR dvbtx.toml (5),
+.BR dvbtx\-sources (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR dvbtx\-power (8),
+.BR hackrf_info (1),
+.BR uhd_find_devices (1),
+.BR tsp (1)

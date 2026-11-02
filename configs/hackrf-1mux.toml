@@ -1,0 +1,22 @@
+# One DVB-T multiplex on a HackRF One: 64-QAM 7/8 1/32 8k, 31.67 Mbit/s.
+#   dvbtx check -c configs/hackrf-1mux.toml && sudo dvbtx run -c configs/hackrf-1mux.toml
+[network]
+name = "Ma TV"
+provider = "Ma TV"
+
+[[radio]]
+name = "hackrf"
+driver = "hackrf"
+gain = 30                    # TX VGA; direct coax to a TV: start low, add attenuators
+
+[[carrier]]
+name = "Mux 1"
+radio = "hackrf"
+channel = 22                 # 482 MHz
+  [[carrier.service]]
+  name = "Mire"
+  source = "lavfi:testsrc2=size=1280x720:rate=25"
+  encode = { video_bitrate = "3M" }
+  [[carrier.service]]
+  name = "Film"
+  source = "/srv/videos/film.mkv"

@@ -1,0 +1,219 @@
+'\" t
+.TH DVBTX-POWER 8 2026-11-02 "dvbtx 0.1.0" "dvbtx manual"
+.SH NAME
+dvbtx\-power \- power profiles of the machine for a transmitter on battery: every saving while nothing is on air, a transmit profile while dvbtx runs
+.SH SYNOPSIS
+.SY "dvbtx power"
+.BR save | transmit | default | status
+.RB [ \-c
+.IR FILE ]
+.YS
+.SY "dvbtx power hook"
+.BR start | stop
+.RI [ UNIT ]
+.RB [ \-c
+.IR FILE ]
+.YS
+.SY "systemctl enable \-\-now dvbtx\-power"
+.YS
+.SH DESCRIPTION
+A transmitter carried with its radios in a bag runs on a battery: every watt saved is autonomy,
+and less heat.
+.B dvbtx power
+switches the whole machine between two profiles:
+.TP
+.B save
+Nothing is on air: every saving the hardware offers.
+Applied at boot, and when the last dvbtx unit stops (also after a crash).
+.TP
+.B transmit
+A dvbtx unit runs: what the real-time work of the radios needs, the other savings kept.
+Applied by each dvbtx unit as it starts.
+.PP
+It is
+.BR opt-in :
+nothing changes until
+.B dvbtx\-power.service
+is enabled.
+The settings apply to the whole machine, including other programs and virtual machines running
+on it.
+.SS What each profile sets
+.TS
+allbox tab(@);
+lb lb lb
+l l l.
+setting@save@transmit
+cpufreq governor@powersave@powersave
+energy/performance preference (EPP)@power@balance_power
+turbo / boost@off@allowed
+PCIe ASPM policy@powersupersave@default (firmware)
+USB autosuspend@on, keyboards and mice spared@off: radios never suspended
+PCI runtime power management@auto@auto
+SATA link power (ALPM)@med_power_with_dipm@med_power_with_dipm
+HDA / AC97 audio power save@on@on
+NMI watchdog@off@off
+dirty page writeback@15 s@15 s
+Wi-Fi power save (iw)@on@on
+.TE
+.PP
+Each value is written only where the machine offers it: an AMD or older Intel processor without
+EPP keeps its governor setting only, a firmware that keeps PCIe ASPM to itself (ACPI FADT) refuses
+the policy, which is then left as it is.
+.PP
+In transmit, USB autosuspend is off because a radio whose multiplexes are all stopped is closed and
+opened again later: it must not be suspended meanwhile.
+The PCIe policy goes back to the firmware's so that a USB controller behind a PCIe link answers
+the radio's DMA without delay.
+.SS Processor idle states
+The engine also holds
+.I /dev/cpu_dma_latency
+while it runs
+.RB ( "[engine] cpu_latency_us" ,
+see
+.BR dvbtx\-engine (8)
+and
+.BR dvbtx.toml (5)).
+That request is system wide too, and lasts exactly as long as the engine: the kernel drops it when
+the engine exits, even after a crash.
+0 keeps every core awake (no idle state at all: the most power).
+100 lets the cores sleep down to C6 (85 \(mcs to wake up on an Intel 8th generation) and forbids
+only the deepest states (C7 to C10, 124 to 890 \(mcs), whose exit delays the USB DMA long enough
+to empty the HackRF's 1 ms FIFO: gaps on air.
+\-1 makes no request.
+.SS Measured
+Intel Core i3-8100T, four multiplexes on a HackRF and a B210 (DVB-T, DVB-T2, DVB-C), processor
+package power read from RAPL:
+.TS
+allbox tab(@);
+lb lb lb
+l r l.
+setup@power@on air
+idle, performance governor@1.37 W@\(em
+idle, save@0.62 W@\(em
+on air, cpu_latency_us 0, performance governor@22.1 W@no underrun
+on air, cpu_latency_us 100, transmit@13.9 W@no underrun, margins unchanged
+on air, cpu_latency_us 100, EPP power@14.2 W@no underrun
+.TE
+.PP
+The EPP
+.B power
+brings nothing while the processor works at 75 %, hence
+.B balance_power
+for transmit.
+.SH COMMANDS
+.TP
+.B save
+Apply the save profile now.
+.TP
+.B transmit
+Apply the transmit profile now.
+.TP
+.B default
+Save, or transmit when a dvbtx unit is on air.
+This is what
+.B dvbtx\-power.service
+runs at boot (ordered before the dvbtx units).
+.TP
+.B status
+The profile last applied, the dvbtx units on air, whether
+.B dvbtx\-power.service
+is enabled, the governor, EPP, turbo, ASPM policy, the USB devices by power control, and the
+processor package power over 2 seconds (RAPL, root only).
+.TP
+.BR "hook start" | stop " [\fIUNIT\fR]"
+Called by the dvbtx units as root
+.RB ( ExecStartPre=
+and
+.BR ExecStopPost= ).
+.B start
+marks the unit as on air and applies transmit;
+.B stop
+removes the mark and applies save when no other unit is on air.
+Does nothing unless
+.B dvbtx\-power.service
+is enabled.
+.PP
+Every command but
+.B status
+needs root.
+.SH OPTIONS
+.TP
+.BI \-c " FILE" "\fR, \fP\-\-config " FILE
+Configuration file whose
+.B [power]
+table is read (default
+.IR /etc/dvbtx/dvbtx.toml ).
+A file that cannot be read gives the default settings, with a warning: a hook never fails.
+.SH CONFIGURATION
+In the
+.B [power]
+table of
+.BR dvbtx.toml (5);
+a change is used at the next switch of profile (or at once with
+.BR "dvbtx power transmit" ),
+it does not restart the transmission.
+.TP
+.BR save_epp " (\(dqpower\(dq), " transmit_epp " (\(dqbalance_power\(dq)"
+Energy/performance preference:
+.BR performance ,
+.BR balance_performance ,
+.BR balance_power ,
+.BR power .
+.TP
+.BR save_turbo " (false), " transmit_turbo " (true)"
+Turbo or boost allowed.
+.TP
+.BR save_aspm " (\(dqpowersupersave\(dq), " transmit_aspm " (\(dqdefault\(dq)"
+PCIe ASPM policy:
+.BR default ,
+.BR performance ,
+.BR powersave ,
+.BR powersupersave
+(powersave when powersupersave is refused).
+.TP
+.BR save_command ", " transmit_command " (\(dq\(dq)"
+Shell command run after the profile, e.g. to dim a backlight or slow a fan.
+.SH FILES
+.TP
+.I /usr/lib/systemd/system/dvbtx\-power.service
+Oneshot unit, enabled by the administrator: runs
+.B dvbtx power default
+at boot.
+.TP
+.IR /usr/lib/systemd/system/dvbtx.service ", " dvbtx@.service
+Call
+.B dvbtx power hook start|stop
+.BR %n .
+.TP
+.I /run/dvbtx\-power/profile
+The profile last applied.
+.TP
+.IR /run/dvbtx\-power/on/ UNIT
+One file per dvbtx unit on air.
+.SH EXAMPLES
+.EX
+sudo systemctl enable \-\-now dvbtx\-power     # save now and at every boot
+sudo dvbtx power status
+sudo systemctl start dvbtx                   # transmit
+sudo systemctl stop dvbtx                    # save again
+.EE
+.PP
+From a source checkout, the same with
+.BR "sudo packaging/install\-service.sh \-c FILE \-\-power" .
+.PP
+Never let the processor speed up, even on air:
+.PP
+.EX
+[power]
+transmit_turbo = false
+.EE
+.SH SEE ALSO
+.BR dvbtx (1),
+.BR dvbtx\-channel (1),
+.BR dvbtx.toml (5),
+.BR dvbtx\-sources (7),
+.BR dvbtx (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR systemctl (1),
+.BR iw (8)

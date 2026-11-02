@@ -1,0 +1,1292 @@
+.TH DVBTX-WEB 7 2026-11-02 "dvbtx 0.1.0" "dvbtx manual"
+.SH NAME
+dvbtx-web \- the dvbtx monitoring and control web page and its HTTP API
+.SH DESCRIPTION
+While
+.BR dvbtx (1)
+runs, it serves a single web page and a JSON API over plain HTTP.
+The page shows the radios, the multiplexes, every channel and every source with
+statistics refreshed each second, and lets the operator stop or start a multiplex,
+add, edit or remove channels, restart a source, edit the configuration file and
+apply it, save and load profiles, and watch a channel live.
+The same operations are available to programs through the HTTP API described
+below; the
+.B dvbtx channel
+commands of
+.BR dvbtx\-channel (1)
+use it.
+.PP
+The page itself is in French; this manual describes it in English and quotes
+its labels as they appear on screen.
+.SH REACHING THE PAGE
+The server is started by the supervisor before the sources, so the page is up
+while the sources are still being resolved.
+It listens on
+.B web.listen
+of the configuration file, by default
+.BR 127.0.0.1:8080 ,
+that is
+.UR http://127.0.0.1:8080/
+.UE
+on the transmitter only.
+To reach it from the local network, listen on every address:
+.PP
+.EX
+[web]
+listen = "0.0.0.0:8080"
+.EE
+.PP
+or on the command line
+.B \-\-web 0.0.0.0:8080
+(or
+.BR "\-s web.listen=0.0.0.0:8080" ).
+A
+.B listen
+with an empty host (\(lq:8080\(rq) also binds every address.
+.B \-\-web none
+or
+.B web.enabled = false
+runs without the page.
+If the address cannot be bound, dvbtx logs the error and runs without it.
+.PP
+The page is meant for a trusted LAN.
+Nothing is ever asked to read it: the page, the statistics, the previews and
+.B /metrics
+are open to whoever reaches the port.
+The requests that change something (POST, PATCH, DELETE) are guarded as follows:
+.TP
+.B Cross\-site refusal
+A request carrying an
+.B Origin
+header whose host and port differ from its
+.B Host
+header is refused with status 403
+("request from another web site refused"):
+a page of another web site cannot drive the transmitter through the browser of
+someone who has the page open.
+Programs such as
+.BR curl (1)
+send no
+.B Origin
+and are accepted.
+.TP
+.B JSON body
+The requests that carry a body must have
+.BR "Content\-Type: application/json" ,
+else status 415.
+The body must be a JSON object of at most 65536 bytes, else status 400.
+.TP
+.B Token
+When
+.B web.token
+is set (empty by default), every change must carry it, as
+.B Authorization: Bearer
+.I token
+or as
+.B X\-Dvbtx\-Token:
+.IR token ,
+else status 401 ("token required (web.token)").
+On a 401 the page asks for the token once (\(lqJeton de l'émetteur (web.token) :\(rq),
+keeps it in the browser's local storage and repeats the request.
+.TP
+.B Exec sources
+Sources that run a command or read standard input
+.RB ( exec: ,
+.BR pipe: ,
+.BR stdin: ,
+.BR \- )
+and the options that pass raw arguments to ffmpeg
+.RB ( ffmpeg_input ,
+.BR ffmpeg_output )
+are refused from the API unless
+.B web.allow_exec_sources = true
+(default false); the configuration file may always use them.
+.SH THE PAGE
+The page polls
+.B /api/status
+every second,
+.B /api/history
+every 2 s and
+.B /api/config
+every 10 s.
+.SS Header and banners
+The header shows the network name (the
+.B [network]
+name, also the browser tab title), a pill for the engine
+(\(lqmoteur actif\(rq, \(lqmoteur arrêté\(rq, or \(lqdvbtx injoignable\(rq when the page
+cannot reach dvbtx), the number of active alerts (\(lqaucune alerte\(rq when none),
+the dvbtx version, the uptime, and \(lqstats vieilles de
+.I N
+s\(rq when the engine statistics are more than 5 s old.
+.PP
+Below the header, on every tab:
+.IP \(bu 2
+the active alerts, one line each, with their level
+(\(lqCritique\(rq, \(lqAttention\(rq, \(lqInfo\(rq), message and age;
+.IP \(bu
+a red banner when the configuration file as saved is not valid;
+.IP \(bu
+the
+.B pending changes
+banner (\(lqModifications enregistrées, pas encore appliquées\(rq), listing what
+differs between the file and what runs, with the buttons
+\(lqAnnuler les modifications\(rq and \(lqAppliquer\(rq; see
+.B Pending changes and Apply
+below.
+.SS Tabs and anchors
+Five tabs, each with an anchor that can be put in the address:
+.TP
+.B #etat
+\(lqTableau de bord\(rq, the dashboard (radios, machine load, multiplexes).
+.TP
+.B #chaines
+\(lqChaînes\(rq, the channels of each multiplex.
+.TP
+.B #sources
+\(lqSources\(rq, the ingest processes and GPU transcoding.
+.TP
+.B #config
+\(lqConfiguration\(rq, the configuration file: network, radios, multiplexes,
+profiles, bit rate calculator.
+Its tab label carries the number of pending changes.
+.TP
+.B #journaux
+\(lqJournaux\(rq, the engine log and the alert history.
+.PP
+With no anchor, the browser opens the tab it showed last (kept in its local storage),
+else the dashboard.
+Two more parameters can follow the tab, separated by
+.BR & ,
+and act once, when the page loads:
+.TP
+.BI live= sid
+opens the live view of the channel whose service_id is
+.I sid
+(decimal), e.g.
+.BR #chaines&live=257 .
+.TP
+.BI detail= sid
+opens the detail window of that channel, e.g.
+.BR #chaines&detail=257 .
+.SS Dashboard: radios
+One card per radio that carries at least one multiplex: name, driver, LO
+frequency, sample rate, gain (\(lq+ ampli\(rq when the HackRF amplifier is on),
+buffer fill (\(lqTampon\(rq, in %), CPU of its synthesis and USB thread
+(\(lqCPU (synthèse + USB)\(rq, in % of one core) with a sparkline of it.
+CPU figures of radios, multiplexes and sources are in % of one core (100 % is one
+whole core); the Machine gauge is in % of all the cores.
+.PP
+The state pill reflects the radio state reported by the engine:
+.TP
+.B on
+on the air: \(lq0 sous\-débit\(rq, or the number of underruns in red
+(\(lq\fIN\fP sous\-débits\(rq).
+.TP
+.B idle
+switched off on purpose, all its multiplexes being stopped:
+\(lqéteinte \(bu ses multiplex sont arrêtés\(rq.
+.TP
+.B off
+not found at the start: \(lqintrouvable \(bu ses multiplex sont coupés\(rq.
+.TP
+.B lost
+lost while on the air (unplugged, USB error): \(lqperdue \(bu ses multiplex sont coupés\(rq.
+.PP
+For
+.B off
+and
+.BR lost ,
+the driver's error follows, with \(lqrecherchée toutes les 15 s\(rq: the radio
+is probed every 15 s and the engine is started again once it is back (a short cut
+of the other radios); a radio lost for 120 s and not found again also restarts the
+engine.
+Only the multiplexes of that radio are off the air, their sources paused; the
+other radios go on.
+.SS Dashboard: machine
+Half\-circle gauges: \(lqCPU\(rq for the whole machine (all processes, with the
+number of cores), and one \(lqGPU\(rq gauge per graphics adapter with its two
+busiest engines (render, video, encoder...).
+.SS Dashboard: multiplexes
+One card per multiplex.
+Its header line, shown on both the dashboard and the channels tab, has:
+.IP \(bu 2
+the name, an \(lqarrêté\(rq pill when the multiplex is stopped, the standard and
+its parameters, the frequency, the TSID and the radio;
+.IP \(bu
+\(lqcapacité\(rq, the useful bit rate of the channel in Mbit/s, and
+\(lqoccupé\(rq, the occupancy: useful (non\-null) bit rate averaged over 10 s
+divided by the capacity, orange above 90 %, red above 98 %;
+.IP \(bu
+\(lqmodulation\(rq, the CPU of this multiplex's modulation thread;
+\(lqsources\(rq, the CPU of the ffmpeg processes of its channels; and
+\(lqGPU\(rq, the GPU load of its re\-encoded channels (details on hover);
+.IP \(bu
+the
+.B \(lqArrêter\(rq / \(lqDémarrer\(rq
+button (see
+.B Stopping and starting a multiplex
+below);
+.IP \(bu
+a bar of the capacity split between the channels, the PSI/SI tables and the free
+part (\(lqlibre\(rq), each averaged over the last 10 s, with its legend.
+.PP
+The dashboard card adds a graph of the useful bit rate over the last 10 minutes
+against the capacity (dashed line), the address of the multiplex's UDP copy
+(\(lqcopie du TS\(rq,
+.BI udp://127.0.0.1: port
+with
+.I port
+= ingest.monitor_base_port + index, 20900 by default), the
+.B TS
+link (see
+.BR Previews ),
+and, when TSDuck analyses the multiplex, its bit rate, transport errors,
+discontinuities, the age of the report and a \(lqrapport complet\(rq link to
+.BR /api/analysis/\fIn\fP .
+.SS Stopping and starting a multiplex
+The button \(lqArrêter\(rq of a multiplex (after a confirmation:
+\(lqArrêter l'émission de ce multiplex ? Les autres continuent.\(rq) sends
+.BR "POST /api/carrier/\fIn\fP/stop" ;
+\(lqDémarrer\(rq sends
+.BR "POST /api/carrier/\fIn\fP/start" ,
+without confirmation.
+.PP
+A stopped multiplex goes off the air at once; the other multiplexes, on the same
+radio or not, are not interrupted.
+The primary sources of its channels are paused (their ffmpeg stopped) and come
+back when it is started again.
+A radio whose multiplexes are all stopped is switched off (state
+.BR idle )
+and switched on again with the first one started.
+No alert is raised for a stopped multiplex.
+.PP
+The state is written to the configuration file at once
+.RB ( "enabled = false"
+in its
+.B [[carrier]]
+table, removed when started again) and is kept across restarts.
+It is not a pending change: it applies immediately and needs no \(lqAppliquer\(rq.
+.SS Channels tab
+The button \(lqRecharger EPG / SI\(rq re\-reads the programme guide from the EPG
+folder and URLs and rebuilds the SI tables
+.RB ( "POST /api/reload" ).
+.PP
+Each multiplex has the header line described above, the button
+\(lq+ Ajouter une chaîne\(rq and a table of its channels, one row each:
+.TP
+.B LCN
+the logical channel number.
+.TP
+.B Chaîne
+a colour mark (the colour of the occupancy bar), the name, the service_id in
+hexadecimal, the service type and the priority; for a re\-encoded channel,
+\(lqréencodée, cible
+.I X
+Mbit/s (poids
+.IR W )\(rq,
+its target video bit rate and bit rate weight.
+.TP
+.B Source
+the source on air: \(lqprincipale\(rq (primary, green), \(lqsecours\(rq (the
+backup clip, orange) or \(lqaucune\(rq (none, red).
+With several sources, \(lqsource
+.IR k / n \(rq
+tells which one plays, and \(lqessai de la
+.IR j \(rq
+when a preferred one is being tried beside it.
+.TP
+.B "Entrée Mbit/s, Sortie Mbit/s"
+the bit rate received from the source and the bit rate sent in the multiplex.
+.TP
+.B Marge vidéo
+the
+.B decoding margin
+of the video: for each frame, the time between its emission and its decoding
+time in the receiver (DTS minus the PCR at emission), the minimum over the last
+second, with the mean below (\(lqmoy\(rq).
+About 700 ms normally; lower when the multiplex is too full; below zero the TV
+freezes.
+Green, orange below
+.B alerts.margin_min_ms
+(150 ms by default), red below zero.
+A sparkline column (\(lq10 min\(rq) follows, with the alert threshold dashed.
+.TP
+.B Marge audio
+the same for the audio.
+.TP
+.B Retard ms
+the gap between the sending of the packets and their ideal time, the worst of each
+second: negative is early (normal, up to the service's
+.BR early_ms ,
+100 ms by default), positive is late, shown bold; beyond
+.B max_late_ms
+(600 ms by default) packets are dropped, shown as \(lq\fIN\fP perdus\(rq.
+.TP
+.B Pertes entrée
+continuity errors in the stream received from the source since its input
+started: packets lost between the source and dvbtx.
+.TP
+.B Aperçu
+the thumbnail of the channel (see
+.BR Previews );
+a click on it opens the live view.
+The eye in the column header hides or shows the thumbnails.
+.TP
+.B En cours
+now and next from the EPG (\(lqpas d'EPG\(rq when there is none).
+.TP
+.I last column
+an information icon opening the detail window, a pencil icon opening the edit
+dialog, and a red cross removing the channel (after a confirmation).
+.PP
+When a multiplex is full, the channels of lower priority take the delay, then the
+losses, first.
+.SS Channel detail window
+Opened by the information icon or
+.BR #detail=\fIsid\fP ,
+it charts one channel over a period of \(lq15 min\(rq, \(lq1 h\(rq (default),
+\(lq6 h\(rq or \(lq24 h\(rq, from
+.BR /api/channel/\fIsid\fP/rates :
+.IP \(bu 2
+\(lqDébit\(rq: the output bit rate, mean of each time slice with a band from its
+minimum to its maximum, the 95th percentile dashed, and a table of mean, minimum,
+median, 95th percentile and maximum;
+.IP \(bu
+\(lqRetard d'envoi\(rq: the lateness, worst of each slice;
+.IP \(bu
+\(lqMarge vidéo\(rq: the video decoding margin, lowest of each slice, with its
+minimum, 5th percentile and median, and the alert threshold dashed;
+.IP \(bu
+\(lqPertes en entrée\(rq: input continuity errors counted per slice, or
+\(lqaucune sur la période\(rq.
+.PP
+The measures are taken once a second and kept 24 hours in memory; they are lost
+when dvbtx restarts.
+.SS Adding, editing and removing a channel
+\(lq+ Ajouter une chaîne\(rq and the pencil icon open the same dialog
+(\(lqAjouter une chaîne\(rq or \(lqModifier
+.IR name \(rq):
+.TP
+.B Multiplex
+the multiplex of the new channel (shown when adding, with more than one
+multiplex).
+.TP
+.B Nom
+the name, 1 to 60 characters, no quotes or backslashes.
+.TP
+.B Numéro (LCN)
+1 to 1023; empty when adding: the first free number.
+When editing, the box \(lqsi le numéro est pris, échanger avec cette chaîne\(rq
+swaps the numbers with the channel that had it; without it, a number in use is
+refused.
+.TP
+.B Sources
+one source per line, in order of preference: when the one playing fails, the
+next takes over, and the channel comes back to a preferred one once it works
+again; all down: the backup clip.
+A change of source does not cut the channel.
+See
+.BR dvbtx\-sources (7).
+.TP
+.B Cache (ms)
+.BR buffer_ms ,
+100 to 30000; empty is
+.B auto
+(6000 for YouTube, Twitch and HLS, 1000 otherwise; the value in use is shown as
+the placeholder).
+.TP
+.B Vidéo de secours
+the backup clip; empty: none.
+A new channel is prefilled with the default backup.
+.TP
+.B Priorité
+1 to 10, 5 being normal (\(lqnormale\(rq); 1 loses first (\(lqperdue en premier\(rq),
+10 last (\(lqperdue en dernier\(rq).
+.TP
+.B Part du débit (si réencodée)
+the
+.B bitrate_weight
+of a re\-encoded channel: \(lqSD (1)\(rq, \(lqHD 720p (2)\(rq, \(lqFull HD (3)\(rq,
+\(lq4K (6)\(rq.
+A re\-encoded channel takes a share of what the copied channels leave, according
+to its weight; a copied channel keeps its source's bit rate and only the
+priority matters for it.
+.TP
+.B Débit vidéo max (Mbit/s)
+the
+.B max_bitrate
+of a re\-encoded channel, 0.5 to 80; empty: the default (8 Mbit/s,
+.BR defaults.encode.max_auto_bitrate ).
+.PP
+\(lqEnregistrer\(rq saves, \(lqAnnuler\(rq closes.
+Removing a channel asks \(lqSupprimer la chaîne ... ? Les autres chaînes ne sont pas
+touchées.\(rq
+.PP
+From the page, adding, editing and removing a channel are
+.B pending changes:
+the page sends its requests with
+.BR ?apply=0 ,
+which only writes the configuration file; nothing changes on air until
+\(lqAppliquer\(rq.
+From the API without
+.BR ?apply=0 ,
+as
+.BR dvbtx\-channel (1)
+does, the change is applied at once to that channel only and written to the file.
+.SS Sources tab
+One row per ingest process (the primary sources, the backup clips, and the
+sources being tried or held in standby beside a channel):
+.TP
+.B #
+the input index, used by
+.BR /api/input/\fIn\fP/restart .
+.TP
+.B Source
+the channel name (\(lq(secours)\(rq for a backup clip) and the source.
+.TP
+.B État
+the process state:
+.BR running ,
+.BR restarting ,
+.BR backoff ,
+.BR paused ,
+.BR stopped ,
+.BR error ,
+or \(lqUDP direct\(rq for a source read by the engine without ffmpeg; the last
+error below.
+.TP
+.B Traitement
+what ffmpeg does: \(lqcopie\(rq (copy), \(lqcopie vidéo\(rq with the audio
+re\-encoded, \(lqCPU\(rq or \(lqGPU\(rq transcoding with the codec (and the
+adapter for the GPU).
+.TP
+.B Img/s \(bu vitesse
+frames per second of a transcode, and the speed against real time, in red when
+below 0.97 after 20 s.
+.TP
+.B Perdues
+frames dropped / duplicated by ffmpeg.
+.TP
+.B "CPU, GPU"
+the CPU of the source's processes (% of one core) and its busiest GPU engine.
+.TP
+.B "Relances, Débit, Inactif"
+the number of restarts, the bit rate received, and the time since the last
+packet.
+.TP
+.B Journal
+a button with the number of log lines; it opens, under the row, the ffmpeg
+command and its last 50 lines.
+.TP
+.B Relancer
+(ffmpeg sources only) restarts the process
+.RB ( "POST /api/input/\fIn\fP/restart" ).
+.PP
+Below, \(lqTranscodage : GPU\(rq shows the GPU manager: its state
+(\(lqdésactivé (ingest.gpu)\(rq, \(lqaucune carte utilisable\(rq, \(lqprêt\(rq,
+\(lqapprentissage en cours\(rq, \(lqéchec de l'apprentissage\(rq), the progress
+of a learning and its date, and for each adapter its driver, the number of
+transcodes it runs, or why it is not usable, and for H.264, HEVC and MPEG\-2 the
+best way learnt (frames per second, CPU per frame) or \(lqnon\(rq with the
+reason.
+The button \(lqRéapprendre les GPU\(rq
+.RB ( "POST /api/gpu/learn" )
+runs the learning again in the background, the CPU transcoding meanwhile; it is
+absent when GPU transcoding is off or no adapter is usable, and disabled while a
+learning runs.
+.SS Previews
+Every preview reads a copy of what goes on air, asked to the engine for the time
+of the preview, so it shows what the TVs receive, backup clip included.
+Nothing runs while nobody looks.
+.TP
+.B Thumbnails
+Shown by default
+.RB ( web.preview_thumbnails ,
+true); the eye of the \(lqAperçu\(rq column hides or shows them, and the browser
+remembers that choice.
+They are requested only while the channels tab is visible.
+For each multiplex, one ffmpeg reads the multiplex just long enough to write
+one 320 pixel wide JPEG of a key frame per channel with a picture, then stops;
+the next shot comes
+.B web.preview_thumb_every_s
+later (60 s by default, 2 s at least).
+Key frames are decoded on the GPU when the transcodes have one.
+A multiplex's thumbnails stop 60 s after the last request for them.
+.TP
+.B Live view
+A click on a thumbnail, or
+.BR #live=\fIsid\fP ,
+opens the \(lqDirect\(rq window: the channel as on air, a few seconds late.
+H.264 video is copied, only the container (MPEG\-TS to fragmented MP4) and the
+sound (to AAC, 96 kbit/s stereo) change; other video codecs are re\-encoded to
+360 lines (libx264, 900 kbit/s).
+The box \(lqréencoder (si l'image ne s'affiche pas)\(rq forces the re\-encoding.
+The window links to the multiplex's TS.
+Closing it stops the ffmpeg.
+.TP
+.B TS link
+\(lqTS\(rq on each multiplex card (and \(lqTS du multiplex\(rq in the live window)
+is the multiplex exactly as it goes on air, every channel, relayed without ffmpeg
+.RB ( /api/mux/\fIn\fP.ts ),
+for mpv, VLC, ffplay...
+.PP
+Live views and TS streams together are limited to
+.B web.preview_max_live
+(4 by default); one more is answered with status 503.
+Thumbnails do not count.
+.SS Configuration tab
+The configuration tab edits the configuration file
+.BR dvbtx.toml (5).
+It needs one: with channels given on the command line it shows
+\(lqno configuration file\(rq and the dialogs refuse to open.
+.PP
+Every change is checked (the whole file must still build, as at start\-up) and
+written to the file at once, its comments and layout kept.
+Nothing changes on air until it is applied.
+.TP
+.B Réseau
+\(lqNom du réseau\(rq, \(lqFournisseur\(rq, \(lqONID (original_network_id)\(rq,
+\(lqnetwork_id\(rq, \(lqCode pays (ISO 3166, 3 lettres)\(rq,
+\(lqFuseau horaire\(rq, saved by \(lqEnregistrer\(rq
+.RB ( "PATCH /api/config/network" ).
+The list \(lqPays (remplit ONID, réseau, code)\(rq fills the ONID and network_id with
+0x2000 plus the ISO 3166 numeric code of the country (the terrestrial rule of
+ETSI TS 101 162: France 250 gives 0x20FA, the default) and the country code.
+Many TVs ignore the logical channel numbers of a network whose ONID is not
+their country's.
+ONID and network_id accept decimal or 0x hexadecimal, 0 to 0xFFFF.
+An emptied field removes the key from the file (its default then applies).
+.TP
+.B Radios
+a table (name, driver, gain, sample rate, arguments) with \(lqModifier\(rq on each
+row and \(lq+ Ajouter une radio\(rq.
+The dialog has \(lqNom\(rq, \(lqPilote\(rq (driver), \(lqArguments\(rq,
+\(lqGain (dB)\(rq, \(lqRecul (dB)\(rq
+.RB ( backoff_db ),
+\(lqÉchantillonnage (MS/s)\(rq
+.RB ( rate ),
+\(lqLO (MHz)\(rq
+.RB ( center ),
+\(lqDécalage du LO\(rq
+.RB ( lo_offset )
+and \(lqamplificateur RF (HackRF)\(rq
+.RB ( amp );
+an empty field is automatic.
+\(lqSupprimer\(rq removes the radio, refused while a multiplex uses it.
+Renaming a radio renames it in the multiplexes that name it.
+.TP
+.B Multiplex
+a table (name, radio, standard, frequency, modulation, capacity, number of
+channels) with \(lqModifier\(rq and \(lq+ Ajouter un multiplex\(rq.
+The dialog has \(lqNom\(rq, \(lqRadio\(rq, \(lqNorme\(rq (DVB\-T, DVB\-T2,
+DVB\-C, DVB\-S, DVB\-S2; DVB\-T2 for a new one), \(lqFréquence (MHz)\(rq,
+\(lqTSID\(rq (empty: automatic) and the parameters of the standard, with the
+useful bit rate (\(lqdébit utile\(rq) and the rate per channel computed as
+they change.
+A change of standard drops the parameters of the old one; setting a frequency
+drops a
+.B channel
+key.
+\(lqSupprimer\(rq removes the multiplex with all its channels.
+.TP
+.B Profils
+see
+.B Profiles
+below.
+.TP
+.B Calculateur de débit utile
+the useful bit rate of a channel for a standard and its parameters, and the
+rate per channel for a number of channels (\(lqChaînes\(rq), 3 % being kept for
+the tables
+.RB ( /api/calc ).
+.SS Pending changes and Apply
+The file as saved is compared with the configuration running; the differences
+are the pending changes, listed in the banner (radio, multiplex, channel or
+settings section added, removed, or changed with the old and new value of each
+key) and counted on the configuration tab.
+.TP
+.B Appliquer
+.RB ( "POST /api/config/apply" )
+applies the file.
+When only channels changed (or the
+.B [defaults]
+or
+.B [power]
+tables), they are applied one by one and the other channels are not cut
+(\(lqSeules les chaînes changent : les autres ne sont pas coupées.\(rq).
+Any other change (radios, multiplexes, network or other settings) restarts the
+transmission, a few seconds without signal; the page asks for a confirmation
+first, the unchanged sources keep running, and TVs may need a new scan.
+.TP
+.B Annuler les modifications
+.RB ( "POST /api/config/revert" ,
+after a confirmation) writes the configuration running back over the file.
+It is refused when radios or multiplexes were added or removed, or a section
+changed in sub\-tables: load a profile, or edit them back.
+.PP
+The \(lqArrêter\(rq / \(lqDémarrer\(rq buttons of the multiplexes are not
+pending changes (see above).
+.SS Profiles
+Profiles are copies of the configuration file beside it,
+.IB file . name
+(for example
+.BR /etc/dvbtx/dvbtx.toml.night ),
+a name being 1 to 40 letters, digits, \- or _, other than
+.B bak
+and
+.BR tmp .
+The \(lqProfils\(rq section lists them with their date, \(lq= fichier actuel\(rq
+when one is identical to the file, and the buttons:
+.TP
+.B Enregistrer la configuration actuelle comme profil
+copies the file (as saved, pending changes included) to the profile named in the
+field beside it.
+.TP
+.B Charger
+checks the profile, keeps the current file as
+.IB file .bak
+and copies the profile over the file; the result is pending until
+\(lqAppliquer\(rq.
+.TP
+.B \(lq\(mu\(rq (red cross)
+deletes the profile.
+.PP
+Only the file itself is ever applied.
+.SH HTTP API
+All answers are JSON unless stated otherwise, with
+.BR "Cache\-Control: no\-store" .
+Statuses: 200 done, 204 no picture yet, 400 invalid or refused
+(\fB{"ok":false,"error":\fP ...\fB}\fP),
+401 token missing, 403 cross\-site request, 404 unknown route or object,
+415 body not JSON, 503 too many live previews.
+.PP
+In the paths,
+.I n
+is the index of a multiplex (0 for the first), or of an input for
+.BR /api/input ;
+.I sid
+is a service_id in decimal;
+.I i
+is the position of a
+.B [[radio]]
+or
+.B [[carrier]]
+table in the file, from 0.
+.I channel
+designates a channel by its number (LCN), its service_id
+.RB ( 0x0101
+or
+.BR sid:257 )
+or its name (URL\-encoded, case ignored; an ambiguous name is refused).
+.PP
+Requests that change something answer
+\fB{"ok":true,\fP ...\fB}\fP
+with the fields of the change, or status 400 with
+\fB{"ok":false,"error":\fP ...\fB}\fP.
+They run in the supervisor's main loop; one that gets no answer in 120 s fails.
+.SS Reading
+.TP
+\fBGET /\fR, \fBGET /index.html\fR
+the page.
+.TP
+.B GET /api/status
+everything the page shows; see
+.B /api/status
+below.
+.TP
+.BI "GET /api/history?last=" seconds
+the short\-term series, one point per engine statistics line (each second), at most
+1800 points; default
+.BR last=600 .
+Answer
+\fB{"t":[\fItimes\fB],"series":{\fIkey\fB:[\fIvalues\fB]}}\fP,
+keys
+.BI c n .rate
+(useful bit rate),
+.BI c n .null ,
+.BI c n .si ,
+.BI c n .lead ,
+.BI s n . sid .rate ,
+.BI s n . sid .vmargin ,
+.BI s n . sid .amargin ,
+.BI s n . sid .late
+and
+.BI r n .cpu .
+.TP
+.BI "GET /api/channel/" sid /rates?hours= h
+a channel over the last
+.I h
+hours (default 6, 0.05 to 24), in about 360 time slices.
+Answer
+\fB{"from", "to", "rate", "late", "margin", "cc"}\fP,
+each measure being
+\fB{"t", "mean", "min", "max", "sum", "stats"}\fP
+(per slice) with
+.B stats
+= mean, min, max, median, p5, p95, total, samples;
+.B cc
+counts the continuity errors gained in each slice.
+404 \(lqno data for this channel yet\(rq.
+.TP
+.BI "GET /api/analysis/" n
+the last full TSDuck
+.B analyze
+JSON report of multiplex
+.IR n ;
+404 \(lqno report\(rq when TSDuck is off or has not reported yet.
+.TP
+.BI "GET /api/epg/" sid
+the EPG events of a service (at most 200):
+\fB[{"event_id", "start", "duration", "title", "subtitle"}]\fP.
+.TP
+.BI "GET /api/calc?standard=" std & key = value ...
+the useful bit rate of a channel:
+.B standard
+is
+.BR dvbt " (default), " dvbt2 ", " dvbc ", " dvbs " or " dvbs2 ,
+the other parameters those of
+.BR dvbtx.toml (5)
+.RB ( bandwidth
+and
+.B symbol_rate
+in Hz or symbol/s;
+.BR pilots ,
+.B extended
+and
+.B rotation
+as 1, true or on), plus
+.B services
+(default 1).
+Answer
+\fB{"rate", "per_service"}\fP,
+.B per_service
+being 97 % of the rate divided by the number of services; 400 with an error
+for impossible parameters.
+.TP
+.B GET /api/channels
+the channels:
+\fB[{"carrier", "carrier_name", "lcn", "sid", "name", "source", "sources", "active", "backup", "pid_base", "visible", "provider", "on"}]\fP,
+.B on
+being the source on air
+.RB ( primary ,
+.BR backup ,
+.BR none ,
+or null).
+.TP
+.B GET /api/config
+the configuration file:
+.B path
+(null without a file, with
+.BR error ),
+.B error
+(why the file as saved is not valid, else null),
+.BR drivers ,
+.BR std_keys ,
+.BR radio_defaults ,
+.B network
+(with its defaults),
+.BR network_keys ,
+.B radios
+and
+.B carriers
+as written in the file (each multiplex with its number of
+.B services
+and its
+.BR capacity ),
+.B pending
+(\fB[{"what":"radio|carrier|channel|settings", "op":"added|removed|changed", "name", "keys":{\fIkey\fB:[\fIold\fB,\fInew\fB]}}]\fP),
+.B restart
+(true when applying restarts the transmission) and
+.B profiles
+(\fB[{"name", "mtime", "same"}]\fP).
+.TP
+.B GET /api/gpu
+the GPU manager:
+\fB{"mode", "state", "progress", "learnt_at", "cache", "fingerprint", "devices"}\fP,
+.B state
+being
+.BR off ,
+.BR none ,
+.BR ready ,
+.B learning
+or
+.BR error ;
+each device with its
+.B load
+(transcodes running) and the
+.B results
+of the learning per codec; or
+\fB{"state":"off"}\fP
+when there is no GPU manager.
+.TP
+.BI "GET /api/preview/" sid .jpg
+the last thumbnail of a channel (image/jpeg), or status 204 with no body while
+the first one is coming (also for an unknown channel).
+Each request keeps the thumbnails of that multiplex going for 60 s.
+.TP
+\fBGET /api/preview/\fIsid\fB/live.mp4\fR[\fB?transcode=1\fR]
+the channel live as fragmented MP4 (video/mp4), for as long as the connection
+stays open;
+.B transcode=1
+re\-encodes the video even when it is H.264.
+404 \(lqno such channel\(rq, 503 beyond
+.BR web.preview_max_live .
+.TP
+.BI "GET /api/mux/" n .ts
+multiplex
+.I n
+exactly as on air (video/mp2t), every channel, relayed from the engine's copy
+for as long as it is read (the stream ends after 10 s without data).
+404 \(lqno such multiplex\(rq, 503 beyond
+.BR web.preview_max_live .
+.TP
+.BI "GET /api/mux/" n .m3u?program= sid
+an M3U playlist (audio/x\-mpegurl) opening that stream, with
+.BI #EXTVLCOPT:program= sid
+so that VLC plays that channel.
+The URL in it is built from the request's
+.B Host
+header.
+.TP
+.B GET /metrics
+Prometheus exposition; see
+.B /metrics
+below.
+.SS Actions
+.TP
+.BI "POST /api/carrier/" n /stop \fR,\fP " POST /api/carrier/" n /start
+stops or starts multiplex
+.IR n ;
+no body.
+Answer
+\fB{"ok":true,"enabled":\fIbool\fB}\fP;
+nothing is done when it already is in that state.
+See
+.B Stopping and starting a multiplex
+above.
+.TP
+.BI "POST /api/input/" n /restart
+restarts the ingest process of input
+.IR n ;
+no body.
+Answer
+\fB{"ok":true}\fP,
+404 \(lqno such input\(rq.
+.TP
+.B POST /api/reload
+re\-reads the EPG and rebuilds the SI tables; no body.
+Answer
+\fB{"ok":true}\fP.
+.TP
+.B POST /api/gpu/learn
+learns the graphics adapters again, in the background; no body.
+Answer
+\fB{"ok":true,"started":\fIbool\fB}\fP,
+.B started
+false when a learning already runs; 400 when GPU transcoding is off
+.RB ( ingest.gpu ).
+.SS Channels
+.TP
+.B POST /api/channels
+adds a channel.
+Body:
+.B name
+and
+.B source
+(a string, or a list in order of preference) required;
+.B carrier
+(index or name, required when there are several multiplexes),
+.B lcn
+(default the first free),
+.B sid
+(number, or a string such as "0x0105"; default a free one),
+.B backup
+(a file, or false for none), and any service option of
+.BR dvbtx.toml (5)
+.RB ( priority ,
+.BR bitrate_weight ,
+.BR max_bitrate ,
+.BR buffer_ms ,
+\&...); null or empty values are ignored.
+.TP
+.BI "PATCH /api/channels/" channel
+changes a channel.
+Body: any of
+.BR name ,
+.B lcn
+(with
+\fB"swap":true\fP
+to exchange numbers with the channel that has it),
+.BR source ,
+.B backup
+("", false or null: none) and service options (null removes one).
+.B sid
+and
+.B carrier
+cannot be changed: remove the channel and add it again.
+.TP
+.BI "DELETE /api/channels/" channel
+removes a channel; no body.
+.PP
+Without a query, the change is applied at once to that channel only (the others
+lose no packet; a change of source switches on a key frame of the new one; a
+change of an engine setting of the service, such as
+.BR priority ,
+re\-creates it, a brief cut of that channel) and
+written to the configuration file, sid, lcn and pid_base being pinned so that
+nothing shifts.
+Answer
+\fB{"ok":true, "sid", "changes":[\fItext\fB, ...], "detail":[{"what", "name", "from", "to"}], "saved", "applied", "warning"}\fP,
+.B warning
+saying why the file was not written.
+.PP
+With
+.B ?apply=0
+(what the page sends) the change is only written to the file, pending until
+.BR "POST /api/config/apply" ;
+answer
+\fB{"ok":true, "saved":true, "pending":true, "sid"}\fP.
+.SS Configuration file
+These need a configuration file and only write it; the transmitter follows on
+.BR "POST /api/config/apply" .
+.TP
+.BI "PATCH /api/config/radio/" i  \fR,\fP " PATCH /api/config/carrier/" i
+changes keys of a
+.B [[radio]]
+or
+.B [[carrier]]
+table:
+\fB{"\fIkey\fB":\fIvalue\fB, "\fIkey\fB":null}\fP,
+null removing a key.
+Unknown keys are refused.
+Answer
+\fB{"ok":true,"saved":true}\fP,
+or
+\fB{"ok":true,"saved":false,"unchanged":true}\fP
+when nothing differs.
+.TP
+.B PATCH /api/config/network
+changes
+.BR name ,
+.BR provider ,
+.BR onid ,
+.BR network_id ,
+.B country
+and
+.B timezone
+of
+.B [network]
+(null removes); other keys are refused.
+Answer as above.
+.TP
+.BR "POST /api/config/radio" ", " "POST /api/config/carrier"
+appends a radio or a multiplex:
+\fB{"name":\fP ...\fB}\fP,
+null values left out.
+Answer
+\fB{"ok":true,"saved":true}\fP.
+.TP
+.BI "DELETE /api/config/radio/" i  \fR,\fP " DELETE /api/config/carrier/" i
+removes a radio (refused while a multiplex uses it) or a multiplex with its
+channels.
+.TP
+.B POST /api/config/apply
+applies the file; no body.
+Answer
+\fB{"ok":true,"restarted":true,"detail":[\fP...\fB]}\fP
+when the transmission was restarted, else the answer of a channel change with
+\fB"restarted":false\fP
+and
+.B detail
+listing the pending changes applied.
+.TP
+.B POST /api/config/revert
+the file back to the configuration running; no body.
+Answer
+\fB{"ok":true,"saved":\fIbool\fB}\fP.
+.TP
+.B POST /api/profiles
+saves the file as profile
+\fB{"name":"\fIname\fB"}\fP.
+Answer
+\fB{"ok":true,"saved":true,"profile":"\fIname\fB"}\fP.
+.TP
+.BI "POST /api/profiles/" name /load
+copies a profile over the file (the old file kept as
+.IR file .bak);
+pending until applied.
+.TP
+.BI "DELETE /api/profiles/" name
+deletes a profile.
+Answer
+\fB{"ok":true,"deleted":true}\fP.
+.SS /api/status
+The main fields:
+.TP
+.B version, uptime, stats_age
+the dvbtx version, seconds since start, age of the last engine statistics.
+.TP
+.B engine
+.BR running ,
+.BR restarts ,
+.B log
+(its last 50 lines).
+.TP
+.B radios
+the radios carrying multiplexes:
+.BR index ,
+.BR name ,
+.BR driver ,
+.BR center ,
+.BR rate ,
+.BR gain ,
+.BR amp ,
+and
+.B live
+from the engine:
+.B state
+.RB ( on ,
+.BR off ,
+.BR lost ,
+.BR idle ),
+.BR error ,
+.BR underruns ,
+.B late
+(gaps reported by the radio),
+.B fill
+(buffer, 0 to 1),
+.B cpu
+(% of one core).
+.TP
+.B carriers
+.BR index ,
+.BR name ,
+.BR standard ,
+.BR frequency ,
+.BR params ,
+.BR tsid ,
+.B capacity
+(bit/s),
+.BR radio ,
+.BR enabled ,
+.BR monitor ,
+.B tsduck
+(summary of the last report),
+.B sources_load
+(CPU and GPU of its channels' sources),
+.B live
+(engine statistics:
+.BR rate ,
+.BR null_rate ,
+.BR si_rate ,
+.BR cpu ,
+per service figures) and
+.BR services .
+.TP
+.B carriers[].services[]
+.BR name ,
+.BR sid ,
+.BR lcn ,
+.BR type ,
+.BR source ,
+.BR sources ,
+.B active
+(index of the source playing),
+.B trying
+(index of a preferred source being tried, or null),
+.BR backup ,
+.BR buffer_ms ,
+.BR buffer_ms_used ,
+.BR priority ,
+.BR bitrate_weight ,
+.BR max_bitrate ,
+.BR transcoded ,
+.B auto_bitrate
+(target video bit rate),
+.BR now ,
+.BR next ,
+.BR epg_events ,
+.B input
+(the engine's view of its source:
+.BR rate ,
+.BR cc_errors ,
+.BR idle_ms ,
+.BR slack_min_ms )
+and
+.B live
+.RB ( rate ,
+.B source
+=
+.BR primary | backup | none ,
+.BR video_margin_min_ms ,
+.BR video_margin_avg_ms ,
+.BR audio_margin_min_ms ,
+.BR late_max_ms ,
+.BR dropped_late ,
+.BR switches ).
+.TP
+.B inputs
+the ingest processes:
+.BR index ,
+.BR name ,
+.B kind
+.RB ( ffmpeg " or " direct ),
+.B role
+.RB ( primary ,
+.BR backup ,
+.BR trial ,
+.BR standby ),
+.BR source ,
+.BR state ,
+.BR restarts ,
+.BR uptime ,
+.BR error ,
+.BR log ,
+.BR cmd ,
+.B mode
+(copy, audio, CPU or GPU transcode),
+.B progress
+(fps, speed, drop, dup),
+.B usage
+(cpu, gpu) and
+.BR live .
+.TP
+.B alerts, alert_history
+the active alerts
+.RB ( key ,
+.BR level ,
+.BR message ,
+.BR since )
+and the last 50 alert events
+.RB ( event :
+.BR raise ,
+.BR repeat ,
+.BR clear ;
+.BR time ).
+.TP
+.B network, thresholds, si, epg_errors, config_path, gpu, web, system, default_backup
+network identity, the
+.B margin_min_ms
+alert threshold, SI table counters, the last EPG errors, the configuration file,
+the GPU manager, whether thumbnails are shown by default, the machine load
+.RB ( cpu ,
+.BR cores ,
+.BR gpus )
+and the default backup clip.
+.SS /metrics
+Text format 0.0.4, every name prefixed
+.BR dvbtx_ :
+.TP
+.B up, alerts_active
+the engine runs (1/0); the number of active alerts.
+.TP
+.B radio_underruns_total, radio_device_gaps_total, radio_buffer_fill, radio_cpu_percent
+labels
+.BR radio ,
+.BR driver .
+.TP
+.B carrier_capacity_bps, carrier_useful_bps, carrier_null_bps, carrier_si_bps, carrier_cpu_percent
+labels
+.BR carrier ,
+.BR name .
+.TP
+.B service_bps, service_video_margin_min_ms, service_audio_margin_min_ms, service_late_max_ms, service_dropped_late_total, service_on_backup, service_switches_total
+labels
+.BR carrier ,
+.BR service ,
+.BR sid ,
+.BR lcn .
+.TP
+.B input_bps, input_cc_errors_total, input_idle_ms, input_slack_min_ms, ingest_restarts_total
+labels
+.BR input ,
+.BR name .
+.SH FILES
+.TP
+.B /etc/dvbtx/dvbtx.toml
+the configuration file the page edits
+.RB ( [web]
+section: listen, enabled, token, allow_exec_sources, preview_max_live,
+preview_thumbnails, preview_thumb_every_s).
+.TP
+.IB file . name
+profiles, beside the configuration file.
+.TP
+.IB file .bak
+the file as it was before a profile was loaded.
+.TP
+.B /run/dvbtx/preview/thumb\-\fIsid\fP.jpg
+the last thumbnail of each channel (under
+.BR work_dir ).
+.SH EXAMPLES
+State of the transmitter, and the decoding margin of each channel:
+.PP
+.EX
+curl \-s http://127.0.0.1:8080/api/status | jq \(aq.carriers[].services[]
+    | {name, margin: .live.video_margin_min_ms}\(aq
+.EE
+.PP
+Stop multiplex 1, then put it back on the air:
+.PP
+.EX
+curl \-X POST http://127.0.0.1:8080/api/carrier/1/stop
+curl \-X POST http://127.0.0.1:8080/api/carrier/1/start
+.EE
+.PP
+Add a channel at once, with a token:
+.PP
+.EX
+curl \-X POST \-H \(aqAuthorization: Bearer s3cret\(aq \e
+     \-H \(aqContent\-Type: application/json\(aq \e
+     \-d \(aq{"name": "France 24", "source": "https://example.org/live.m3u8", "lcn": 3}\(aq \e
+     http://127.0.0.1:8080/api/channels
+.EE
+.PP
+Give channel 3 two sources and a higher priority, and remove channel 0x0104:
+.PP
+.EX
+curl \-X PATCH \-H \(aqContent\-Type: application/json\(aq \e
+     \-d \(aq{"source": ["udp://239.0.0.1:2000", "/srv/videos/loop.ts"], "priority": 8}\(aq \e
+     http://127.0.0.1:8080/api/channels/3
+curl \-X DELETE http://127.0.0.1:8080/api/channels/0x0104
+.EE
+.PP
+Change the frequency of the first multiplex in the file, look at what is
+pending, then apply:
+.PP
+.EX
+curl \-X PATCH \-H \(aqContent\-Type: application/json\(aq \e
+     \-d \(aq{"frequency": 498000000}\(aq http://127.0.0.1:8080/api/config/carrier/0
+curl \-s http://127.0.0.1:8080/api/config | jq .pending
+curl \-X POST http://127.0.0.1:8080/api/config/apply
+.EE
+.PP
+Useful bit rate of DVB\-T 3/4, guard 1/8 (64\-QAM, 8k and 8 MHz by default), for 6 channels:
+.PP
+.EX
+curl \-s \(aqhttp://127.0.0.1:8080/api/calc?standard=dvbt&code_rate=3/4&guard=1/8&services=6\(aq
+.EE
+.PP
+Watch multiplex 0 in mpv, or open its channel 257 in VLC:
+.PP
+.EX
+mpv http://127.0.0.1:8080/api/mux/0.ts
+vlc \(aqhttp://127.0.0.1:8080/api/mux/0.m3u?program=257\(aq
+.EE
+.PP
+Prometheus scrape job:
+.PP
+.EX
+scrape_configs:
+  \- job_name: dvbtx
+    static_configs:
+      \- targets: [\(aqtransmitter:8080\(aq]
+.EE
+.SH SEE ALSO
+.BR dvbtx (1),
+.BR dvbtx\-channel (1),
+.BR dvbtx.toml (5),
+.BR dvbtx\-sources (7),
+.BR dvbtx (7),
+.BR dvbtx\-engine (8),
+.BR dvbtx\-power (8)

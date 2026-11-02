@@ -1,0 +1,42 @@
+# Two adjacent DVB-T multiplexes (482 + 490 MHz) on one HackRF: 2 x 31.67 Mbit/s.
+# The LO goes between them (486 MHz), 18.29 MS/s, one 16384-point OFDM synthesis for both.
+[network]
+name = "BsT"
+provider = "BillysTV"
+
+[epg]
+dir = "/var/lib/dvbtx/epg"
+
+[[radio]]
+name = "hackrf"
+driver = "hackrf"
+gain = 30
+
+[[carrier]]
+name = "Mux 1"
+radio = "hackrf"
+frequency = 482_000_000
+tsid = 1
+  [[carrier.service]]
+  name = "BsT Canal+"
+  lcn = 1
+  source = "https://example.com/live/canal.m3u8"
+  epg_id = "Canal+.fr"
+  [[carrier.service]]
+  name = "BsT Simpson"
+  lcn = 2
+  source = "http://tunarr.lan/stream/channels/1.m3u8"
+
+[[carrier]]
+name = "Mux 2"
+radio = "hackrf"
+frequency = 490_000_000
+tsid = 2
+  [[carrier.service]]
+  name = "BsT Sintel"
+  lcn = 10
+  source = "/srv/videos/2-Sintel.mkv"
+  [[carrier.service]]
+  name = "BsT Twitch"
+  lcn = 11
+  source = "twitch://joueur_du_grenier"

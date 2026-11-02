@@ -1,0 +1,1149 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dvbtx</title>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --ink: #1d2330; --muted: #667085; --line: #e3e6eb;
+  --ok: #1a7f4b; --warn: #b26a00; --crit: #c62828; --info: #2f5fd0;
+  --s0: #3b6fd8; --s1: #2a9d8f; --s2: #e07a2e; --s3: #8e5bd0; --s4: #d1495b; --s5: #5c946e;
+  --s6: #c9a227; --s7: #4f86a8; --si: #9aa3b2; --null: #e9ecf1;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #12151b; --card: #1b2029; --ink: #e6e9ef; --muted: #98a1b3; --line: #2c3340;
+    --null: #262c37; --si: #6b7486; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 20px; background: var(--card);
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 18px; margin: 0; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--line); color: var(--ink); white-space: nowrap; }
+.pill.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.pill.warning { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.pill.critical { background: color-mix(in srgb, var(--crit) 18%, transparent); color: var(--crit); }
+.pill.info { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+main { padding: 16px 20px 40px; max-width: 1500px; margin: 0 auto; }
+section { margin-bottom: 18px; }
+h2 { font-size: 15px; margin: 0 0 8px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: baseline; }
+.big { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.bar { display: flex; height: 18px; border-radius: 5px; overflow: hidden; background: var(--null); margin: 8px 0 4px; }
+.bar div { height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+svg.spark { width: 120px; height: 28px; display: block; }
+svg.chart { width: 100%; height: 120px; display: block; }
+.alert { padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border-left: 4px solid var(--warn); background: var(--card); }
+.alert.critical { border-color: var(--crit); }
+.alert.info { border-color: var(--info); }
+button { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--muted); }
+pre { white-space: pre-wrap; word-break: break-all; font-size: 11.5px; background: var(--bg); padding: 8px; border-radius: 6px; margin: 6px 0 0; max-height: 220px; overflow: auto; }
+details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.epg { font-size: 12px; color: var(--muted); max-width: 260px; }
+.err { color: var(--crit); }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); padding: 18px 20px;
+  width: min(560px, calc(100vw - 32px)); box-shadow: 0 10px 40px rgb(0 0 0 / .25); }
+dialog::backdrop { background: rgb(0 0 0 / .35); }
+dialog h3 { margin: 0 0 12px; font-size: 16px; }
+dialog label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+dialog input[type=text], dialog input[type=number], dialog select, dialog textarea { width: 100%; font: inherit; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+dialog .hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+button.primary { background: var(--info); border-color: var(--info); color: #fff; }
+button.icon { padding: 2px 5px; line-height: 0; vertical-align: middle; color: var(--muted); }
+button.icon:hover { color: var(--ink); }
+button.danger { color: var(--crit); }
+#toast { position: fixed; right: 16px; bottom: 16px; max-width: min(520px, calc(100vw - 32px)); z-index: 5; }
+#toast > div { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 8px; padding: 10px 12px;
+  margin-top: 8px; box-shadow: 0 4px 18px rgb(0 0 0 / .15); font-size: 13px; }
+#toast > div.bad { border-left-color: var(--crit); }
+nav#tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-left: 8px; }
+nav#tabs a { padding: 5px 11px; border-radius: 7px; color: var(--muted); text-decoration: none; font-weight: 600; font-size: 13px; }
+nav#tabs a:hover { background: var(--bg); color: var(--ink); }
+nav#tabs a.on { background: color-mix(in srgb, var(--info) 14%, transparent); color: var(--info); }
+nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
+.tab { display: none; }
+.tab.on { display: block; }
+.cfg { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 14px; }
+.cfg label { display: block; font-size: 12px; color: var(--muted); margin: 6px 0 3px; }
+.cfg input, .cfg select { width: 100%; font: inherit; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+@media (max-width: 700px) { main { padding: 12px; } header { padding: 10px 12px; } .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">dvbtx</h1>
+  <span id="engine" class="pill">…</span>
+  <span id="alertcount" class="pill">…</span>
+  <span id="uptime" class="muted"></span>
+  <nav id="tabs">
+    <a href="#etat" data-tab="etat">Tableau de bord</a><a href="#chaines" data-tab="chaines">Chaînes</a><a href="#sources" data-tab="sources">Sources</a><a href="#config" data-tab="config">Configuration</a><a href="#journaux" data-tab="journaux">Journaux</a>
+  </nav>
+</header>
+<main>
+  <section id="alerts"></section>
+  <section id="pending"></section>
+  <div class="tab" data-tab="etat">
+    <div class="row" style="align-items:flex-start;gap:12px 18px;flex-wrap:wrap">
+      <section style="flex:1 1 420px;min-width:0"><h2>Radios</h2><div class="muted" style="font-size:12px;margin:-4px 0 8px">CPU des radios, des multiplex et des sources : en % d'un cœur (100 % = un cœur entier) ; la jauge Machine, en % de tous les cœurs.</div><div id="radios" class="grid"></div></section>
+      <section style="flex:0 0 auto;margin-left:auto"><h2>Machine</h2><div class="card" id="machine" style="padding:10px 14px"></div></section>
+    </div>
+    <section><h2>Multiplex</h2><div id="carriers"></div></section>
+  </div>
+  <div class="tab" data-tab="chaines">
+    <div class="row" style="margin-bottom:10px"><span class="muted" style="font-size:12px">Guide des programmes et tables SI relus depuis le dossier EPG et les URL.</span><span style="flex:1"></span><button onclick="reloadSi()">Recharger EPG / SI</button></div>
+    <div id="channels"></div>
+  </div>
+  <div class="tab" data-tab="sources">
+    <section><h2>Sources</h2><div class="card scroll"><table id="inputs"></table></div></section>
+    <section><h2>Transcodage : GPU</h2><div class="card" id="gpu"></div></section>
+  </div>
+  <div class="tab" data-tab="config">
+    <section><h2>Réseau</h2><div class="card" id="netcfg"></div></section>
+    <section><h2 class="row" style="justify-content:space-between">Radios <button onclick="radioOpen(null)">+ Ajouter une radio</button></h2><div class="card" id="radiocfg"></div></section>
+    <section><h2 class="row" style="justify-content:space-between">Multiplex <button onclick="carOpen(null)">+ Ajouter un multiplex</button></h2><div class="card" id="carcfg"></div></section>
+    <section><h2>Profils</h2><div class="card" id="profiles"></div></section>
+    <section><h2>Calculateur de débit utile</h2><div class="card">
+      <div class="row" style="gap:8px 14px">
+        <label>Norme <select id="k_std" onchange="calcForm()"><option value="dvbt">DVB-T</option><option value="dvbt2">DVB-T2</option><option value="dvbc">DVB-C</option>
+          <option value="dvbs">DVB-S</option><option value="dvbs2">DVB-S2</option></select></label>
+        <span id="k_fields" class="row" style="gap:8px 14px"></span>
+        <label>Chaînes <input id="k_n" type="number" min="1" value="1" style="width:4em" oninput="calc()"></label>
+        <span class="big" id="k_rate">–</span><span class="muted" id="k_per"></span>
+      </div></div></section>
+  </div>
+  <div class="tab" data-tab="journaux">
+    <section><h2>Journal du moteur</h2><div class="card"><pre id="englog" style="max-height:60vh"></pre></div></section>
+    <section><h2>Historique des alertes</h2><div class="card scroll"><table id="ahist"></table></div></section>
+  </div>
+</main>
+<dialog id="chdlg">
+  <form method="dialog" onsubmit="return chSubmit(event)">
+    <h3 id="ch_title">Chaîne</h3>
+    <div id="ch_carrier_row"><label for="ch_carrier">Multiplex</label><select id="ch_carrier"></select></div>
+    <label for="ch_name">Nom</label><input id="ch_name" type="text" maxlength="60" required>
+    <label for="ch_lcn">Numéro (LCN)</label><input id="ch_lcn" type="number" min="1" max="1023" placeholder="le premier libre">
+    <div id="ch_swap_row" class="hint"><label style="display:inline;color:inherit"><input id="ch_swap" type="checkbox"> si le numéro est pris, échanger avec cette chaîne</label></div>
+    <label for="ch_source">Sources</label><textarea id="ch_source" rows="3" required spellcheck="false" placeholder="fichier, URL, ytdlp:…, twitch://…, udp://… (une par ligne)"></textarea>
+    <div class="hint">Une par ligne, dans l'ordre de préférence : si celle qui joue tombe, la suivante prend le relais, et la chaîne revient à une préférée dès qu'elle remarche ; toutes en panne : la vidéo de secours. Changer de source ne coupe pas la chaîne : l'ancienne joue jusqu'à ce que la nouvelle arrive.</div>
+    <label for="ch_cache">Cache (ms)</label><input id="ch_cache" type="number" min="100" max="30000" step="100" placeholder="auto">
+    <div class="hint" id="ch_cache_hint">Retard accepté entre l'arrivée de la source et l'émission. Plus grand : un flux irrégulier passe sans pertes ni bascule sur le secours, mais la chaîne a plus de retard sur le direct. Vide (auto) : 6000 pour YouTube, Twitch et le HLS (.m3u8), 1000 sinon.</div>
+    <label for="ch_backup">Vidéo de secours</label><input id="ch_backup" type="text" placeholder="vide : aucune">
+    <div class="row" style="gap:6px 14px;align-items:flex-end">
+      <span><label for="ch_prio">Priorité</label><select id="ch_prio"></select></span>
+      <span><label for="ch_weight">Part du débit (si réencodée)</label><select id="ch_weight"></select></span>
+      <span><label for="ch_maxbr">Débit vidéo max (Mbit/s)</label><input id="ch_maxbr" type="number" min="0.5" max="80" step="0.5" style="width:8em" placeholder="8"></span>
+    </div>
+    <div class="hint">Priorité 1 à 10 : si le multiplex sature, les chaînes de priorité basse prennent le retard puis les pertes en premier. Une chaîne copiée garde le débit de sa source (seule la priorité joue) ; une chaîne réencodée prend une part de ce que laissent les copiées, selon son poids, sans dépasser son débit max.</div>
+    <div class="hint" id="ch_saved"></div>
+    <div class="err" id="ch_err"></div>
+    <div class="actions"><button type="button" onclick="chdlg.close()">Annuler</button><button class="primary" id="ch_ok">Enregistrer</button></div>
+  </form>
+</dialog>
+<dialog id="radiodlg">
+  <form id="radioform" method="dialog">
+    <h3 id="rd_title">Radio</h3>
+    <label for="rd_name">Nom</label><input id="rd_name" type="text" maxlength="40" required>
+    <label for="rd_driver">Pilote</label><select id="rd_driver"></select>
+    <label for="rd_args">Arguments</label><input id="rd_args" type="text" placeholder="serial=..., rt=60">
+    <div class="row" style="gap:6px 14px">
+      <span><label for="rd_gain">Gain (dB)</label><input id="rd_gain" type="number" step="0.5" style="width:7em"></span>
+      <span><label for="rd_backoff">Recul (dB)</label><input id="rd_backoff" type="number" step="0.5" style="width:7em" placeholder="13"></span>
+      <span><label for="rd_rate">Échantillonnage (MS/s)</label><input id="rd_rate" type="number" step="any" style="width:9em" placeholder="auto"></span>
+      <span><label for="rd_center">LO (MHz)</label><input id="rd_center" type="number" step="any" style="width:9em" placeholder="auto"></span>
+      <span><label for="rd_lo">Décalage du LO</label><input id="rd_lo" type="text" style="width:7em" placeholder="auto"></span>
+    </div>
+    <label style="display:flex;gap:6px;align-items:center;color:inherit"><input id="rd_amp" type="checkbox"> amplificateur RF (HackRF)</label>
+    <div class="hint">Vide = automatique. Enregistré dans le fichier tout de suite, appliqué avec le bouton du bandeau (l'émission redémarre).</div>
+    <div class="err" id="rd_err"></div>
+    <div class="actions"><button type="button" class="danger" id="rd_del" onclick="radioDelete()" style="margin-right:auto">Supprimer</button>
+      <button type="button" onclick="radiodlg.close()">Annuler</button><button class="primary" id="rd_ok">Enregistrer</button></div>
+  </form>
+</dialog>
+<dialog id="cardlg">
+  <form id="carform" method="dialog">
+    <h3 id="cd_title">Multiplex</h3>
+    <label for="cd_name">Nom</label><input id="cd_name" type="text" maxlength="60" required>
+    <div class="row" style="gap:6px 14px">
+      <span><label for="cd_radio">Radio</label><select id="cd_radio"></select></span>
+      <span><label for="cd_std">Norme</label><select id="cd_std" onchange="carFields()"><option value="dvbt">DVB-T</option><option value="dvbt2">DVB-T2</option><option value="dvbc">DVB-C</option><option value="dvbs">DVB-S</option><option value="dvbs2">DVB-S2</option></select></span>
+      <span><label for="cd_freq">Fréquence (MHz)</label><input id="cd_freq" type="number" step="any" required style="width:9em" oninput="carCalc()"></span>
+      <span><label for="cd_tsid">TSID</label><input id="cd_tsid" type="number" min="0" max="65535" style="width:6em" placeholder="auto"></span>
+    </div>
+    <div class="row" id="cd_fields" style="gap:6px 14px"></div>
+    <div class="row" style="margin-top:10px"><span class="muted">débit utile</span><span class="big" id="cd_rate">–</span><span class="muted" id="cd_per"></span></div>
+    <div class="hint">Enregistré dans le fichier tout de suite, appliqué avec le bouton du bandeau : l'émission redémarre (quelques secondes), les TV devront peut-être refaire une recherche.</div>
+    <div class="err" id="cd_err"></div>
+    <div class="actions"><button type="button" class="danger" id="cd_del" onclick="carDelete()" style="margin-right:auto">Supprimer</button>
+      <button type="button" onclick="cardlg.close()">Annuler</button><button class="primary" id="cd_ok">Enregistrer</button></div>
+  </form>
+</dialog>
+<dialog id="ratedlg" style="width:min(820px, calc(100vw - 32px));max-height:92vh;overflow:auto">
+  <h3 id="rt_title">Débit</h3>
+  <div class="row"><span class="muted">Période</span>
+    <select id="rt_hours" onchange="rateLoad()" style="width:auto"><option value="0.25">15 min</option><option value="1" selected>1 h</option><option value="6">6 h</option><option value="24">24 h</option></select>
+    <span class="muted" id="rt_span"></span></div>
+  <div id="rt_body" style="margin-top:8px"></div>
+  <div class="hint">Une mesure par seconde, gardées 24 h en mémoire (perdues au redémarrage de dvbtx). Débit : moyenne de chaque tranche, la bande va de son minimum à son maximum. Retard et marge : le pire de chaque tranche.</div>
+  <div class="actions"><button type="button" onclick="ratedlg.close()">Fermer</button></div>
+</dialog>
+<dialog id="livedlg">
+  <h3 id="live_title">Direct</h3>
+  <video id="live_video" controls playsinline style="width:100%;background:#000;border-radius:6px;aspect-ratio:16/9"></video>
+  <div class="hint">Dans la page : vidéo telle qu'émise, son converti en AAC (les navigateurs ne lisent ni le MPEG-TS ni le MP2 / AC-3). Flux exact, sans aucune conversion : le <a id="live_ts" href="#">TS du multiplex</a> (mpv, VLC...).</div>
+  <div class="hint" id="live_hint">Ce qui part à l'antenne, avec quelques secondes de retard. Rien ne tourne quand la fenêtre est fermée.</div>
+  <div class="actions"><label style="margin:0 auto 0 0;display:flex;gap:6px;align-items:center;color:inherit"><input type="checkbox" id="live_tc" onchange="liveStart()"> réencoder (si l'image ne s'affiche pas)</label>
+    <button type="button" onclick="livedlg.close()">Fermer</button></div>
+</dialog>
+<div id="toast"></div>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const mbps = (b) => b == null ? "–" : (b / 1e6).toFixed(2);
+const ms = (v) => v == null ? "–" : Math.round(v);
+const hex = (v, n = 4) => "0x" + Number(v).toString(16).toUpperCase().padStart(n, "0");
+const COLORS = ["--s0","--s1","--s2","--s3","--s4","--s5","--s6","--s7"].map((v) => `var(${v})`);
+let hist = { t: [], series: {} };
+let marginMin = 150;
+
+function dur(s) {
+  s = Math.max(0, Math.round(s));
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + " j " : "") + (h || d ? h + " h " : "") + m + " min";
+}
+
+function spark(values, opts = {}) {
+  const v = (values || []).filter((x) => x != null);
+  if (v.length < 2) return '<svg class="spark"></svg>';
+  const w = 120, h = 28, vals = values.slice(-300);
+  let lo = Math.min(opts.min ?? Infinity, ...v), hi = Math.max(opts.max ?? -Infinity, ...v);
+  if (hi - lo < 1e-9) { hi = lo + 1; }
+  const n = vals.length;
+  let d = "", pen = false;
+  vals.forEach((x, i) => {
+    if (x == null) { pen = false; return; }
+    const px = (i / (n - 1)) * w, py = h - 2 - ((x - lo) / (hi - lo)) * (h - 4);
+    d += (pen ? "L" : "M") + px.toFixed(1) + " " + py.toFixed(1);
+    pen = true;
+  });
+  let ref = "";
+  if (opts.ref != null && opts.ref >= lo && opts.ref <= hi) {
+    const ry = h - 2 - ((opts.ref - lo) / (hi - lo)) * (h - 4);
+    ref = `<line x1="0" x2="${w}" y1="${ry}" y2="${ry}" stroke="var(--crit)" stroke-dasharray="3 3" stroke-width="1"/>`;
+  }
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${ref}<path d="${d}" fill="none" stroke="${opts.color || "var(--s0)"}" stroke-width="1.5"/></svg>`;
+}
+
+function chart(carrier, capacity) {
+  const t = hist.t, used = hist.series[`c${carrier}.rate`] || [];
+  if (t.length < 2) return '<svg class="chart"></svg>';
+  const w = 600, h = 120, n = t.length, hi = capacity * 1.05;
+  let d = "";
+  used.forEach((x, i) => {
+    if (x == null) return;
+    d += (d ? "L" : "M") + ((i / (n - 1)) * w).toFixed(1) + " " + (h - (x / hi) * h).toFixed(1);
+  });
+  const cy = h - (capacity / hi) * h;
+  return `<svg class="chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <line x1="0" x2="${w}" y1="${cy}" y2="${cy}" stroke="var(--crit)" stroke-dasharray="4 4"/>
+    <path d="${d} L${w} ${h} L0 ${h} Z" fill="color-mix(in srgb, var(--s0) 18%, transparent)" stroke="none"/>
+    <path d="${d}" fill="none" stroke="var(--s0)" stroke-width="1.5"/></svg>`;
+}
+
+const AVG_S = 10;
+function avg(key, fallback) {
+  const v = (hist.series[key] || []).slice(-AVG_S).filter((x) => x != null);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : fallback;
+}
+function marginPill(v) {
+  if (v == null) return '<span class="muted">–</span>';
+  const cls = v < 0 ? "critical" : v < marginMin ? "warning" : "ok";
+  return `<span class="pill ${cls}">${ms(v)} ms</span>`;
+}
+
+let last = null;
+/* re-renders a block every second without closing the logs opened in it (details[data-key]) nor
+ * moving their scroll; left as it is while text is selected in it (to copy a log line) */
+function keepOpen(el, fn) {
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed && sel.rangeCount && el.contains(sel.getRangeAt(0).commonAncestorContainer)) return;
+  const st = {};
+  el.querySelectorAll("details[data-key]").forEach((d) => {
+    const pre = d.querySelector("pre");
+    st[d.dataset.key] = { open: d.open, top: pre ? pre.scrollTop : 0,
+                          bottom: pre ? pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4 : true };
+  });
+  fn();
+  el.querySelectorAll("details[data-key]").forEach((d) => {
+    const v = st[d.dataset.key];
+    if (!v || !v.open) return;
+    d.open = true;
+    const pre = d.querySelector("pre");
+    if (pre) pre.scrollTop = v.bottom ? pre.scrollHeight : v.top;
+  });
+}
+function render(s) {
+  const first = last === null;
+  last = s;
+  if (thumbsPref === null) thumbsOn = !s.web || s.web.preview_thumbnails !== false;
+  if (first && thumbsOn) setTimeout(refreshThumbs, 0);
+  const m = first && /live=(\d+)/.exec(location.hash);          // link to a channel's live picture: #chaines&live=257
+  if (m) setTimeout(() => liveOpen(Number(m[1])), 0);
+  const md = first && /detail=(\d+)/.exec(location.hash);       // a channel's details: #chaines&detail=257
+  if (md) setTimeout(() => rateOpen(Number(md[1])), 0);
+  if (s.thresholds) marginMin = s.thresholds.margin_min_ms;
+  $("#title").textContent = s.network.name || "dvbtx";
+  document.title = (s.network.name || "dvbtx") + " – dvbtx";
+  const eng = $("#engine");
+  eng.className = "pill " + (s.engine.running ? "ok" : "critical");
+  eng.textContent = s.engine.running ? `moteur actif` : "moteur arrêté";
+  const crit = s.alerts.filter((a) => a.level === "critical").length;
+  const ac = $("#alertcount");
+  ac.className = "pill " + (crit ? "critical" : s.alerts.length ? "warning" : "ok");
+  ac.textContent = s.alerts.length ? `${s.alerts.length} alerte(s)` : "aucune alerte";
+  $("#uptime").textContent = `v${s.version} · depuis ${dur(s.uptime)}` + (s.stats_age > 5 ? ` · stats vieilles de ${s.stats_age} s` : "");
+
+  $("#alerts").innerHTML = s.alerts.map((a) =>
+    `<div class="alert ${a.level}"><b>${a.level === "critical" ? "Critique" : a.level === "warning" ? "Attention" : "Info"}</b> · ${esc(a.message)} <span class="muted">depuis ${dur(Date.now() / 1000 - a.since)}</span></div>`).join("");
+
+  $("#radios").innerHTML = s.radios.map((r) => {
+    const l = r.live || {};
+    return `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="pill">${esc(r.driver)}</span>
+      </div><div class="row" style="margin-top:4px">
+      ${l.state === "idle" ? '<span class="pill">éteinte · ses multiplex sont arrêtés</span>'
+        : l.state && l.state !== "on" ? `<span class="pill critical">${l.state === "off" ? "introuvable" : "perdue"} · ses multiplex sont coupés</span>`
+        : l.underruns ? `<span class="pill critical">${l.underruns} sous-débits</span>` : '<span class="pill ok">0 sous-débit</span>'}</div>
+      ${l.state && l.state !== "on" && l.state !== "idle" && l.error ? `<div class="muted" style="margin-top:4px">${esc(l.error)} · recherchée toutes les 15 s</div>` : ""}
+      <div class="kv" style="margin-top:8px"><span>LO</span><span>${(r.center / 1e6).toFixed(4)} MHz</span>
+      <span>Échantillonnage</span><span>${(r.rate / 1e6).toFixed(4)} MS/s</span>
+      <span>Gain</span><span>${r.gain} dB${r.amp ? " + ampli" : ""}</span>
+      <span>Tampon</span><span>${l.fill != null ? Math.round(l.fill * 100) + " %" : "–"}</span>
+      <span>CPU (synthèse + USB)</span><span>${l.cpu != null ? l.cpu.toFixed(1) + " % d'un cœur" : "–"}</span></div>
+      ${spark(hist.series[`r${r.index}.cpu`], { min: 0, color: "var(--s3)" })}</div>`;
+  }).join("") || '<div class="muted">aucune radio</div>';
+
+  const views = s.carriers.map((c) => {
+    const l = c.live, cap = c.capacity;
+    let bar = "", legend = "", used = 0;
+    if (l) {
+      // rates averaged over the last AVG_S seconds (the engine reports every second: too jumpy to read)
+      l.services.forEach((sv, i) => {
+        const r = avg(`s${c.index}.${sv.sid}.rate`, sv.rate), w = (r / cap) * 100; used += r;
+        bar += `<div style="width:${w}%;background:${COLORS[i % COLORS.length]}" title="${esc(sv.name)} ${mbps(r)} Mbit/s (moyenne ${AVG_S} s)"></div>`;
+        legend += `<span><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(sv.name)} ${mbps(r)}</span>`;
+      });
+      const si = avg(`c${c.index}.si`, l.si_rate);
+      bar += `<div style="width:${(si / cap) * 100}%;background:var(--si)" title="PSI/SI"></div>`;
+      legend += `<span><i style="background:var(--si)"></i>PSI/SI ${mbps(si)}</span><span><i style="background:var(--null)"></i>libre ${mbps(Math.max(0, cap - used - si))}</span><span class="muted">moyennes sur ${AVG_S} s</span>`;
+    }
+    const occ = l ? (avg(`c${c.index}.rate`, l.rate - l.null_rate) / cap) * 100 : null;
+    const p = c.params;
+    const std = c.standard === "dvbt" ? `DVB-T ${p.mode} ${p.constellation} ${p.code_rate} GI ${p.guard} ${(p.bandwidth / 1e6)} MHz`
+      : c.standard === "dvbc" ? `DVB-C ${p.constellation} ${(p.symbol_rate / 1e6)} Msym/s`
+      : c.standard === "dvbs" ? `DVB-S QPSK ${p.code_rate} ${(p.symbol_rate / 1e6)} Msym/s`
+      : c.standard === "dvbs2" ? `DVB-S2 ${p.modulation} ${p.code_rate} ${(p.symbol_rate / 1e6)} Msym/s`
+      : c.standard === "dvbt2" ? `DVB-T2 ${p.fft || ""} ${p.constellation || ""} ${p.code_rate || ""} ${p.pilot || ""}`
+      : c.standard === "ts" ? "TS seul (sans radio)" : c.standard;
+    const ts = c.tsduck;
+    const rows = c.services.map((sv, i) => {
+      const lv = sv.live || {}, inp = sv.input || {};
+      const src = lv.source || "none";
+      const srcCls = src === "primary" ? "ok" : src === "backup" ? "warning" : "critical";
+      const k = `s${c.index}.${sv.sid}`;
+      return `<tr>
+        <td class="num">${sv.lcn}</td>
+        <td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${COLORS[i % COLORS.length]};margin-right:6px"></i><b>${esc(sv.name)}</b><div class="muted hide-sm" style="font-size:11px">${hex(sv.sid)} · type ${hex(sv.type, 2)} · priorité ${sv.priority}</div>${sv.transcoded ? `<div class="muted hide-sm" style="font-size:11px">réencodée, cible ${mbps(sv.auto_bitrate)} Mbit/s (poids ${sv.bitrate_weight})</div>` : ""}</td>
+        <td><span class="pill ${srcCls}">${src === "primary" ? "principale" : src === "backup" ? "secours" : "aucune"}</span>${(sv.sources || []).length > 1 ? `<div class="muted" style="font-size:11px" title="${esc(sv.source)}">source ${sv.active + 1}/${sv.sources.length}${sv.trying != null ? ` · essai de la ${sv.trying + 1}` : ""}</div>` : ""}</td>
+        <td class="num">${mbps(inp.rate)}</td>
+        <td class="num">${mbps(lv.rate)}</td>
+        <td class="num">${marginPill(lv.video_margin_min_ms)}<div class="muted" style="font-size:11px">moy ${ms(lv.video_margin_avg_ms)}</div></td>
+        <td class="hide-sm">${spark(hist.series[k + ".vmargin"], { min: 0, max: 1000, ref: marginMin, color: "var(--s1)" })}</td>
+        <td class="num">${marginPill(lv.audio_margin_min_ms)}</td>
+        <td class="num">${lv.late_max_ms == null ? "–" : lv.late_max_ms <= 0 ? `<span class="muted">−${ms(-lv.late_max_ms)}</span>` : `<b>+${ms(lv.late_max_ms)}</b>`}${lv.dropped_late ? ` <span class="pill critical">${lv.dropped_late} perdus</span>` : ""}</td>
+        <td class="num hide-sm">${inp.cc_errors ? `<span class="pill warning">${inp.cc_errors}</span>` : inp.cc_errors ?? "–"}</td>
+        <td class="hide-sm" style="white-space:nowrap">${thumbsOn ? `<img data-thumb="${sv.sid}" alt="" src="${thumbUrl[sv.sid] || BLANK}" onclick="liveOpen(${sv.sid})" title="regarder en direct" style="width:96px;height:54px;object-fit:cover;background:#000;border-radius:4px;cursor:pointer;vertical-align:middle">` : ""}</td>
+        <td class="epg hide-sm">${sv.now ? `<b>${esc(sv.now.title)}</b>` : '<span class="muted">pas d\'EPG</span>'}${sv.next ? `<br>puis ${esc(sv.next.title)}` : ""}</td>
+        <td style="white-space:nowrap"><button class="icon" onclick="rateOpen(${sv.sid})" title="détails : débit, retard, marge, pertes sur les dernières heures" aria-label="détails">${ICON_INFO}</button> <button class="icon" onclick="chEdit(${sv.sid})" title="modifier la chaîne" aria-label="modifier">${ICON_EDIT}</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
+      </tr>`;
+    }).join("");
+    const head = `<div class="row"><b style="font-size:16px">${esc(c.name)}</b>
+        ${c.enabled ? "" : '<span class="pill warning" title="multiplex arrêté : rien à l\'antenne, ses sources en pause, sa radio éteinte si elle n\'a plus que lui">arrêté</span>'}
+        <span class="muted">${std} · ${c.frequency ? (c.frequency / 1e6).toFixed(3) + " MHz" : ""} · TSID ${c.tsid}${c.radio ? " · " + esc(c.radio) : ""}</span>
+        <span style="flex:1"></span>
+        <span class="muted">capacité</span><span class="big">${mbps(cap)}</span><span class="muted">Mbit/s</span>
+        <span class="muted">occupé</span><span class="big" style="color:${occ > 98 ? "var(--crit)" : occ > 90 ? "var(--warn)" : "inherit"}">${occ == null ? "–" : occ.toFixed(1) + " %"}</span>
+        ${l && l.cpu != null ? `<span class="muted" title="modulation de ce multiplex (100 % = un cœur)">modulation ${l.cpu.toFixed(1)} % d'un cœur</span>` : ""}
+        ${loadPills(c.sources_load)}
+        <button onclick="carrierPower(${c.index}, ${!c.enabled})" title="${c.enabled ? "arrêter l'émission de ce multiplex (les autres continuent)" : "remettre ce multiplex à l'antenne"}">${c.enabled ? "■ Arrêter" : "▶ Démarrer"}</button>
+      </div>
+      <div class="bar">${bar}</div><div class="legend">${legend}</div>`;
+    const summary = `<div class="card">${head}
+      ${chart(c.index, cap)}
+      <div class="muted" style="font-size:12px">débit utile sur 10 min, pointillés = capacité du canal · copie du TS : ${esc(c.monitor)} · <a href="/api/mux/${c.index}.ts" title="le multiplex exactement tel qu'il part à l'antenne, toutes les chaînes (mpv, VLC, ffplay...)">TS</a></div>
+      ${ts ? `<div class="row" style="margin-top:6px;font-size:12px"><span class="pill info">tsduck</span>
+        <span>débit ${mbps(ts.bitrate)} Mbit/s</span><span>erreurs transport ${ts.transport_errors ?? 0}</span>
+        <span>discontinuités ${ts.pids.reduce((a, p) => a + (p.discontinuities || 0), 0)}</span><span class="muted">il y a ${ts.age_s} s</span>
+        <a href="/api/analysis/${c.index}" target="_blank">rapport complet</a></div>` : ""}
+    </div>`;
+    const channels = `<div class="card">${head}
+      <div class="row" style="margin-top:10px"><span class="muted" style="font-size:12px">En cas de saturation, les chaînes de priorité basse prennent le retard puis les pertes en premier.</span><span style="flex:1"></span><button onclick="chAdd(${c.index})">+ Ajouter une chaîne</button></div>
+      <div class="scroll" style="margin-top:6px"><table>
+        <tr><th class="num">LCN</th><th>Chaîne</th><th>Source</th><th class="num">Entrée Mbit/s</th><th class="num">Sortie Mbit/s</th>
+        <th class="num" title="Temps entre l'émission d'une image et le moment où le récepteur doit la décoder (minimum sur 1 s)">Marge vidéo</th><th class="hide-sm">10 min</th>
+        <th class="num">Marge audio</th><th class="num" title="Écart entre l'envoi des paquets et leur instant idéal (le pire de chaque seconde) : − en avance (normal, jusqu'à early_ms = 100 ms), + en retard ; au-delà de max_late_ms (600 ms) les paquets sont perdus">Retard ms</th><th class="num hide-sm" title="Erreurs de continuité dans le flux reçu de la source : des paquets perdus entre la source et dvbtx (réseau, source défaillante), depuis le démarrage de l'entrée">Pertes entrée</th><th class="hide-sm" style="white-space:nowrap">Aperçu <button class="icon" onclick="thumbsToggle()" title="${thumbsOn ? "masquer les images des chaînes" : "afficher les images des chaînes (une toutes les 4 s)"}" aria-label="${thumbsOn ? "masquer les images" : "afficher les images"}">${thumbsOn ? EYE : EYE_OFF}</button></th><th class="hide-sm">En cours</th><th></th></tr>
+        ${rows}</table></div>
+    </div>`;
+    return { summary, channels };
+  });
+  $("#carriers").innerHTML = views.map((v) => v.summary).join("");
+  $("#channels").innerHTML = views.map((v) => v.channels).join("");
+
+  keepOpen($("#inputs"), () => $("#inputs").innerHTML = `<tr><th>#</th><th>Source</th><th>État</th><th>Traitement</th><th class="num" title="images par seconde, vitesse par rapport au temps réel">Img/s · vitesse</th><th class="num" title="images perdues / dupliquées par ffmpeg">Perdues</th><th class="num" title="CPU des processus de la source (100 % = un cœur)">CPU</th><th class="num" title="occupation du GPU par cette source : son moteur le plus chargé (le détail au survol)">GPU</th><th class="num">Relances</th><th class="num">Débit</th><th class="num">Inactif</th><th>Journal</th><th></th></tr>` +
+    s.inputs.map((p) => {
+      const live = p.live || {}, key = `in${p.index}${p.role === "trial" ? "t" : ""}`;
+      const cls = p.state === "running" ? "ok" : p.state === "error" ? "critical" : p.kind === "direct" ? "info" : "warning";
+      return `<tr><td>${p.index}</td><td><b>${esc(p.name)}</b> <span class="muted">${p.role === "backup" ? "(secours)" : ""}</span><div class="muted" style="font-size:11px;word-break:break-all">${esc(p.source)}</div></td>
+        <td><span class="pill ${cls}">${p.kind === "direct" ? "UDP direct" : esc(p.state)}</span>${p.error ? `<div class="err" style="font-size:11px">${esc(p.error)}</div>` : ""}</td>
+        ${procCells(p)}
+        <td class="num">${p.restarts}</td><td class="num">${mbps(live.rate)}</td><td class="num">${live.idle_ms != null && live.idle_ms >= 0 ? ms(live.idle_ms) + " ms" : "–"}</td>
+        <td style="white-space:nowrap"><button onclick="logToggle('${key}')" title="commande et dernières lignes de ffmpeg">${openLogs.has(key) ? "▾" : "▸"} ${p.log.length} ligne(s)</button></td>
+        <td>${p.kind === "ffmpeg" ? `<button onclick="restartInput(${p.index})">Relancer</button>` : ""}</td></tr>` +
+        // the log opened under its source, across the whole table
+        (openLogs.has(key) ? `<tr><td colspan="13" style="padding-top:0"><details data-key="${key}" open style="display:block"><summary style="display:none"></summary><pre style="max-height:360px;margin:0">${esc(p.cmd)}\n\n${esc(p.log.join("\n"))}</pre></details></td></tr>` : "");
+    }).join(""));
+
+  renderGpu(s.gpu);
+  renderMachine(s.system);
+
+  const el = $("#englog"), txt = (s.engine.log || []).join("\n"), sel = window.getSelection();
+  if (el.textContent !== txt && !(sel && !sel.isCollapsed && el.contains(sel.anchorNode))) {
+    const bottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4, top = el.scrollTop;
+    el.textContent = txt;
+    el.scrollTop = bottom ? el.scrollHeight : top;
+  }
+  $("#ahist").innerHTML = `<tr><th>Heure</th><th>Événement</th><th>Niveau</th><th>Message</th></tr>` +
+    s.alert_history.map((a) => `<tr><td>${new Date(a.time * 1000).toLocaleTimeString()}</td><td>${a.event === "clear" ? "fin" : a.event === "raise" ? "début" : "rappel"}</td>
+      <td><span class="pill ${a.level}">${a.level}</span></td><td>${esc(a.message)}</td></tr>`).join("");
+}
+
+/* half-circle gauge: green, then orange from 70 %, red from 90 % */
+function gauge(pct, size, label, sub) {
+  const r = size / 2 - 8, cx = size / 2, cy = size / 2, v = Math.max(0, Math.min(100, pct ?? 0));
+  const pt = (f) => [cx - r * Math.cos(Math.PI * f), cy - r * Math.sin(Math.PI * f)];
+  const [x0, y0] = pt(0), [x1, y1] = pt(1), [xv, yv] = pt(v / 100);
+  const color = pct == null ? "var(--line)" : v >= 90 ? "var(--crit)" : v >= 70 ? "var(--warn)" : "var(--ok)";
+  const sw = Math.max(6, size / 12);
+  return `<div style="text-align:center;width:${size}px"><svg viewBox="0 0 ${size} ${size / 2 + 6}" width="${size}" height="${size / 2 + 6}">
+    <path d="M${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1}" fill="none" stroke="var(--line)" stroke-width="${sw}" stroke-linecap="round"/>
+    ${pct != null && v > 0 ? `<path d="M${x0} ${y0} A${r} ${r} 0 0 1 ${xv.toFixed(1)} ${yv.toFixed(1)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>` : ""}
+    <text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="${size / 5}" font-weight="650" fill="var(--ink)">${pct == null ? "–" : Math.round(v) + " %"}</text></svg>
+    <div style="font-size:${size > 120 ? 13 : 12}px;font-weight:600">${esc(label)}</div>${sub ? `<div class="muted" style="font-size:11px">${esc(sub)}</div>` : ""}</div>`;
+}
+function renderMachine(m) {
+  if (!m) return;
+  const ENG = { render: "rendu", video: "vidéo", "video-enhance": "traitement", copy: "copie", gpu: "calcul", encoder: "encodeur", decoder: "décodeur", gfx: "rendu", enc: "encodeur", dec: "décodeur" };
+  const gpus = (m.gpus || []).map((g) => {
+    const name = (/\[(.*)\]/.exec(g.name) || [null, g.name])[1].slice(0, 26);    // "UHD Graphics 630" rather than the chip
+    const eng = Object.entries(g.engines || {}).sort((a, b) => b[1] - a[1]);
+    const sub = eng.slice(0, 2).map(([k, v]) => `${ENG[k] || k} ${Math.round(v)} %`).join(" · ") || "pas de mesure";
+    return `<div title="${esc(g.name + "\n" + eng.map(([k, v]) => `${ENG[k] || k} : ${v} %`).join("\n"))}">${gauge(g.busy, 96, "GPU", sub)}</div>`;
+  }).join("");
+  $("#machine").innerHTML = `<div class="row" style="align-items:flex-end;gap:10px 16px;flex-wrap:nowrap">
+    <div title="tous les processus de la machine, dvbtx compris">${gauge(m.cpu, 130, "CPU", `${m.cores} cœurs`)}</div>
+    ${gpus || '<span class="muted" style="font-size:12px">pas de GPU</span>'}
+  </div>`;
+}
+/* load of the sources of a multiplex's channels: their ffmpeg CPU, and the GPU of the re-encoded ones */
+function loadPills(ld) {
+  if (!ld) return "";
+  const det = (ld.gpu_channels || []).map((x) => `${x.name} : GPU ${x.gpu} %, CPU ${x.cpu ?? "–"} %`).join("\n");
+  const eng = Object.entries(ld.gpu_engines || {}).map(([k, v]) => `${k} ${v} %`).join(", ");
+  return `<span class="muted" title="processus ffmpeg des chaînes de ce multiplex (100 % = un cœur)">sources ${ld.cpu} % d'un cœur</span>` +
+    (ld.gpu != null ? `<span class="muted" title="${esc((eng ? "moteurs : " + eng + "\n" : "") + det)}">GPU ${ld.gpu} %</span>` : "");
+}
+/* what the ffmpeg of a source does: copy, CPU or GPU transcode, with its speed and load */
+function procCells(p) {
+  if (p.kind !== "ffmpeg") return '<td class="muted">–</td><td></td><td></td><td></td><td></td>';
+  const m = p.mode || {}, pr = p.progress || {}, u = p.usage || {};
+  const what = m.kind === "gpu" ? `<span class="pill info">GPU</span> ${esc(m.codec)}<div class="muted" style="font-size:11px">${esc(m.device)}</div>`
+    : m.kind === "cpu" ? `<span class="pill warning">CPU</span> ${esc(m.codec)}`
+    : m.kind === "audio" ? `copie vidéo<div class="muted" style="font-size:11px">audio réencodé (${esc(m.codec)})</div>`
+    : m.kind === "copy" ? '<span class="muted">copie</span>' : '<span class="muted">–</span>';
+  const speed = pr.speed != null ? pr.speed.toFixed(2) + "×" : "–";
+  const slow = pr.speed != null && pr.speed < 0.97 && p.uptime > 20;
+  const fps = m.kind === "gpu" || m.kind === "cpu" ? (pr.fps != null ? Math.round(pr.fps) + " · " : "") : "";
+  const gpuBusy = u.gpu && Object.keys(u.gpu).length ? Math.max(...Object.values(u.gpu)) : null;
+  const gpuTitle = u.gpu ? Object.entries(u.gpu).map(([k, v]) => `${k} ${v} %`).join(", ") : "";
+  return `<td>${what}</td>
+    <td class="num"${slow ? ' style="color:var(--crit)" title="plus lent que le temps réel"' : ""}>${fps}${speed}</td>
+    <td class="num">${pr.drop || pr.dup ? `${pr.drop || 0} / ${pr.dup || 0}` : '<span class="muted">0</span>'}</td>
+    <td class="num">${u.cpu != null ? u.cpu + " %" : "–"}</td>
+    <td class="num"${gpuTitle ? ` title="${esc(gpuTitle)}"` : ""}>${gpuBusy != null ? gpuBusy + " %" : '<span class="muted">–</span>'}</td>`;
+}
+
+function renderGpu(g) {
+  const el = $("#gpu");
+  if (!g) { el.innerHTML = '<span class="muted">–</span>'; return; }
+  const state = { off: "désactivé (ingest.gpu)", none: "aucune carte utilisable", ready: "prêt", learning: "apprentissage en cours…",
+                  error: "échec de l'apprentissage" }[g.state] || g.state;
+  const FAM = { h264: "H.264", hevc: "HEVC", mpeg2: "MPEG-2" };
+  const devs = (g.devices || []).map((d) => {
+    const fams = Object.entries(d.results || {}).map(([f, rows]) => {
+      const b = rows.find((r) => r.ok);
+      const why = rows.find((r) => !r.ok && /RC mode|entrypoint|bit rate|MFX|Assertion/.test(r.error || "")) || rows[0] || {};
+      return `<tr><td>${FAM[f] || f}</td><td>${b ? `<span class="pill ok">${Math.round(b.fps)} img/s</span> <span class="muted" style="font-size:12px" title="temps CPU par image (1080p → 720p)">CPU ${(b.cpu_ms ?? 0).toFixed(1)} ms/img</span>` : '<span class="pill">non</span>'}</td>
+        <td class="muted" style="font-size:12px">${b ? esc(b.label) : esc(why.error || "")}</td></tr>`;
+    }).join("");
+    return `<div style="margin-top:8px"><b>${esc(d.name)}</b> <span class="muted">${esc(d.id)} · pilote ${esc(d.driver || "aucun")}</span>
+      ${d.usable ? `<span class="pill">${d.load} transcodage(s)</span>` : `<span class="pill warning">non utilisable : ${esc(d.reason)}</span>`}
+      ${fams ? `<table style="margin-top:4px">${fams}</table>` : d.usable ? '<div class="muted">pas encore appris</div>' : ""}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="row"><span>État : <b>${esc(state)}</b></span>${g.progress ? `<span class="muted">${esc(g.progress)}</span>` : ""}
+    ${g.learnt_at ? `<span class="muted">appris le ${new Date(g.learnt_at * 1000).toLocaleString()}</span>` : ""}<span style="flex:1"></span>
+    ${g.state !== "off" && g.state !== "none" ? `<button onclick="gpuLearn()" ${g.state === "learning" ? "disabled" : ""}>Réapprendre les GPU</button>` : ""}</div>
+    ${devs || '<div class="muted">aucune carte graphique</div>'}
+    <div class="muted" style="font-size:12px;margin-top:8px">Un GPU sert aux chaînes à réencoder (codec non DVB, capture, encode = true) ; sinon libx264 sur le CPU. L'apprentissage ne se refait que si les cartes, leurs pilotes ou ffmpeg changent.</div>`;
+}
+async function gpuLearn() { const r = await api("POST", "/api/gpu/learn"); r.ok ? toast("apprentissage des GPU lancé") : report(r); refresh(); }
+
+/* previews: thumbnails (on demand, remembered by the browser) and the live picture of a channel */
+/* shown by default (web.preview_thumbnails of the configuration); the eye of the column hides or shows
+ * them, and this browser remembers it */
+const ICON_INFO = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5"/><circle cx="12" cy="7.5" r=".6" fill="currentColor"/></svg>';
+const ICON_EDIT = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+const EYE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7c1.9 0 3.6-.6 5-1.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
+const BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";   // until the first picture
+let thumbsPref = null;
+try { thumbsPref = localStorage.getItem("dvbtx_thumbs"); } catch (e) { /* private window */ }
+let thumbsOn = thumbsPref === "1";
+const thumbUrl = {};
+function thumbsToggle() {
+  thumbsOn = !thumbsOn;
+  thumbsPref = thumbsOn ? "1" : "0";
+  try { localStorage.setItem("dvbtx_thumbs", thumbsPref); } catch (e) { /* not kept */ }
+  if (last) render(last);
+  refreshThumbs();
+}
+let thumbsBusy = false;
+async function refreshThumbs() {
+  if (!thumbsOn || !last || document.hidden || thumbsBusy || tab !== "chaines") return;
+  thumbsBusy = true;
+  try {
+    for (const c of last.carriers) for (const sv of c.services) {
+      const r = await fetch(`/api/preview/${sv.sid}.jpg`);
+      if (r.status !== 200) continue;
+      const url = URL.createObjectURL(await r.blob()), old = thumbUrl[sv.sid];
+      thumbUrl[sv.sid] = url;
+      document.querySelectorAll(`img[data-thumb="${sv.sid}"]`).forEach((i) => { i.src = url; });
+      if (old) URL.revokeObjectURL(old);
+    }
+  } catch (e) { /* next time */ }
+  thumbsBusy = false;
+}
+let liveSid = null;
+function liveOpen(sid) {
+  const [, sv] = svcBySid(sid);
+  liveSid = sid;
+  $("#live_title").textContent = sv ? `${sv.lcn} · ${sv.name}` : "Direct";
+  const [c] = svcBySid(sid);
+  $("#live_ts").href = `/api/mux/${c ? c.index : 0}.ts`;
+  $("#live_tc").checked = false;
+  $("#livedlg").showModal();
+  liveStart();
+}
+/* live picture through Media Source Extensions: the page reads the fragmented MP4 itself and feeds the
+ * decoder, so the browser does not treat it as a file being downloaded (stalls). The delay is held
+ * near LIVE_TARGET s by nudging the playback rate (no pause, no jump unless far behind). */
+const LIVE_TARGET = 1.2;
+let live = null;
+function liveCodecs(buf) {
+  // codec string from the init segment: avcC holds profile, compatibility, level
+  const find = (tag) => { for (let i = 0; i + 4 <= buf.length; i++) if (buf[i] === tag.charCodeAt(0) && buf[i + 1] === tag.charCodeAt(1) && buf[i + 2] === tag.charCodeAt(2) && buf[i + 3] === tag.charCodeAt(3)) return i; return -1; };
+  const c = [], a = find("avcC");
+  if (a >= 0) c.push("avc1." + [buf[a + 5], buf[a + 6], buf[a + 7]].map((x) => x.toString(16).padStart(2, "0")).join(""));
+  if (find("mp4a") >= 0) c.push("mp4a.40.2");
+  return c.join(", ");
+}
+async function liveStart() {
+  liveStop();
+  const v = $("#live_video"), q = new URLSearchParams({ t: Date.now() });
+  if ($("#live_tc").checked) q.set("transcode", "1");
+  const url = `/api/preview/${liveSid}/live.mp4?${q}`;
+  $("#live_hint").textContent = "Chargement…";
+  if (!window.MediaSource) { v.src = url; v.play().catch(() => {}); return; }      // old browsers: plain download
+  const ctl = new AbortController(), ms = new MediaSource();
+  const st = live = { ctl, ms, timer: null, queue: [], sb: null };
+  v.src = URL.createObjectURL(ms);
+  v.onwaiting = () => { st.stalls = (st.stalls || 0) + (st.started ? 1 : 0); };
+  await new Promise((r) => ms.addEventListener("sourceopen", r, { once: true }));
+  const pump = () => {
+    if (st.sb && !st.sb.updating && st.queue.length && ms.readyState === "open") {
+      try { st.sb.appendBuffer(st.queue.shift()); } catch (e) { /* quota: the cleanup below frees room */ }
+    }
+  };
+  st.timer = setInterval(() => {
+    if (live !== st || !v.buffered.length) return;
+    const end = v.buffered.end(v.buffered.length - 1), ahead = end - v.currentTime;
+    if (v.paused && ahead >= LIVE_TARGET && !st.started) {
+      st.started = true;
+      v.play().catch(() => {});
+      $("#live_hint").textContent = "Ce qui part à l'antenne, avec quelques secondes de retard. Rien ne tourne quand la fenêtre est fermée.";
+    }
+    if (/stats/.test(location.hash)) console.log(`live t=${v.currentTime.toFixed(2)} ahead=${ahead.toFixed(2)} ranges=${[...Array(v.buffered.length).keys()].map((i) => v.buffered.start(i).toFixed(1) + "-" + v.buffered.end(i).toFixed(1)).join(",")} err=${v.error ? v.error.code + ":" + v.error.message : ""} ms=${ms.readyState} rate=${v.playbackRate} paused=${v.paused} stalls=${st.stalls || 0} frames=${(v.getVideoPlaybackQuality && v.getVideoPlaybackQuality().totalVideoFrames) || 0} dropped=${(v.getVideoPlaybackQuality && v.getVideoPlaybackQuality().droppedVideoFrames) || 0}`);
+    if (ahead > 6) v.currentTime = end - LIVE_TARGET;               // far behind (tab in the background)
+    else v.playbackRate = ahead > LIVE_TARGET + 1.5 ? 1.05 : ahead < LIVE_TARGET - 0.6 ? 0.95 : 1;
+    const start = v.buffered.start(0);
+    if (st.sb && !st.sb.updating && v.currentTime - start > 20) st.sb.remove(start, v.currentTime - 10);
+  }, 250);
+  try {
+    const resp = await fetch(url, { signal: ctl.signal });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || resp.statusText);
+    const reader = resp.body.getReader();
+    let head = new Uint8Array(0);
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done || live !== st) break;
+      if (!st.sb) {
+        const h = new Uint8Array(head.length + value.length);
+        h.set(head); h.set(value, head.length); head = h;
+        const codecs = liveCodecs(head);
+        if (!codecs.startsWith("avc1") && head.length < 2e6) continue;    // init segment not complete yet
+        st.sb = ms.addSourceBuffer(`video/mp4; codecs="${codecs || "avc1.640028, mp4a.40.2"}"`);
+        st.sb.addEventListener("updateend", pump);
+        st.queue.push(head);
+      } else st.queue.push(value);
+      pump();
+    }
+  } catch (e) {
+    if (live === st && e.name !== "AbortError") $("#live_hint").textContent = "Aperçu impossible : " + e.message;
+  }
+}
+function liveStop() {
+  const v = $("#live_video"), st = live;
+  live = null;
+  if (st) {
+    st.ctl.abort();                 // closes the connection: the server stops its ffmpeg
+    clearInterval(st.timer);
+  }
+  v.pause();
+  v.removeAttribute("src");
+  v.load();
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/status");
+    render(await r.json());
+  } catch (e) {
+    $("#engine").className = "pill critical";
+    $("#engine").textContent = "dvbtx injoignable";
+  }
+}
+async function refreshHist() {
+  try { hist = await (await fetch("/api/history?last=600")).json(); } catch (e) { /* keep the previous */ }
+}
+// options from the largest to the smallest (guard intervals: from the smallest); KDEFAULT: preselected (the most demanding for DVB-T/T2)
+const KFIELDS = {
+  dvbt: { bandwidth: ["8", "7", "6", "5"], mode: ["8k", "2k"], constellation: ["64qam", "16qam", "qpsk"],
+          code_rate: ["7/8", "5/6", "3/4", "2/3", "1/2"], guard: ["1/32", "1/16", "1/8", "1/4"] },
+  dvbt2: { bandwidth: ["10", "8", "7", "6", "5"], fft: ["32k", "16k", "8k", "4k", "2k", "1k"],
+           extended: ["true", "false"], guard: ["1/128", "1/32", "1/16", "19/256", "1/8", "19/128", "1/4"],
+           pilot: ["PP8", "PP7", "PP6", "PP5", "PP4", "PP3", "PP2", "PP1"], constellation: ["256qam", "64qam", "16qam", "qpsk"],
+           code_rate: ["5/6", "4/5", "3/4", "2/3", "3/5", "1/2"] },
+  dvbc: { constellation: ["256qam", "128qam", "64qam", "32qam", "16qam"], symbol_rate: "6900000" },
+  dvbs: { code_rate: ["7/8", "5/6", "3/4", "2/3", "1/2"], symbol_rate: "27500000" },
+  dvbs2: { modulation: ["32apsk", "16apsk", "8psk", "qpsk"], code_rate: ["9/10", "8/9", "5/6", "4/5", "3/4", "2/3", "3/5", "1/2"],
+           symbol_rate: "27500000", frame: ["normal", "short"] },
+};
+const KDEFAULT = { dvbt: { bandwidth: "8", code_rate: "7/8", guard: "1/32" },
+                   dvbt2: { bandwidth: "8", guard: "1/128", pilot: "PP7", code_rate: "5/6" },
+                   dvbs: { code_rate: "3/4" }, dvbs2: { modulation: "8psk", code_rate: "3/4" } };
+const KLABEL = { bandwidth: "bandwidth (MHz)" };
+function calcForm() {
+  const std = $("#k_std").value, f = KFIELDS[std], d = KDEFAULT[std] || {};
+  $("#k_fields").innerHTML = Object.entries(f).map(([k, v]) => Array.isArray(v)
+    ? `<label>${KLABEL[k] || k} <select data-k="${k}" onchange="calc()">${v.map((o) => `<option${o === d[k] ? " selected" : ""}>${o}</option>`).join("")}</select></label>`
+    : `<label>${KLABEL[k] || k} <input data-k="${k}" value="${v}" style="width:7em" oninput="calc()"></label>`).join("");
+  calc();
+}
+async function calc() {
+  const q = new URLSearchParams({ standard: $("#k_std").value, services: $("#k_n").value });
+  document.querySelectorAll("#k_fields [data-k]").forEach((e) =>
+    q.set(e.dataset.k, e.dataset.k === "bandwidth" ? String(Number(e.value) * 1e6) : e.value));
+  const r = await (await fetch("/api/calc?" + q)).json();
+  $("#k_rate").textContent = r.error ? "–" : (r.rate / 1e6).toFixed(3) + " Mbit/s";
+  $("#k_per").textContent = r.error ? r.error : `soit ${(r.per_service / 1e6).toFixed(2)} Mbit/s par chaîne (3 % gardés pour les tables)`;
+}
+calcForm();
+// ---- changes: same-origin JSON requests, with the token of web.token if the transmitter has one
+function token() { try { return localStorage.getItem("dvbtx_token") || ""; } catch (e) { return ""; } }
+async function api(method, path, body) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const h = {};
+    if (body !== undefined) h["Content-Type"] = "application/json";
+    if (token()) h["Authorization"] = "Bearer " + token();
+    const r = await fetch(path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401 && attempt === 0) {
+      const t = prompt("Jeton de l'émetteur (web.token) :");
+      if (!t) return { ok: false, error: "jeton requis" };
+      try { localStorage.setItem("dvbtx_token", t); } catch (e) { /* not kept */ }
+      continue;
+    }
+    return r.ok ? j : { ok: false, error: j.error || `erreur ${r.status}` };
+  }
+}
+function toast(html, bad) {
+  const d = document.createElement("div");
+  if (bad) d.className = "bad";
+  d.innerHTML = html;
+  $("#toast").appendChild(d);
+  setTimeout(() => d.remove(), bad ? 12000 : 6000);
+}
+function report(r) {
+  if (!r.ok) { toast(`<b>Refusé</b> · ${esc(r.error)}`, true); return false; }
+  if (r.pending || (r.saved && r.detail === undefined)) {
+    toast("Enregistré dans la configuration<div class=\"muted\">à appliquer avec les autres modifications (bandeau en haut)</div>");
+    loadConfig();
+    return true;
+  }
+  const W = { added: (d) => `${d.name} ajoutée`, recreated: (d) => `${d.name} recréée`, removed: (d) => `${d.name} supprimée`,
+    name: (d) => `Nouveau nom : ${d.from} → ${d.to}`, number: (d) => `${d.name} : numéro ${d.from} → ${d.to}`,
+    source: (d) => `${d.name} : nouvelle source ${[].concat(d.to).join(", puis ")}`, backup: (d) => `${d.name} : secours ${d.to || "aucun"}`,
+    si: (d) => `${d.name} : informations de service` };
+  const ch = (r.detail || []).map((d) => esc((W[d.what] || ((x) => x.name))(d))).join("<br>") || "aucun changement";
+  toast(`${ch}${r.saved ? '<div class="muted">enregistré dans la configuration</div>' : ""}${r.warning ? `<div class="err">${esc(r.warning)}</div>` : ""}`);
+  return true;
+}
+const chdlg = $("#chdlg");
+let chMode = null;
+function svcBySid(sid) {
+  for (const c of (last || {}).carriers || []) for (const sv of c.services) if (sv.sid === sid) return [c, sv];
+  return [null, null];
+}
+function chOpen(mode, c, sv) {
+  const srcs = sv ? (sv.sources || [sv.source]).join("\n") : "";
+  const cache = sv && sv.buffer_ms !== "auto" && sv.buffer_ms != null ? String(sv.buffer_ms) : "";
+  chMode = { mode, sid: sv ? sv.sid : null, before: sv ? { name: sv.name, lcn: sv.lcn, source: srcs, backup: sv.backup || "", cache } : null };
+  $("#ch_title").textContent = mode === "add" ? "Ajouter une chaîne" : `Modifier ${sv.name}`;
+  $("#ch_carrier").innerHTML = (last.carriers || []).map((x) => `<option value="${x.index}">${esc(x.name)}</option>`).join("");
+  $("#ch_carrier").value = c.index;
+  $("#ch_carrier_row").style.display = mode === "add" && last.carriers.length > 1 ? "" : "none";
+  $("#ch_swap_row").style.display = mode === "add" ? "none" : "";
+  $("#ch_name").value = sv ? sv.name : "";
+  $("#ch_lcn").value = sv ? sv.lcn : "";
+  $("#ch_swap").checked = false;
+  $("#ch_source").value = srcs;
+  $("#ch_cache").value = cache;
+  $("#ch_cache").placeholder = sv && sv.buffer_ms_used ? `auto (${sv.buffer_ms_used})` : "auto";
+  $("#ch_backup").value = sv ? (sv.backup || "") : (last.default_backup || "");   // a new channel: the default backup
+  const prio = sv ? sv.priority : 5, weight = String(sv ? sv.bitrate_weight : 1);
+  $("#ch_prio").innerHTML = [...Array(10).keys()].map((i) => `<option value="${i + 1}"${i + 1 === prio ? " selected" : ""}>${i + 1}${i + 1 === 5 ? " (normale)" : i === 0 ? " (perdue en premier)" : i === 9 ? " (perdue en dernier)" : ""}</option>`).join("");
+  const W = [["1", "SD (1)"], ["2", "HD 720p (2)"], ["3", "Full HD (3)"], ["6", "4K (6)"]];
+  if (!W.some(([v]) => v === weight)) W.push([weight, `poids ${weight}`]);
+  $("#ch_weight").innerHTML = W.map(([v, t]) => `<option value="${v}"${v === weight ? " selected" : ""}>${t}</option>`).join("");
+  const mb = sv && sv.max_bitrate ? String(sv.max_bitrate).trim() : "";      // "12M", "800k" or bit/s
+  $("#ch_maxbr").value = !mb ? "" : /m$/i.test(mb) ? parseFloat(mb) : /k$/i.test(mb) ? parseFloat(mb) / 1000 : Number(mb) / 1e6;
+  chMode.before = Object.assign(chMode.before || {}, { prio, weight, maxbr: $("#ch_maxbr").value });
+  $("#ch_err").textContent = "";
+  $("#ch_saved").textContent = last.config_path ? `Enregistré dans ${last.config_path}, à l'antenne avec « Appliquer » (cette chaîne seulement, les autres ne sont pas touchées).`
+    : "À l'antenne avec « Appliquer » (cette chaîne seulement ; pas de fichier de configuration : non enregistré).";
+  chdlg.showModal();
+}
+function chAdd(ci) { const c = last.carriers.find((x) => x.index === ci); chOpen("add", c, null); }
+function chEdit(sid) { const [c, sv] = svcBySid(sid); if (sv) chOpen("edit", c, sv); }
+async function chSubmit(ev) {
+  ev.preventDefault();
+  const name = $("#ch_name").value.trim(), lcn = $("#ch_lcn").value, bk = $("#ch_backup").value.trim();
+  const cache = $("#ch_cache").value.trim();
+  const lines = $("#ch_source").value.split("\n").map((x) => x.trim()).filter(Boolean);
+  const src = lines.join("\n"), srcBody = lines.length === 1 ? lines[0] : lines;
+  $("#ch_ok").disabled = true;
+  let r;
+  try {
+    if (chMode.mode === "add") {
+      const body = { carrier: Number($("#ch_carrier").value), name, source: srcBody };
+      if (lcn) body.lcn = Number(lcn);
+      body.backup = bk || false;               // emptied: no backup
+      if (cache) body.buffer_ms = Number(cache);
+      if ($("#ch_prio").value !== "5") body.priority = Number($("#ch_prio").value);
+      if ($("#ch_weight").value !== "1") body.bitrate_weight = Number($("#ch_weight").value);
+      if ($("#ch_maxbr").value) body.max_bitrate = $("#ch_maxbr").value + "M";
+      r = await api("POST", "/api/channels?apply=0", body);
+    } else {
+      const b = chMode.before, body = {};
+      if (name !== b.name) body.name = name;
+      if (lcn && Number(lcn) !== b.lcn) { body.lcn = Number(lcn); body.swap = $("#ch_swap").checked; }
+      if (src !== b.source) body.source = srcBody;
+      if (bk !== b.backup) body.backup = bk;
+      if (cache !== b.cache) body.buffer_ms = cache ? Number(cache) : null;
+      if (Number($("#ch_prio").value) !== b.prio) body.priority = Number($("#ch_prio").value);
+      if ($("#ch_weight").value !== b.weight) body.bitrate_weight = Number($("#ch_weight").value);
+      if ($("#ch_maxbr").value !== String(b.maxbr)) body.max_bitrate = $("#ch_maxbr").value ? $("#ch_maxbr").value + "M" : null;
+      if (!Object.keys(body).length) { chdlg.close(); return false; }
+      r = await api("PATCH", `/api/channels/${hex(chMode.sid)}?apply=0`, body);
+    }
+  } finally { $("#ch_ok").disabled = false; }
+  if (r.ok) { chdlg.close(); report(r); refresh(); } else { $("#ch_err").textContent = r.error; }
+  return false;
+}
+async function chRemove(sid) {
+  const [, sv] = svcBySid(sid);
+  if (!sv || !confirm(`Supprimer la chaîne ${sv.lcn} « ${sv.name} » ? Les autres chaînes ne sont pas touchées.`)) return;
+  report(await api("DELETE", `/api/channels/${hex(sid)}?apply=0`));
+  refresh();
+}
+let rateSid = null;
+function rateOpen(sid) {
+  const [, sv] = svcBySid(sid);
+  rateSid = sid;
+  $("#rt_title").textContent = sv ? `${sv.lcn} · ${sv.name}` : "Détails";
+  $("#ratedlg").showModal();
+  rateLoad();
+}
+/* one chart of the detail window: d = {t, mean, min, max, sum}; line: which of them; band: min-max */
+function detailChart(d, o) {
+  const W = 760, H = o.h || 130, P = 48, t0 = d.t[0], t1 = d.t[d.t.length - 1];
+  const ys = d[o.line].concat(o.band ? d.max.concat(d.min) : [], o.refs || []);
+  let lo = Math.min(0, ...ys), hi = Math.max(...ys);
+  if (hi - lo < 1e-9) hi = lo + 1;
+  hi += (hi - lo) * 0.08;
+  const x = (t) => P + (t1 > t0 ? (t - t0) / (t1 - t0) : 0) * (W - P - 6), y = (v) => H - 16 - ((v - lo) / (hi - lo)) * (H - 24);
+  const grid = [0, 0.5, 1].map((f) => { const v = lo + (hi - lo) * f; return `<line x1="${P}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
+    <text x="${P - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${o.fmt(v)}</text>`; }).join("");
+  const refs = (o.refs || []).map((v, k) => `<line x1="${P}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" stroke="${(o.refColors || [])[k] || "var(--crit)"}" stroke-dasharray="4 4"/>`).join("");
+  let body;
+  if (o.bars) {
+    const bw = Math.max(1, (W - P - 6) / d.t.length - 1);
+    body = d.t.map((t, i) => d[o.line][i] > 0 ? `<rect x="${(x(t) - bw / 2).toFixed(1)}" y="${y(d[o.line][i]).toFixed(1)}" width="${bw.toFixed(1)}" height="${(y(0) - y(d[o.line][i])).toFixed(1)}" fill="${o.color}"/>` : "").join("");
+  } else {
+    const band = o.band ? `<polygon points="${d.t.map((t, i) => `${x(t).toFixed(1)},${y(d.max[i]).toFixed(1)}`).join(" ")} ${d.t.map((t, i) => `${x(t).toFixed(1)},${y(d.min[i]).toFixed(1)}`).reverse().join(" ")}" fill="color-mix(in srgb, ${o.color} 18%, transparent)"/>` : "";
+    body = band + `<path d="${d.t.map((t, i) => `${i ? "L" : "M"}${x(t).toFixed(1)} ${y(d[o.line][i]).toFixed(1)}`).join("")}" fill="none" stroke="${o.color}" stroke-width="1.5"/>`;
+  }
+  return `<div style="margin-top:10px"><div class="row"><b style="font-size:13px">${o.title}</b><span class="muted" style="font-size:12px">${o.note || ""}</span></div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${refs}${body}</svg></div>`;
+}
+async function rateLoad() {
+  const h = Number($("#rt_hours").value);
+  const r = await (await fetch(`/api/channel/${rateSid}/rates?hours=${h}`)).json().catch(() => ({ error: "injoignable" }));
+  if (r.error || !r.rate) { $("#rt_body").innerHTML = `<div class="muted">${esc(r.error || "pas encore de mesure")}</div>`; return; }
+  const hm = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const st = r.rate.stats, cell = (v) => `<td class="num big" style="font-size:18px">${v}</td>`;
+  $("#rt_span").textContent = `de ${hm(r.from)} à ${hm(r.to)}, ${st.samples} mesures`;
+  let html = detailChart(r.rate, { title: "Débit", note: "Mbit/s · pointillés : 95e centile", line: "mean", band: true, color: "var(--s0)",
+    h: 190, refs: [st.p95], refColors: ["var(--warn)"], fmt: (v) => (v / 1e6).toFixed(1) }) +
+    `<table style="margin-top:4px"><tr><th class="num">Moyenne</th><th class="num">Minimum</th><th class="num">Médiane</th><th class="num">95e centile</th><th class="num">Maximum</th></tr>
+    <tr>${["mean", "min", "median", "p95", "max"].map((k) => cell(mbps(st[k]))).join("")}</tr></table>`;
+  if (r.late) {
+    const ls = r.late.stats, sg = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v));
+    html += detailChart(r.late, { title: "Retard d'envoi", note: `ms, le pire de chaque tranche · pire ${sg(ls.max)} · médiane ${sg(ls.median)} · − : en avance (normal)`,
+      line: "max", color: "var(--s2)", refs: [0], refColors: ["var(--muted)"], fmt: (v) => sg(v) });
+  }
+  if (r.margin) {
+    const ms_ = r.margin.stats;
+    html += detailChart(r.margin, { title: "Marge vidéo", note: `ms, la plus basse de chaque tranche · minimum ${Math.round(ms_.min)} · 5e centile ${Math.round(ms_.p5)} · médiane ${Math.round(ms_.median)} · pointillés : seuil d'alerte`,
+      line: "min", color: "var(--s1)", refs: [marginMin], fmt: (v) => Math.round(v) });
+  }
+  if (r.cc && !r.cc.stats.total) {
+    html += `<div style="margin-top:10px"><b style="font-size:13px">Pertes en entrée</b> <span class="pill ok">aucune sur la période</span></div>`;
+  } else if (r.cc) {
+    const tot = r.cc.stats.total;
+    html += detailChart(r.cc, { title: "Pertes en entrée", note: tot ? `${tot} erreur(s) de continuité sur la période : paquets perdus entre la source et dvbtx` : "aucune sur la période",
+      line: "sum", bars: true, color: "var(--warn)", h: 90, fmt: (v) => Math.round(v) });
+  }
+  $("#rt_body").innerHTML = html;
+}
+const openLogs = new Set();
+function logToggle(key) {
+  openLogs.has(key) ? openLogs.delete(key) : openLogs.add(key);
+  if (last) render(last);
+}
+async function carrierPower(i, on) {
+  if (!on && !confirm("Arrêter l'émission de ce multiplex ? Les autres continuent.")) return;
+  const r = await api("POST", `/api/carrier/${i}/${on ? "start" : "stop"}`);
+  r.ok ? toast(on ? "multiplex à l'antenne" : "multiplex arrêté") : report(r);
+  refresh();
+}
+async function restartInput(i) { const r = await api("POST", `/api/input/${i}/restart`); r.ok ? toast("source relancée") : report(r); refresh(); }
+async function reloadSi() { const r = await api("POST", "/api/reload"); r.ok ? toast("EPG et tables SI rechargés") : report(r); refresh(); }
+// ---- the configuration file: radios, multiplexes, profiles; pending until applied
+let conf = null;
+const STDNAME = { dvbt: "DVB-T", dvbt2: "DVB-T2", dvbc: "DVB-C", dvbs: "DVB-S", dvbs2: "DVB-S2", ts: "TS" };
+const KEYNAME = { frequency: "fréquence", constellation: "constellation", code_rate: "rendement", guard: "intervalle de garde",
+  bandwidth: "largeur", mode: "mode", fft: "FFT", pilot: "pilotes", standard: "norme", gain: "gain", name: "nom", radio: "radio",
+  symbol_rate: "débit symbole", source: "source", backup: "secours", lcn: "numéro", rate: "échantillonnage", center: "LO",
+  driver: "pilote", args: "arguments", amp: "ampli", tsid: "TSID", extended: "porteuses étendues", modulation: "modulation",
+  priority: "priorité", bitrate_weight: "part du débit", max_bitrate: "débit vidéo max", onid: "ONID", network_id: "network_id",
+  country: "pays", timezone: "fuseau horaire", provider: "fournisseur", buffer_ms: "cache", sid: "service_id" };
+function fmtVal(k, v) {
+  if (v == null) return "défaut";
+  if ((k === "frequency" || k === "center") && typeof v === "number") return (v / 1e6) + " MHz";
+  if ((k === "bandwidth") && typeof v === "number") return (v / 1e6) + " MHz";
+  if (k === "rate" && typeof v === "number") return (v / 1e6) + " MS/s";
+  if (k === "standard") return STDNAME[v] || v;
+  if ((k === "onid" || k === "network_id" || k === "sid") && typeof v === "number") return hex(v);
+  return typeof v === "object" ? JSON.stringify(v) : String(v);
+}
+async function loadConfig() {
+  try { conf = await (await fetch("/api/config")).json(); } catch (e) { return; }
+  renderConfig();
+}
+function renderConfig() {
+  const el = $("#pending"), c = conf;
+  if (!c || !c.path) { el.innerHTML = ""; $("#profiles").innerHTML = `<span class="muted">${esc(c && c.error || "–")}</span>`; return; }
+  const W = { radio: "radio", carrier: "multiplex", channel: "chaîne", settings: "réglages" };
+  const SECTION = { network: "réseau", defaults: "valeurs par défaut des chaînes", ingest: "sources", web: "page web", epg: "EPG" };
+  const items = (c.pending || []).map((d) => {
+    const what = d.what === "settings" ? `réglages <b>${esc(SECTION[d.name] || d.name)}</b>` : `${W[d.what] || d.what} <b>${esc(d.name)}</b>`;
+    if (d.op === "added") return `<li>${what} ajouté${d.what === "channel" ? "e" : ""}</li>`;
+    if (d.op === "removed") return `<li>${what} supprimé${d.what === "channel" ? "e" : ""}</li>`;
+    const ks = Object.entries(d.keys || {}).map(([k, [a, b]]) => `${esc(KEYNAME[k] || k)} ${esc(fmtVal(k, a))} → ${esc(fmtVal(k, b))}`);
+    return `<li>${what} : ${ks.join(", ") || "modifié"}</li>`;
+  }).join("");
+  el.innerHTML = (c.error ? `<div class="alert critical"><b>La configuration enregistrée n'est pas valide</b> · ${esc(c.error)}</div>` : "") +
+    (items ? `<div class="alert info" style="position:sticky;top:64px;z-index:1"><div class="row"><b>Modifications enregistrées, pas encore appliquées</b><span style="flex:1"></span>
+      <button onclick="configRevert()">Annuler les modifications</button> <button class="primary" onclick="configApply()">Appliquer</button></div>
+      <ul style="margin:6px 0 0;padding-left:20px">${items}</ul>
+      ${c.restart ? '<div class="muted" style="margin-top:4px">Radios ou multiplex changés : l\'émission redémarrera (quelques secondes sans signal).</div>' : '<div class="muted" style="margin-top:4px">Seules les chaînes changent : les autres ne sont pas coupées.</div>'}</div>` : "");
+  renderNet(c);
+  const n = (c.pending || []).length, cfgTab = document.querySelector('nav#tabs a[data-tab="config"]');
+  cfgTab.innerHTML = "Configuration" + (n ? ` <span class="pill info">${n}</span>` : "");
+  $("#radiocfg").innerHTML = (c.radios || []).length ? `<table><tr><th>Nom</th><th>Pilote</th><th class="num">Gain</th><th class="num">Échantillonnage</th><th>Arguments</th><th></th></tr>` +
+    c.radios.map((r, i) => `<tr><td><b>${esc(r.name || "radio " + i)}</b></td><td>${esc(r.driver || "hackrf")}</td><td class="num">${r.gain ?? 30} dB${r.amp ? " + ampli" : ""}</td>
+      <td class="num">${r.rate ? (r.rate / 1e6).toFixed(3) + " MS/s" : "auto"}</td><td class="muted">${esc(r.args || "")}</td>
+      <td style="text-align:right"><button onclick="radioOpen(${i})">Modifier</button></td></tr>`).join("") + "</table>" : '<span class="muted">aucune radio</span>';
+  $("#carcfg").innerHTML = (c.carriers || []).length ? `<table><tr><th>Nom</th><th>Radio</th><th>Norme</th><th class="num">Fréquence</th><th>Modulation</th><th class="num">Capacité</th><th class="num">Chaînes</th><th></th></tr>` +
+    c.carriers.map((x, i) => `<tr><td><b>${esc(x.name || "Mux " + (i + 1))}</b></td><td>${esc(x.radio ?? "")}</td><td>${esc(STDNAME[x.standard || "dvbt"] || x.standard)}</td>
+      <td class="num">${x.frequency ? (x.frequency / 1e6).toFixed(3) + " MHz" : "–"}</td>
+      <td class="muted">${esc([x.fft || x.mode, x.constellation || x.modulation, x.code_rate, x.guard, x.pilot].filter(Boolean).join(" "))}</td>
+      <td class="num">${x.capacity ? mbps(x.capacity) + " Mbit/s" : "–"}</td><td class="num">${x.services}</td>
+      <td style="text-align:right"><button onclick="carOpen(${i})">Modifier</button></td></tr>`).join("") + "</table>" : '<span class="muted">aucun multiplex</span>';
+  const profs = (c.profiles || []).map((p) => `<tr><td><b>${esc(p.name)}</b>${p.same ? ' <span class="pill ok">= fichier actuel</span>' : ""}</td>
+    <td class="muted">${new Date(p.mtime * 1000).toLocaleString()}</td>
+    <td style="white-space:nowrap;text-align:right"><button onclick="profileLoad('${esc(p.name)}')">Charger</button> <button class="danger" onclick="profileDelete('${esc(p.name)}')">✕</button></td></tr>`).join("");
+  $("#profiles").innerHTML = `<div class="muted" style="font-size:12px">Fichier appliqué : ${esc(c.path)} · chaque profil est une copie à côté (${esc(c.path)}.<i>nom</i>) ; charger un profil le copie sur le fichier, à appliquer ensuite.</div>
+    ${profs ? `<table style="margin-top:8px">${profs}</table>` : '<div class="muted" style="margin-top:8px">aucun profil</div>'}
+    <div class="row" style="margin-top:10px"><input id="pf_name" type="text" placeholder="nom du profil" maxlength="40" style="font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+      <button onclick="profileSave()">Enregistrer la configuration actuelle comme profil</button></div>`;
+}
+/* the ONID TVs expect for terrestrial: 0x2000 + the country's ISO 3166 numeric code (ETSI TS 101 162);
+ * many TVs ignore the channel numbers (LCN) of a network that is not of their country */
+const COUNTRIES = [["France", "FRA", 250], ["Belgique", "BEL", 56], ["Suisse", "CHE", 756], ["Luxembourg", "LUX", 442],
+  ["Monaco", "MCO", 492], ["Canada", "CAN", 124], ["Allemagne", "DEU", 276], ["Royaume-Uni", "GBR", 826], ["Irlande", "IRL", 372],
+  ["Espagne", "ESP", 724], ["Portugal", "PRT", 620], ["Italie", "ITA", 380], ["Pays-Bas", "NLD", 528], ["Autriche", "AUT", 40],
+  ["Danemark", "DNK", 208], ["Suède", "SWE", 752], ["Norvège", "NOR", 578], ["Finlande", "FIN", 246], ["Pologne", "POL", 616],
+  ["Tchéquie", "CZE", 203], ["Maroc", "MAR", 504], ["Algérie", "DZA", 12], ["Tunisie", "TUN", 788]];
+let netShown = "";
+function renderNet(c) {
+  const el = $("#netcfg"), n = c.network || {};
+  const sig = JSON.stringify(n);
+  if (sig === netShown || el.contains(document.activeElement)) return;      // not while it is being edited
+  netShown = sig;
+  const hexv = (v) => typeof v === "number" ? "0x" + v.toString(16).toUpperCase().padStart(4, "0") : (v ?? "");
+  const match = COUNTRIES.find(([, , code]) => 0x2000 + code === n.onid);
+  el.innerHTML = `<div id="netform" class="cfg">
+      <span><label for="nw_name">Nom du réseau</label><input id="nw_name" value="${esc(n.name)}" maxlength="60"></span>
+      <span><label for="nw_provider">Fournisseur</label><input id="nw_provider" value="${esc(n.provider)}" maxlength="60"></span>
+      <span><label for="nw_pick">Pays (remplit ONID, réseau, code)</label><select id="nw_pick" onchange="netPick()"><option value="">autre…</option>
+        ${COUNTRIES.map(([nm, a3, code]) => `<option value="${a3}"${match && match[1] === a3 ? " selected" : ""}>${nm} (0x${(0x2000 + code).toString(16).toUpperCase()})</option>`).join("")}</select></span>
+      <span><label for="nw_onid">ONID (original_network_id)</label><input id="nw_onid" value="${esc(hexv(n.onid))}" placeholder="0x20FA"></span>
+      <span><label for="nw_nid">network_id</label><input id="nw_nid" value="${esc(hexv(n.network_id))}" placeholder="0x20FA"></span>
+      <span><label for="nw_country">Code pays (ISO 3166, 3 lettres)</label><input id="nw_country" value="${esc(n.country)}" maxlength="3"></span>
+      <span><label for="nw_tz">Fuseau horaire</label><input id="nw_tz" value="${esc(n.timezone)}"></span>
+    </div>
+    <div class="row" style="margin-top:10px"><span class="muted" style="font-size:12px;flex:1">Beaucoup de téléviseurs ignorent les numéros de chaînes (LCN) d'un réseau qui n'a pas l'ONID de leur pays. En diffusion terrestre, ONID = 0x2000 + code pays ISO 3166 numérique (France 250 → 0x20FA). Liste officielle : <a href="https://www.dvbservices.com/identifiers/original_network_id" target="_blank" rel="noopener">registre DVB des original_network_id</a> · <a href="https://fr.wikipedia.org/wiki/ISO_3166-1" target="_blank" rel="noopener">codes pays ISO 3166</a>.</span>
+      <button class="primary" onclick="netSave()">Enregistrer</button></div>`;
+}
+function netPick() {
+  const c = COUNTRIES.find(([, a3]) => a3 === $("#nw_pick").value);
+  if (!c) return;
+  const id = "0x" + (0x2000 + c[2]).toString(16).toUpperCase();
+  $("#nw_onid").value = id; $("#nw_nid").value = id; $("#nw_country").value = c[1];
+}
+async function netSave() {
+  const num = (v) => { v = v.trim(); if (!v) return null; const x = /^0x/i.test(v) ? parseInt(v, 16) : Number(v); return Number.isInteger(x) && x >= 0 && x <= 0xFFFF ? x : NaN; };
+  const body = { name: $("#nw_name").value.trim() || null, provider: $("#nw_provider").value.trim() || null, onid: num($("#nw_onid").value),
+    network_id: num($("#nw_nid").value), country: $("#nw_country").value.trim().toUpperCase() || null, timezone: $("#nw_tz").value.trim() || null };
+  if (Number.isNaN(body.onid) || Number.isNaN(body.network_id)) { toast("<b>Refusé</b> · ONID et network_id : 0 à 0xFFFF", true); return; }
+  netShown = "";
+  report(await api("PATCH", "/api/config/network", body));
+}
+async function configApply() {
+  if (conf && conf.restart && !confirm("Les radios ou les multiplex changent : l'émission va redémarrer (quelques secondes sans signal). Appliquer ?")) return;
+  const r = await api("POST", "/api/config/apply");
+  r.ok ? toast(r.restarted ? "Configuration appliquée, émission redémarrée" : `Configuration appliquée${r.changes && r.changes.length ? "<br>" + r.changes.map(esc).join("<br>") : ""}`) : report(r);
+  loadConfig(); refresh();
+}
+async function configRevert() {
+  if (!confirm("Remettre le fichier comme la configuration en cours (les modifications en attente sont perdues) ?")) return;
+  const r = await api("POST", "/api/config/revert"); r.ok ? toast("Modifications annulées") : report(r); loadConfig();
+}
+async function profileSave() {
+  const n = $("#pf_name").value.trim(); if (!n) return;
+  const r = await api("POST", "/api/profiles", { name: n }); r.ok ? toast(`Profil « ${esc(n)} » enregistré`) : report(r); loadConfig();
+}
+async function profileLoad(n) {
+  if (!confirm(`Copier le profil « ${n} » sur le fichier de configuration ? (l'ancien est gardé en .bak ; à appliquer ensuite)`)) return;
+  const r = await api("POST", `/api/profiles/${encodeURIComponent(n)}/load`); r.ok ? toast(`Profil « ${esc(n)} » chargé : à appliquer`) : report(r); loadConfig();
+}
+async function profileDelete(n) {
+  if (!confirm(`Supprimer le profil « ${n} » ?`)) return;
+  const r = await api("DELETE", `/api/profiles/${encodeURIComponent(n)}`); r.ok ? toast("Profil supprimé") : report(r); loadConfig();
+}
+
+// radio dialog (values of the file)
+let radioIdx = null;
+const radiodlg = $("#radiodlg");
+function radioOpen(i) {
+  if (!conf || !conf.path) { toast("pas de fichier de configuration à modifier", true); return; }
+  radioIdx = i;
+  const r = i == null ? { driver: "hackrf" } : conf.radios[i] || {};
+  $("#rd_title").textContent = i == null ? "Nouvelle radio" : `Radio ${r.name || i}`;
+  $("#rd_driver").innerHTML = conf.drivers.map((d) => `<option${d === (r.driver || "hackrf") ? " selected" : ""}>${d}</option>`).join("");
+  $("#rd_name").value = r.name || "";
+  $("#rd_args").value = r.args || "";
+  $("#rd_gain").value = r.gain ?? "";
+  $("#rd_backoff").value = r.backoff_db ?? "";
+  $("#rd_rate").value = r.rate ? r.rate / 1e6 : "";
+  $("#rd_center").value = r.center ? r.center / 1e6 : "";
+  $("#rd_lo").value = r.lo_offset ?? "";
+  $("#rd_amp").checked = !!r.amp;
+  $("#rd_del").style.display = i == null ? "none" : "";
+  $("#rd_err").textContent = "";
+  radiodlg.showModal();
+}
+$("#radioform").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const num = (v, k = 1) => v.trim() === "" ? null : Number(v) * k;
+  const lo = $("#rd_lo").value.trim();
+  const body = { name: $("#rd_name").value.trim(), driver: $("#rd_driver").value, args: $("#rd_args").value.trim() || null,
+    gain: num($("#rd_gain").value), backoff_db: num($("#rd_backoff").value), rate: num($("#rd_rate").value, 1e6),
+    center: num($("#rd_center").value, 1e6), lo_offset: lo === "" ? null : (isNaN(Number(lo)) ? lo : Number(lo)), amp: $("#rd_amp").checked || null };
+  for (const k of ["rate", "center"]) if (body[k] != null) body[k] = Math.round(body[k]);
+  let r;
+  if (radioIdx == null) {
+    for (const k in body) if (body[k] == null) delete body[k];
+    r = await api("POST", "/api/config/radio", body);
+  } else r = await api("PATCH", `/api/config/radio/${radioIdx}`, body);
+  if (!r.ok) { $("#rd_err").textContent = r.error; return; }
+  radiodlg.close(); report(r);
+});
+async function radioDelete() {
+  if (!confirm("Supprimer cette radio du fichier ?")) return;
+  const r = await api("DELETE", `/api/config/radio/${radioIdx}`);
+  if (!r.ok) { $("#rd_err").textContent = r.error; return; }
+  radiodlg.close(); report(r);
+}
+
+// multiplex dialog
+let carIdx = null;
+const cardlg = $("#cardlg");
+const MHZ_KEYS = { bandwidth: 1 };
+function carOpen(i) {
+  if (!conf || !conf.path) { toast("pas de fichier de configuration à modifier", true); return; }
+  carIdx = i;
+  const c = i == null ? { standard: "dvbt2", radio: (conf.radios[0] || {}).name } : conf.carriers[i] || {};
+  $("#cd_title").textContent = i == null ? "Nouveau multiplex" : `Multiplex ${c.name || i}`;
+  $("#cd_name").value = c.name || "";
+  $("#cd_radio").innerHTML = conf.radios.map((r, j) => `<option value="${esc(r.name || j)}"${(r.name || j) === c.radio ? " selected" : ""}>${esc(r.name || "radio " + j)}</option>`).join("");
+  $("#cd_std").value = c.standard || "dvbt";
+  $("#cd_freq").value = c.frequency ? c.frequency / 1e6 : "";
+  $("#cd_tsid").value = c.tsid ?? "";
+  $("#cd_del").style.display = i == null ? "none" : "";
+  $("#cd_err").textContent = "";
+  carFields(c);
+  cardlg.showModal();
+}
+function carFields(c) {
+  const std = $("#cd_std").value, f = KFIELDS[std] || {}, d = KDEFAULT[std] || {};
+  const cur = c && (c.standard || "dvbt") === std ? c : {};
+  $("#cd_fields").innerHTML = Object.entries(f).map(([k, v]) => {
+    let val = cur[k] ?? d[k];
+    if (k in MHZ_KEYS && typeof val === "number") val = String(val / 1e6);
+    if (typeof val === "boolean") val = String(val);
+    return `<span><label>${esc(KLABEL[k] || k)}</label>` + (Array.isArray(v)
+      ? `<select data-k="${k}" onchange="carCalc()">${v.map((o) => `<option${o === String(val ?? v[0]) ? " selected" : ""}>${o}</option>`).join("")}</select>`
+      : `<input data-k="${k}" value="${esc(val ?? v)}" style="width:9em" oninput="carCalc()">`) + "</span>";
+  }).join("");
+  carCalc();
+}
+function carValues() {
+  const out = {};
+  document.querySelectorAll("#cd_fields [data-k]").forEach((e) => {
+    const k = e.dataset.k, v = e.value;
+    out[k] = k in MHZ_KEYS ? Math.round(Number(v) * 1e6) : k === "symbol_rate" ? Math.round(Number(v)) : k === "extended" ? v === "true" : v;
+  });
+  return out;
+}
+async function carCalc() {
+  const q = new URLSearchParams({ standard: $("#cd_std").value, services: carIdx != null && conf.carriers[carIdx] ? conf.carriers[carIdx].services || 1 : 1 });
+  for (const [k, v] of Object.entries(carValues())) q.set(k, String(v));
+  try {
+    const r = await (await fetch("/api/calc?" + q)).json();
+    $("#cd_rate").textContent = r.error ? "–" : (r.rate / 1e6).toFixed(2) + " Mbit/s";
+    $("#cd_per").textContent = r.error ? r.error : `soit ${(r.per_service / 1e6).toFixed(2)} Mbit/s par chaîne`;
+  } catch (e) { /* keep */ }
+}
+$("#carform").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const tsid = $("#cd_tsid").value.trim();
+  const body = Object.assign({ name: $("#cd_name").value.trim(), radio: $("#cd_radio").value, standard: $("#cd_std").value,
+    frequency: Math.round(Number($("#cd_freq").value) * 1e6), tsid: tsid === "" ? null : Number(tsid) }, carValues());
+  let r;
+  if (carIdx == null) {
+    for (const k in body) if (body[k] == null) delete body[k];
+    r = await api("POST", "/api/config/carrier", body);
+  } else r = await api("PATCH", `/api/config/carrier/${carIdx}`, body);
+  if (!r.ok) { $("#cd_err").textContent = r.error; return; }
+  cardlg.close(); report(r);
+});
+async function carDelete() {
+  const c = conf.carriers[carIdx] || {};
+  if (!confirm(`Supprimer le multiplex « ${c.name} » et ses ${c.services || 0} chaîne(s) du fichier ?`)) return;
+  const r = await api("DELETE", `/api/config/carrier/${carIdx}`);
+  if (!r.ok) { $("#cd_err").textContent = r.error; return; }
+  cardlg.close(); report(r);
+}
+loadConfig();
+setInterval(loadConfig, 10000);
+
+// ---- tabs: #etat #chaines #sources #config #journaux (remembered by the browser)
+const TABS = ["etat", "chaines", "sources", "config", "journaux"];
+let tab = "etat";
+function showTab(name) {
+  let saved = null;
+  try { saved = localStorage.getItem("dvbtx_tab"); } catch (e) { /* private window */ }
+  tab = TABS.includes(name) ? name : TABS.includes(saved) ? saved : "etat";
+  document.querySelectorAll(".tab").forEach((e) => e.classList.toggle("on", e.dataset.tab === tab));
+  document.querySelectorAll("nav#tabs a").forEach((a) => a.classList.toggle("on", a.dataset.tab === tab));
+  try { localStorage.setItem("dvbtx_tab", tab); } catch (e) { /* not kept */ }
+  if (tab === "chaines") refreshThumbs();
+}
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1).split("&")[0]));
+showTab(location.hash.slice(1).split("&")[0]);
+
+refreshHist().then(refresh);
+setInterval(refresh, 1000);
+setInterval(refreshHist, 2000);
+setInterval(refreshThumbs, 4000);
+$("#livedlg").addEventListener("close", liveStop);
+</script>
+</body>
+</html>

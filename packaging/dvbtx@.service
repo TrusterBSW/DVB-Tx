@@ -1,0 +1,32 @@
+[Unit]
+Description=dvbtx DVB transmitter, instance %i (/etc/dvbtx/%i.toml)
+Documentation=file:///usr/share/doc/dvbtx/README.md
+After=network-online.target dvbtx-power.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# each instance needs its own radios, web port and ingest ports in its file
+ExecStart=/usr/bin/dvbtx run --config /etc/dvbtx/%i.toml --work-dir /run/dvbtx-%i
+# power profile transmit while on air, save after (only when dvbtx-power.service is enabled):
+# dvbtx-power(8)
+ExecStartPre=-+/usr/bin/dvbtx power hook start %n -c /etc/dvbtx/%i.toml
+ExecStopPost=-+/usr/bin/dvbtx power hook stop %n -c /etc/dvbtx/%i.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Environment=HOME=/root PYTHONUNBUFFERED=1
+RuntimeDirectory=dvbtx-%i
+StateDirectory=dvbtx
+WorkingDirectory=/var/lib/dvbtx
+KillMode=mixed
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+LimitRTPRIO=99
+LimitNICE=-20
+LimitMEMLOCK=infinity
+NoNewPrivileges=yes
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

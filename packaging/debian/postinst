@@ -1,0 +1,25 @@
+#!/bin/sh
+set -e
+case "$1" in
+    configure)
+        mkdir -p /var/lib/dvbtx/epg
+        if [ -d /run/systemd/system ]; then
+            sysctl -q -p /etc/sysctl.d/90-dvbtx.conf >/dev/null 2>&1 || true
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        if [ ! -e /var/lib/dvbtx/backup.ts ]; then
+            /usr/bin/dvbtx make-backup -o /var/lib/dvbtx/backup.ts >/dev/null 2>&1 || \
+                echo "dvbtx: could not create /var/lib/dvbtx/backup.ts (dvbtx make-backup)" >&2
+        fi
+        cat <<'MSG'
+dvbtx installed, not started. Closed coax only: never radiate on broadcast frequencies.
+  configuration: /etc/dvbtx/dvbtx.toml   (examples: /usr/share/dvbtx/configs/)
+  check it:      dvbtx check -c /etc/dvbtx/dvbtx.toml
+  try it:        sudo dvbtx run -c /etc/dvbtx/dvbtx.toml
+  as a service:  sudo systemctl enable --now dvbtx ; journalctl -u dvbtx -f
+  web page:      http://127.0.0.1:8080/
+  EPG folder:    /var/lib/dvbtx/epg (XMLTV or TSDuck EIT XML)
+MSG
+        ;;
+esac
+exit 0
