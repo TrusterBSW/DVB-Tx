@@ -45,7 +45,11 @@ for img in $IMAGES; do
         for p in dvbtx.1 dvbtx-channel.1 dvbtx.toml.5 dvbtx-sources.7 dvbtx.7 dvbtx-web.7 dvbtx-engine.8 dvbtx-power.8; do
             man -w "${p%.*}" >/dev/null 2>&1 || man -w "$p" >/dev/null || echo "missing man page $p"
         done
-        echo "man pages: $(ls /usr/share/man/man*/dvbtx* | wc -l)"
+        for p in dvbtx.1 dvbtx-channel.1 dvbtx.toml.5 dvbtx-sources.7 dvbtx.7 dvbtx-web.7 dvbtx-engine.8 dvbtx-power.8; do
+            man -L fr -w "${p%.*}" 2>/dev/null | grep -q /fr/ || man -L fr -w "$p" 2>/dev/null | grep -q /fr/ ||
+                echo "missing French man page $p"
+        done
+        echo "man pages: $(ls /usr/share/man/man*/dvbtx* | wc -l) in English, $(ls /usr/share/man/fr/man*/dvbtx* 2>/dev/null | wc -l) in French"
         lintian --no-tag-display-limit /out/dvbtx_*"$s"_*.deb 2>&1 | grep -E "^E:" || echo "lintian: no error"'
 done
 ls -l "$OUT"

@@ -1,0 +1,658 @@
+.\" -*- coding: UTF-8 -*-
+.nr HY 0
+.TH DVBTX-SOURCES 7 2026-11-02 "dvbtx 0.1.0" "manuel dvbtx"
+.SH NOM
+dvbtx-sources \- syntaxe et comportement des sources des chaînes dvbtx
+.SH SYNOPSIS
+.EX
+[[carrier.service]]
+name = "Info"
+source = "SOURCE"                          # ou ["SOURCE", "SOURCE", ...]
+backup = "/var/lib/dvbtx/backup.ts"        # ou false
+.EE
+.SH DESCRIPTION
+Chaque chaîne (service) d'un multiplex
+.B dvbtx
+diffuse une
+.IR source "\~:"
+un fichier, un dossier, une URL de flux, un périphérique de capture, un tube ou une commande.
+La clé
+.B source
+d'une table
+.B [[carrier.service]]
+(voir
+.BR dvbtx.toml (5)),
+l'option
+.B \-\-service
+de
+.BR dvbtx (1),
+.BR dvbtx\-channel (1)
+et la page web acceptent toutes les mêmes valeurs.
+La clé
+.B backup
+accepte elle aussi les mêmes valeurs.
+.PP
+Chaque source tourne dans son propre processus, généralement
+.BR ffmpeg (1),
+parfois alimenté par un producteur
+.RB ( streamlink (1),
+.BR yt\-dlp ,
+une commande), qui la transforme en MPEG\-TS à programme unique envoyé en UDP vers
+.BR 127.0.0.1 :\fIport\fR
+(port
+.BR ingest.base_port " + le numéro de l'entrée)."
+Le moteur le lit, recale chaque paquet dans le temps, réestampille les PCR et renumérote les PID
+dans le multiplex.
+Une source qui plante, se fige ou prend du retard ne perturbe jamais les autres\~: sa chaîne bascule
+sur son flux de secours, et le processus est relancé.
+Seules les sources
+.B udp+direct://
+se passent de ffmpeg et sont reçues par le moteur lui-même.
+.SH FORMES DE SOURCE
+.SS Fichiers
+.TP
+.IR /path/file.mkv ", " file:///path/file.mkv
+Un fichier local, lu en boucle
+.RB ( "loop = true" ,
+ffmpeg
+.BR "\-stream_loop \-1" ).
+Un chemin qui désigne une FIFO est plutôt lu comme un flux.
+.TP
+.IR dir:/path/folder ", " /path/folder
+Tous les fichiers vidéo du dossier
+.RI ( .mkv ,
+.IR .mp4 ,
+.IR .ts ,
+.IR .m2ts ,
+.IR .mov ,
+.IR .avi ,
+.IR .webm ,
+.IR .mpg ,
+.IR .mpeg ,
+.IR .flv ,
+.IR .m4v ,
+.IR .wmv ),
+par ordre de nom, comme une liste de lecture\~: un ffmpeg par fichier, le suivant lancé dès qu'un
+fichier se termine, retour au premier après le dernier.
+Des fichiers de formats différents peuvent être mélangés\~; le moteur gère le changement de base de
+temps et de PMT.
+.SS HTTP et HLS
+.TP
+.IR http://... ", " https://...
+Un flux progressif ou une playlist HLS, avec reconnexion sur erreur réseau (délai de lecture de
+15 s).
+Une URL HLS (contenant
+.BR m3u8 )
+est lue par streamlink ou par ffmpeg selon
+.B hls
+(voir
+.BR "LECTEUR HLS" ).
+.TP
+.IB URL #variant= N
+Seulement la variante
+.I N
+d'une playlist maître HLS (0 = la première, au sens où
+.B ffprobe \-show_programs
+les numérote)\~; sinon ffmpeg prend la première variante listée.
+Lue par ffmpeg.
+.TP
+.IB URL #quality= Q
+La qualité que streamlink nomme
+.I Q
+.RB ( 720p ,
+.BR 3300k ,
+.BR best ,
+.BR 1000k,worst "...\~;"
+par défaut
+.BR best ),
+pour une URL HLS\~; lue par streamlink quoi qu'indique
+.B hls
+(erreur s'il n'est pas installé).
+.PP
+Le fragment ne s'applique qu'à cette source, ce qui permet à une liste de se replier sur une
+qualité inférieure du même flux, et n'est jamais envoyé au serveur.
+.TP
+.BI m3u: PATH_OR_URL # ENTRY
+Une entrée d'une playlist M3U, locale ou récupérée en HTTP\~: retrouvée par son titre,
+.B tvg\-name
+ou
+.B tvg\-id
+(casse, espaces et ponctuation ignorés), ou par son indice à partir de 0 lorsque
+.I ENTRY
+est un nombre\~; sans
+.BI # ENTRY ,
+la première entrée.
+Résolue à nouveau à chaque démarrage de la source.
+.TP
+.BI streamlink: URL \fR[\fB#quality= Q \fR]
+Tout ce pour quoi streamlink dispose d'un module (Dailymotion, YouTube, HLS...), écrit par
+streamlink sur un tube vers ffmpeg\~; qualité
+.B best
+par défaut.
+.TP
+.BI twitch:// CHANNEL \fR[\fB?quality= Q \fR]
+Une chaîne Twitch, via streamlink avec ses publicités désactivées\~; sans streamlink, le format
+.B best
+fourni par yt\-dlp.
+.TP
+.BI ytdlp: URL
+Tout ce que yt\-dlp sait lire (directs YouTube...), avec le format
+.B ytdlp_format
+(par défaut\~: H.264 jusqu'à 1080p avec AAC).
+Les URL des flux sont résolues à nouveau à chaque démarrage (elles expirent).
+Lorsque yt\-dlp fournit des flux vidéo et audio séparés, les deux sont lus avec leurs propres
+horodatages pour rester synchronisés.
+.TP
+.BI htsp:// USER : PASS @ HOST :9982/ CHANNEL\fR,\ \fBtvh://\fR...
+Une chaîne tvheadend, par nom ou par numéro, lue sur son port de streaming HTTP (le port HTSP
+moins un) avec le profil
+.B pass
+.RB ( ?profile=...
+en choisit un autre).
+.SS Flux réseau
+.TP
+.BI rtmp:// HOST / APP / KEY\fR,\ \fBrtmps://\fR...
+Lecture RTMP (pull).
+.TP
+.BI rtmp://0.0.0.0:1935/ APP / KEY ?listen
+RTMP reçu\~: dvbtx écoute, et OBS (ou tout client RTMP) diffuse vers
+.BI rtmp:// this\-host / APP / KEY\fR.
+Pas de délai d'expiration\~: la chaîne diffuse son flux de secours jusqu'à ce qu'un client se
+connecte.
+.TP
+.BI rtsp:// ...
+RTSP sur TCP
+.RB ( rtsp_transport
+le change), délai d'expiration de 15 s.
+.TP
+.BI srt:// ...\fR,\ \fBudp://\fR...,\ \fBrtp://\fR...,\ \fBtcp://\fR...
+Lus par ffmpeg avec ses propres options dans l'URL
+.RB ( srt://0.0.0.0:9000?mode=listener ).
+.B udp://
+reçoit une grande FIFO, débordements tolérés, délai d'expiration de 15 s.
+.TP
+.BI udp+direct:// HOST : PORT\fR,\ \fBdirect://\fR...
+Un MPEG\-TS sur UDP, unicast ou multicast, reçu par le moteur lui-même\~: pas de processus, pas de
+réencodage, pas de vérification des codecs.
+Il doit transporter des codecs DVB.
+.B program
+sélectionne un programme d'un flux multi\-programme (0\~: le premier).
+Une simple source
+.B udp://
+avec
+.B direct = true
+revient au même.
+.SS Sources de capture et sources générées
+Elles sont toujours encodées (voir
+.BR "COPIE OU ENCODAGE" ).
+.TP
+.BI v4l2: DEVICE ? OPTIONS
+Une webcam ou une carte de capture HDMI
+.RI ( /dev/video0
+lorsque
+.I DEVICE
+est vide).
+Options, reliées par
+.BR & "\~:"
+.BI size= WxH\fR,
+.BI fps= N\fR,
+.BI format= F
+(format d'entrée tel que
+.BR mjpeg ),
+.BI audio= A\fR.
+.TP
+.BI screen: DISPLAY ? OPTIONS\fR,\ \fBx11:\fR...
+L'écran X11
+.RB ( screen::0.0 "\~;"
+.B $DISPLAY
+si vide)\~:
+.BI size= WxH\fR,
+.BI fps= N
+(25 par défaut),
+.BI audio= A\fR.
+.TP
+.BI lavfi: GRAPH\fR[\fB?audio=\fIA\fR], \fBtestsrc:\fR...
+Un graphe source lavfi de ffmpeg, lu en temps réel
+.RB ( lavfi:testsrc2=size=1280x720:rate=25 ,
+la valeur par défaut\~;
+.BR lavfi:smptehdbars=size=1920x1080:rate=25 ).
+.PP
+.I A
+vaut
+.B silence
+(défaut de
+.B v4l2:
+et
+.BR screen: ),
+.B sine
+(1 kHz, défaut de
+.BR lavfi: ),
+.BR none ,
+.BI alsa: DEV\fR,
+.BI pulse: DEV\fR,
+.BI pipewire: DEV
+(via PulseAudio),
+.BI jack: DEV
+.RB ( default
+lorsque
+.I DEV
+est vide), ou toute autre entrée ffmpeg.
+.SS Tubes et commandes
+.TP
+.BI pipe: PATH
+Un tube nommé, dans n'importe quel conteneur que comprend ffmpeg
+.RB ( "mkfifo /run/dvbtx/in.fifo" ,
+puis
+.BR "any_program > /run/dvbtx/in.fifo" ).
+.TP
+.BR stdin: ", " stdin ", " \-
+L'entrée standard de dvbtx
+.RB ( "some_program | dvbtx run \-c ..." ).
+.TP
+.BI exec: COMMAND
+La sortie standard d'une commande shell
+.RB ( "exec:streamlink \-\-stdout https://www.twitch.tv/x best" ),
+relancée avec ffmpeg.
+.PP
+Les sources
+.BR exec: ,
+.BR pipe: ,
+.B stdin:
+ainsi que les options
+.B ffmpeg_input
+/
+.B ffmpeg_output
+sont refusées depuis l'API web et depuis
+.B dvbtx channel
+quand il passe par elle, sauf si
+.BR "web.allow_exec_sources = true" "\~;"
+le fichier de configuration peut toujours les utiliser.
+.SH LECTEUR HLS
+Le lecteur HLS de ffmpeg se bloque aux discontinuités d'une playlist en direct (une publicité,
+l'épisode suivant) et prend du retard sur les playlists courtes\~; streamlink transmet les segments
+tels quels, et le lecteur MPEG\-TS de ffmpeg y recale les horodatages.
+Le réglage
+.B hls
+(par chaîne ou dans
+.BR [defaults] )
+choisit\~:
+.TP
+.B auto
+(défaut) via streamlink lorsqu'il est installé et que la chaîne ne demande rien que seul ffmpeg
+sait faire\~: pas de
+.BI # variant ,
+pas d'option
+.BR ffmpeg_input ,
+pas de
+.B map
+sur des programmes
+.RB ( 0:p:... ).
+.TP
+.B ffmpeg
+toujours ffmpeg (mais
+.B #quality=
+impose quand même streamlink).
+.TP
+.B streamlink
+toujours streamlink\~; erreur s'il n'est pas installé.
+.SH COPIE OU ENCODAGE
+Les sources sont copiées
+.RB ( "\-c copy" ,
+les flux sélectionnés par
+.BR map "\~:"
+la première vidéo et toutes les pistes audio par défaut), sauf\~:
+.IP \(bu 2
+les sources de capture
+.RB ( v4l2: ,
+.BR screen: ,
+.BR lavfi: ),
+toujours encodées\~;
+.IP \(bu 2
+.B encode = true
+ou une table
+.BR "encode = { ... }" "\~:"
+encodées avec les réglages
+.BR [defaults.encode] ,
+modifiés par la table\~;
+.IP \(bu 2
+sans
+.B encode
+explicite, et avec
+.B codec_check
+(par défaut), les fichiers, dossiers, URL HTTP, entrées M3U et flux yt\-dlp sont d'abord analysés
+avec ffprobe\~: une vidéo autre que H.264, HEVC ou MPEG\-2/1 (VP9, AV1...) est encodée\~; un audio
+absent de
+.B copy_audio_codecs
+(Opus...) est encodé seul, la vidéo étant copiée.
+.PP
+.B encode = false
+impose la copie sans analyse.
+Une chaîne réencodée avec
+.B video_bitrate = \(dqauto\(dq
+prend sa part de ce qu'il reste dans le multiplex (voir
+.B bitrate_weight
+et
+.B max_bitrate
+dans
+.BR dvbtx.toml (5)).
+.SS Transcodage GPU
+Lorsque le codec est générique
+.RB ( libx264 ,
+.BR libx265 ,
+.BR mpeg2video )
+et que
+.B hwaccel
+vaut
+.B \(dq\(dq
+ou
+.BR auto ,
+l'encodage va sur un GPU quand l'un d'eux fonctionne, sinon sur le CPU\~:
+.IP \(bu 2
+les cartes graphiques (Intel, AMD, NVIDIA) sont détectées à chaque démarrage\~; celles
+qu'autorise
+.B ingest.gpu
+sont utilisées\~;
+.IP \(bu 2
+chaque façon de les utiliser (VAAPI avec chaque pilote VA, basse consommation ou non, QSV, NVENC\~;
+tout le traitement sur le GPU, le décodage sur le GPU avec copie des images en mémoire, ou
+seulement l'encodage) est testée une fois par famille de codecs sur un transcodage 1080p vers
+720p à débit plafonné, et retenue si la sortie a le bon codec et la bonne taille et reste sous
+son plafond de débit\~; parmi les façons dont la vitesse atteint au moins la moitié de celle de la
+plus rapide, celle qui consomme le moins de CPU est préférée\~; l'apprentissage ne se refait, en
+arrière-plan et avec le CPU en attendant, que lorsque les cartes, leurs pilotes ou ffmpeg
+changent
+.RI ( /var/lib/dvbtx/gpu.json "\~;"
+.B dvbtx gpu
+l'affiche,
+.B dvbtx gpu learn
+le refait)\~;
+.IP \(bu 2
+chaque nouveau transcodage va sur la carte qui dispose de la plus grande réserve de vitesse\~;
+une façon qui fait échouer ffmpeg deux fois dans les 15 s suivant son démarrage n'est plus utilisée
+pour cette source, qui passe à la façon suivante, puis au CPU.
+.PP
+.BR "hwaccel = \(dqvaapi\(dq" ,
+.B \(dqqsv\(dq
+ou
+.B \(dqnvenc\(dq
+restreint le choix à ce type\~;
+.B \(dqcpu\(dq
+n'utilise jamais de GPU.
+Un codec GPU explicite
+.RB ( h264_vaapi ,
+.BR h264_nvenc ...)
+est utilisé tel quel, sans apprentissage.
+.SH RYTHME DE LECTURE
+.B readrate = \(dqauto\(dq
+lit en temps réel (ffmpeg
+.BR \-re )
+toute source qui n'arrive pas d'elle-même en temps réel\~: fichiers, dossiers, HTTP et HLS, M3U,
+yt\-dlp, streamlink, Twitch, tvheadend, commandes.
+Les entrées en direct (RTMP, RTSP, SRT, UDP, RTP, TCP, V4L2, écran, tubes, FIFO, stdin) sont lues
+au fil de leur arrivée.
+Les entrées réseau lues avec
+.B \-re
+peuvent rattraper leur retard à
+.B readrate_catchup
+fois le temps réel (2) après un segment lent.
+Une source qui arrive plus vite que le temps réel déclenche une alerte.
+.SH PLUSIEURS SOURCES PAR CHAÎNE
+.B source
+peut être une liste, par ordre de préférence\~:
+.PP
+.RS
+.EX
+source = ["http://provider/u/p/289", "http://provider/u/p/319", "http://other/info.m3u8"]
+.EE
+.RE
+.PP
+La première est diffusée.
+Le superviseur quitte la source en cours, l'arrête et lance la suivante (après la dernière, de
+nouveau la première), la chaîne diffusant son flux de secours pendant ce temps, lorsque\~:
+.IP \(bu 2
+elle n'a rien livré pendant
+.B failover_s
+(10 s), ou n'a pas démarré dans les
+.B source_start_s
+(30 s)\~;
+.IP \(bu 2
+elle est instable\~: la chaîne est retombée sur son flux de secours
+.B unstable_switches
+fois (3) en
+.B unstable_window_s
+(600 s\~; 0 bascule\~: jamais), ou y est restée
+.BR failover_s " + " return_ms
+(20 s).
+.PP
+Une source est arrêtée avant que la suivante ne démarre\~; on peut donc donner plusieurs flux d'un
+même compte IPTV limité à une connexion.
+.PP
+Tant que la chaîne n'est pas sur la première source, les sources préférées sont réessayées dans
+l'ordre toutes les
+.B preferred_retry_s
+(300 s\~; 0\~: jamais), à côté de celle qui joue\~: une candidate qui livre pendant 2 s prend le
+relais sans coupure\~; une candidate qui ne livre rien dans les
+.B source_start_s
+est abandonnée.
+Une source abandonnée n'est réessayée qu'après un délai qui double à chaque abandon (de
+.B preferred_retry_s
+jusqu'à une heure)\~; ce délai est réinitialisé dès que la source a joué 30 min.
+.PP
+Quand aucune source ne fonctionne, le flux de secours est diffusé.
+La page web,
+.B dvbtx channel list
+et les alertes indiquent quelle source est à l'antenne.
+.SH CACHE
+.B buffer_ms
+est le délai entre l'arrivée d'une source et son émission.
+Plus grand, il laisse passer une source irrégulière sans perte de paquets ni bascule sur le flux
+de secours, la chaîne étant alors plus en retard sur le direct.
+.B auto
+(défaut) vaut 6000 ms pour les sources en direct livrées par segments, qui arrivent par rafales à
+la pointe du direct
+.RB ( twitch:// ,
+.BR ytdlp: ,
+.BR streamlink: ,
+URL HTTP contenant
+.BR m3u8 ,
+URL youtube.com, youtu.be et twitch.tv), 1000 ms sinon.
+Par chaîne\~: de 100 à 30000.
+Une source n'est considérée en panne qu'une fois son cache épuisé.
+Changer le cache relance la source à côté de l'ancienne, sans coupure.
+.SH FLUX DE SECOURS
+.B backup
+est diffusé tant que les sources de la chaîne ne livrent rien\~: après
+.B switch_timeout_ms
+(3000) de silence, une fois le cache épuisé, le moteur y bascule la chaîne sur une image clé\~;
+il rebascule dès que la source est stable depuis
+.B return_ms
+(10000).
+.PP
+Le flux de secours peut prendre n'importe quelle forme de source\~; il est lu en boucle et copié
+sauf si
+.BR "backup_encode = true" "\~;"
+un seul processus sert toutes les chaînes qui désignent le même flux de secours.
+Par défaut il n'y en a pas\~; la configuration du paquet définit
+.IR /var/lib/dvbtx/backup.ts ,
+créé à l'installation par
+.BR "dvbtx make\-backup" "\~:"
+un clip H.264 1080p de 10 s avec un texte
+.RB ( \-\-text )
+ou une image
+.RB ( \-\-image ),
+du silence ou une tonalité à 1 kHz
+.RB ( \-\-tone ),
+de
+.B \-\-duration
+secondes, écrit dans
+.B \-o
+.RI ( /var/lib/dvbtx/backup.ts ).
+.B backup = false
+sur une chaîne ne diffuse rien à la place.
+.SH SUPERVISION
+.TP
+.B Relance
+Un processus de source qui s'arrête est relancé après
+.B ingest.restart_min_s
+(1 s), délai doublé à chaque échec jusqu'à
+.B ingest.restart_max_s
+(30 s), et ramené au minimum après 60 s de fonctionnement.
+Un producteur (streamlink, une commande) qui meurt entraîne son ffmpeg avec lui, et les deux
+redémarrent.
+.TP
+.B Blocage
+Un processus de source qui tourne mais ne livre rien pendant
+.B ingest.stall_restart_s
+(20 s\~: une playlist figée, une connexion à moitié ouverte) est relancé, afin que la source
+revienne dès qu'elle est disponible.
+.TP
+.B Discontinuités d'horodatage
+Une source dont le ffmpeg signale
+.B ingest.discontinuity_restart
+(10) discontinuités d'horodatage en 30 s ne se rétablit pas d'elle-même\~: elle est relancée à
+côté de celle qui tourne et lui est substituée sans coupure (une source reçue sur un port local,
+.BR udp:// ,
+.BR rtp:// ,
+.BR srt:// ,
+.BR ?listen ,
+est d'abord arrêtée\~: une courte coupure).
+.TP
+.B Nouveaux PID
+Lorsque ffmpeg signale un flux vidéo apparu en cours de route (une publicité insérée sur ses
+propres PID), les flux sélectionnés au départ se taisent\~: ffmpeg est relancé immédiatement (pas
+deux fois en 10 s).
+.TP
+.B Relève HLS
+Lorsque streamlink signale une discontinuité d'un flux HLS (une publicité, l'épisode suivant), sa
+sortie peut s'y arrêter pendant plusieurs minutes.
+Une seconde copie de la source est lancée à côté, depuis la pointe du direct, déjà au-delà de la
+discontinuité, et tenue prête\~: elle prend le relais sans coupure dès que la source en cours se
+bloque pendant 2 s ou déplace sa vidéo sur de nouveaux PID.
+Elle est arrêtée après 60 s si rien ne s'est bloqué, ou après 25 s si la source s'est bloquée et
+que la relève ne livre pas encore\~; le choix entre plusieurs sources attend pendant le démarrage
+d'une relève.
+.TP
+.B Sources en pause
+Les sources d'un multiplex arrêté depuis la page web
+.RB ( "enabled = false" ),
+ou d'un multiplex dont la radio est absente ou débranchée, sont arrêtées (mises en pause) et le
+choix entre plusieurs sources est suspendu\~; elles redémarrent quand le multiplex est redémarré
+ou que sa radio revient.
+Les flux de secours continuent de tourner.
+.SH MODIFICATIONS À CHAUD
+.BR dvbtx\-channel (1),
+la page web, et
+.B systemctl reload dvbtx
+après une modification du fichier changent la source d'une chaîne sans toucher aux autres\~: la
+nouvelle source démarre à côté de l'ancienne, qui joue jusqu'à ce que la nouvelle ait une image
+clé vidéo à échéance, et la bascule se fait à ce moment-là.
+Un changement d'un réglage de source
+.RB ( encode ,
+.BR ytdlp_format ,
+.BR readrate ,
+.BR map ,
+.BR buffer_ms ...)\&
+relance la source de la même façon.
+.SH FICHIERS
+.TP
+.I /etc/dvbtx/dvbtx.toml
+La configuration.
+.TP
+.I /var/lib/dvbtx/backup.ts
+Flux de secours de la configuration du paquet.
+.TP
+.I /var/lib/dvbtx/gpu.json
+Résultats de l'apprentissage GPU
+.RB ( ingest.gpu_cache ).
+.TP
+.I /usr/share/dvbtx/configs/sources.toml
+Une chaîne de chaque forme de source.
+.SH EXEMPLES
+.EX
+[[carrier.service]]
+name = "Film"
+source = "/srv/videos/film.mkv"
+
+[[carrier.service]]
+name = "Playlist"
+source = "dir:/srv/videos/playlist"
+loop = true
+
+[[carrier.service]]
+name = "France 24"
+source = "m3u:/srv/iptv/france.m3u#France 24"
+
+[[carrier.service]]
+name = "News"                     # FHD, puis SD du même flux, puis un autre fournisseur
+source = ["https://host/live.m3u8#variant=3",
+          "https://host/live.m3u8#variant=0",
+          "http://other.example/news.m3u8#quality=720p"]
+preferred_retry_s = 600
+
+[[carrier.service]]
+name = "YouTube"
+source = "ytdlp:https://www.youtube.com/@SkyNews/live"
+ytdlp_format = "bv*[vcodec^=avc1][height<=720]+ba/b[height<=720]"
+buffer_ms = 8000
+
+[[carrier.service]]
+name = "Twitch"
+source = "twitch://some_channel?quality=720p"
+
+[[carrier.service]]
+name = "Tvheadend"
+source = "htsp://user:pass@tvh.lan:9982/France 2"
+
+[[carrier.service]]
+name = "OBS"
+source = "rtmp://0.0.0.0:1935/live/obs?listen"
+
+[[carrier.service]]
+name = "Camera"
+source = "rtsp://cam.lan:554/stream1"
+
+[[carrier.service]]
+name = "Multicast"
+source = "udp+direct://239.0.0.1:2000"
+
+[[carrier.service]]
+name = "HDMI"
+source = "v4l2:/dev/video2?size=1920x1080&fps=25&audio=alsa:hw:2,0"
+encode = { video_bitrate = "6M", deinterlace = true }
+
+[[carrier.service]]
+name = "Screen"
+source = "screen::0.0?size=1920x1080&fps=25&audio=pulse:default"
+encode = { hwaccel = "cpu", size = "1280x720" }
+
+[[carrier.service]]
+name = "Pattern"
+source = "lavfi:smptehdbars=size=1920x1080:rate=25"
+backup = false
+
+[[carrier.service]]
+name = "Command"
+source = "exec:streamlink \-\-stdout https://www.twitch.tv/some_channel best"
+.EE
+.PP
+En ligne de commande\~:
+.PP
+.EX
+sudo dvbtx \-\-driver hackrf \-\-channel 22 \e
+     \-\-service \(dqPattern=lavfi:testsrc2=size=1280x720:rate=25\(dq \e
+     \-\-service \(dqMovie=/srv/videos/movie.mkv,lcn=2\(dq
+dvbtx channel source 3 http://a.example/fhd.ts http://a.example/hd.ts
+dvbtx channel source 5 \(dqytdlp:https://www.youtube.com/@SkyNews/live\(dq \-\-cache 8000
+dvbtx make\-backup \-\-text \(dqBack in a moment\(dq \-o /var/lib/dvbtx/backup.ts
+.EE
+.SH VOIR AUSSI
+.BR dvbtx (1),
+.BR dvbtx\-channel (1),
+.BR dvbtx.toml (5),
+.BR dvbtx (7),
+.BR dvbtx\-web (7),
+.BR dvbtx\-engine (8),
+.BR dvbtx\-power (8),
+.BR ffmpeg (1),
+.BR streamlink (1),
+.BR yt\-dlp (1)

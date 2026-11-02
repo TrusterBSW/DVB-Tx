@@ -279,6 +279,7 @@ The synthesis, filter banks and DVB-T2 port are described in `man 7 dvbtx` and
 | [`dvbtx-power(8)`](man/dvbtx-power.8) | power profiles for battery use |
 
 Installed with the package (`man dvbtx.toml`); from the sources, `man -l man/dvbtx.toml.5`.
+Every page also exists in French ([`man/fr/`](man/fr/)), shown with a French locale or `man -L fr`.
 
 ## Building from source
 

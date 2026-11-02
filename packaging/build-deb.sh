@@ -35,10 +35,13 @@ install -m 644 packaging/sysctl.conf "$ROOT/etc/sysctl.d/90-dvbtx.conf"
 install -m 644 packaging/dvbtx.service packaging/dvbtx@.service packaging/dvbtx-power.service "$ROOT/usr/lib/systemd/system/"
 install -m 644 configs/*.toml "$ROOT/usr/share/dvbtx/configs/"
 install -m 644 README.md README.fr.md docs/CHANNELS.md "$ROOT/usr/share/doc/dvbtx/"
-for m in man/*.[1-8]; do
+# manual pages in English and in French (man -L fr, or a French locale)
+for m in man/*.[1-8] man/fr/*.[1-8]; do
+    [ -e "$m" ] || continue
     sec=${m##*.}
-    install -d "$ROOT/usr/share/man/man$sec"
-    gzip -9n < "$m" > "$ROOT/usr/share/man/man$sec/${m##*/}.gz"
+    case "$m" in man/fr/*) dir=$ROOT/usr/share/man/fr/man$sec ;; *) dir=$ROOT/usr/share/man/man$sec ;; esac
+    install -d "$dir"
+    gzip -9n < "$m" > "$dir/${m##*/}.gz"
 done
 { printf 'dvbtx (%s) unstable; urgency=medium\n\n  * Built from %s.\n\n' "$VERSION" \
          "$(git describe --always --dirty 2>/dev/null || echo 'the source tree')"

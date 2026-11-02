@@ -270,21 +270,23 @@ La synthèse, les bancs de filtres et le portage DVB-T2 sont décrits dans `man 
 
 ## Documentation
 
-Les pages de manuel sont en anglais.
+Les pages de manuel existent en français et en anglais : `man` prend celle de votre langue
+(`man -L fr dvbtx`, `man -L en dvbtx` pour forcer l'une ou l'autre).
 
 | Page | Contenu |
 |---|---|
 | `dvbtx -h`, `dvbtx help COMMANDE` | toutes les commandes et options |
-| [`dvbtx(1)`](man/dvbtx.1) | la ligne de commande |
-| [`dvbtx-channel(1)`](man/dvbtx-channel.1) | changer les chaînes pendant l'émission |
-| [`dvbtx.toml(5)`](man/dvbtx.toml.5) | le fichier de configuration, clé par clé |
-| [`dvbtx(7)`](man/dvbtx.7) | le fonctionnement : composants, circulation des données, horloge, pannes |
-| [`dvbtx-sources(7)`](man/dvbtx-sources.7) | toutes les sortes de sources, bascule, cache, flux de secours |
-| [`dvbtx-web(7)`](man/dvbtx-web.7) | la page web et son API HTTP |
-| [`dvbtx-engine(8)`](man/dvbtx-engine.8) | le moteur C, son fichier INI, ses commandes et statistiques |
-| [`dvbtx-power(8)`](man/dvbtx-power.8) | les profils d'énergie pour la batterie |
+| [`dvbtx(1)`](man/fr/dvbtx.1) | la ligne de commande |
+| [`dvbtx-channel(1)`](man/fr/dvbtx-channel.1) | changer les chaînes pendant l'émission |
+| [`dvbtx.toml(5)`](man/fr/dvbtx.toml.5) | le fichier de configuration, clé par clé |
+| [`dvbtx(7)`](man/fr/dvbtx.7) | le fonctionnement : composants, circulation des données, horloge, pannes |
+| [`dvbtx-sources(7)`](man/fr/dvbtx-sources.7) | toutes les sortes de sources, bascule, cache, flux de secours |
+| [`dvbtx-web(7)`](man/fr/dvbtx-web.7) | la page web et son API HTTP |
+| [`dvbtx-engine(8)`](man/fr/dvbtx-engine.8) | le moteur C, son fichier INI, ses commandes et statistiques |
+| [`dvbtx-power(8)`](man/fr/dvbtx-power.8) | les profils d'énergie pour la batterie |
 
-Installées avec le paquet (`man dvbtx.toml`) ; depuis les sources, `man -l man/dvbtx.toml.5`.
+Installées avec le paquet (`man dvbtx.toml`) ; depuis les sources, `man -l man/fr/dvbtx.toml.5`
+(en anglais : `man/dvbtx.toml.5`).
 
 ## Compiler depuis les sources
 
