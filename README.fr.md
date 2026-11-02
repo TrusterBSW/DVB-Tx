@@ -507,6 +507,31 @@ journalctl -u dvbtx -f
 Le service donne la priorité temps réel aux threads radio (`LimitRTPRIO`) et définit `HOME` pour UHD
 (qui lit `~/.config/uhd.conf`, par exemple l'image FPGA d'un clone de B210).
 
+### Sur batterie : profils d'énergie
+
+`dvbtx-power` (à activer, agit sur toute la machine) garde le PC en économie maximale tant que rien
+n'émet, et passe au profil d'émission pendant qu'un service dvbtx tourne :
+
+```bash
+sudo systemctl enable --now dvbtx-power          # paquet ; depuis les sources : install-service.sh --power
+sudo /usr/lib/dvbtx/dvbtx-power status           # profil, gouverneur, EPP, turbo, ASPM, watts du processeur
+```
+
+| | save (boot, rien à l'antenne) | transmit (un service dvbtx tourne) |
+|---|---|---|
+| gouverneur / EPP | powersave / `power` | powersave / `balance_power` |
+| turbo | coupé | permis |
+| ASPM PCIe | `powersupersave` | celui du firmware |
+| mise en veille USB | oui (claviers et souris épargnés) | non (radios jamais suspendues) |
+| PM PCI, ALPM SATA, audio, chien de garde NMI, économie Wi-Fi | économie | économie |
+
+Les services dvbtx l'appellent au démarrage et à l'arrêt (`ExecStartPre`/`ExecStopPost`, aussi après
+un plantage) ; le dernier qui s'arrête repasse en save. Chaque valeur se change dans
+`/etc/default/dvbtx-power` (`SAVE_EPP=`, `TRANSMIT_EPP=`, `SAVE_TURBO=`, `TRANSMIT_ASPM=`,
+`SAVE_EXTRA=` pour une commande à vous, ...). Avec `[engine] cpu_latency_us = 100`, les cœurs peuvent
+encore dormir en C6 entre deux tampons : sur un i3-8100T avec 4 multiplex sur deux radios, 22,1 W sont
+devenus 13,8 W en transmit, sans underrun.
+
 ## DVB-T2
 
 ```toml

@@ -262,6 +262,30 @@ sudo systemctl stop dvbtx      # start | stop | restart | status
 journalctl -u dvbtx -f
 ```
 
+### On battery: power profiles
+
+`dvbtx-power` (opt-in, system wide) keeps the whole machine in power saving while nothing is on air and
+switches to a transmit profile while a dvbtx unit runs:
+
+```bash
+sudo systemctl enable --now dvbtx-power          # .deb ; from a checkout: install-service.sh --power
+sudo /usr/lib/dvbtx/dvbtx-power status           # profile, governor, EPP, turbo, ASPM, package watts
+```
+
+| | save (boot, nothing on air) | transmit (a dvbtx unit running) |
+|---|---|---|
+| governor / EPP | powersave / `power` | powersave / `balance_power` |
+| turbo | off | allowed |
+| PCIe ASPM | `powersupersave` | firmware default |
+| USB autosuspend | on (keyboards and mice spared) | off (radios never suspended) |
+| PCI runtime PM, SATA ALPM, audio, NMI watchdog, Wi-Fi power save | saving | saving |
+
+The dvbtx units call it at start and stop (`ExecStartPre`/`ExecStopPost`, also after a crash); the last
+one to stop goes back to save. Each value can be changed in `/etc/default/dvbtx-power` (`SAVE_EPP=`,
+`TRANSMIT_EPP=`, `SAVE_TURBO=`, `TRANSMIT_ASPM=`, `SAVE_EXTRA=` for a command of your own, ...).
+With `[engine] cpu_latency_us = 100` the cores may still sleep in C6 between two buffers: on an
+i3-8100T with 4 multiplexes on two radios, 22.1 W became 13.8 W with transmit, no underrun.
+
 ## Measurements
 
 Threadripper 2950X, Debian 12, radio output cabled to an RTL2832U DVB-T receiver:

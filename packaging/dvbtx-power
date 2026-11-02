@@ -1,0 +1,140 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Power profiles of the whole machine, for a transmitter running on battery:
+#   save       nothing on air: every saving the hardware offers (at boot, and when the last dvbtx
+#              service stops)
+#   transmit   a dvbtx service runs: what the real-time work needs (no autosuspended radio, the
+#              processor allowed to speed up), the other savings kept
+#   default    save, or transmit while a dvbtx unit is on air (dvbtx-power.service, at boot)
+#   status     the current settings and the package power (RAPL)
+#   hook start|stop UNIT   called by the dvbtx units (ExecStartPre / ExecStopPost); does nothing
+#              unless dvbtx-power.service is enabled; stop goes back to save when no other dvbtx
+#              unit is left on air
+# Opt-in:  systemctl enable --now dvbtx-power      Settings: /etc/default/dvbtx-power
+#
+# Measured on an i3-8100T (4 multiplexes on two radios, 75 % of the processor): 22.1 W with the
+# deep C-states blocked and the performance governor, 13.8 W with transmit (EPP balance_power) and
+# the engine's cpu_latency_us = 100, no underrun.
+set -u
+
+# energy/performance preference of the processor (intel_pstate, amd-pstate in active mode):
+# performance balance_performance balance_power power
+SAVE_EPP=power
+TRANSMIT_EPP=balance_power
+# turbo / boost: 0 off, 1 allowed
+SAVE_TURBO=0
+TRANSMIT_TURBO=1
+# PCIe link power (ASPM): default (firmware) performance powersave powersupersave
+SAVE_ASPM=powersupersave
+TRANSMIT_ASPM=default
+# extra commands run after each profile (e.g. a screen backlight, a fan)
+SAVE_EXTRA=
+TRANSMIT_EXTRA=
+[ -r /etc/default/dvbtx-power ] && . /etc/default/dvbtx-power
+
+RUN=/run/dvbtx-power
+
+w() {   # value file...: written where it exists and is accepted
+    v=$1; shift
+    for f in "$@"; do
+        [ -e "$f" ] && { echo "$v" > "$f"; } 2>/dev/null
+    done
+    return 0
+}
+
+cpu() {   # epp turbo
+    for p in /sys/devices/system/cpu/cpufreq/policy*; do
+        [ -d "$p" ] || continue
+        grep -qw powersave "$p/scaling_available_governors" 2>/dev/null && w powersave "$p/scaling_governor"
+        grep -qw "$1" "$p/energy_performance_available_preferences" 2>/dev/null &&
+            w "$1" "$p/energy_performance_preference"
+    done
+    w $((1 - $2)) /sys/devices/system/cpu/intel_pstate/no_turbo
+    w "$2" /sys/devices/system/cpu/cpufreq/boost
+}
+
+aspm() {
+    f=/sys/module/pcie_aspm/parameters/policy
+    [ -e "$f" ] || return 0
+    w "$1" "$f"
+    [ "$1" = powersupersave ] && ! grep -q '\[powersupersave\]' "$f" && w powersave "$f"
+    return 0
+}
+
+usb() {   # auto | on; auto spares the keyboards and mice (HID: slow to wake up)
+    for d in /sys/bus/usb/devices/*; do
+        [ -e "$d/power/control" ] || continue
+        if [ "$1" = auto ] && grep -qx 03 "$d"/*:*/bInterfaceClass 2>/dev/null; then
+            w on "$d/power/control"
+        else
+            w "$1" "$d/power/control"
+        fi
+    done
+}
+
+common() {   # the savings kept in both profiles
+    w auto /sys/bus/pci/devices/*/power/control
+    w med_power_with_dipm /sys/class/scsi_host/host*/link_power_management_policy
+    w 1 /sys/module/snd_hda_intel/parameters/power_save /sys/module/snd_ac97_codec/parameters/power_save
+    w 0 /proc/sys/kernel/nmi_watchdog
+    w 1500 /proc/sys/vm/dirty_writeback_centisecs
+    if command -v iw >/dev/null; then
+        for n in /sys/class/net/*/wireless; do
+            [ -d "$n" ] && iw dev "$(basename "$(dirname "$n")")" set power_save on 2>/dev/null
+        done
+    fi
+    return 0
+}
+
+save() {
+    common
+    cpu "$SAVE_EPP" "$SAVE_TURBO"
+    aspm "$SAVE_ASPM"
+    usb auto
+    [ -n "$SAVE_EXTRA" ] && sh -c "$SAVE_EXTRA"
+    echo "power profile: save"
+}
+
+transmit() {
+    common
+    cpu "$TRANSMIT_EPP" "$TRANSMIT_TURBO"
+    aspm "$TRANSMIT_ASPM"
+    usb on       # a radio switched off (all its multiplexes stopped) and opened again: never suspended
+    [ -n "$TRANSMIT_EXTRA" ] && sh -c "$TRANSMIT_EXTRA"
+    echo "power profile: transmit"
+}
+
+status() {
+    p=/sys/devices/system/cpu/cpufreq/policy0
+    echo "profile:   $(cat $RUN/profile 2>/dev/null || echo '?')  (dvbtx units on air: $(ls $RUN/on 2>/dev/null | tr '\n' ' '))"
+    echo "governor:  $(cat $p/scaling_governor 2>/dev/null)   EPP: $(cat $p/energy_performance_preference 2>/dev/null || echo -)"
+    t=$(cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null)
+    [ -n "$t" ] && t=$((1 - t)) || t=$(cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || echo -)
+    echo "turbo:     $t   ASPM: $(cat /sys/module/pcie_aspm/parameters/policy 2>/dev/null || echo -)"
+    echo "usb:       $(cat /sys/bus/usb/devices/*/power/control 2>/dev/null | sort | uniq -c | xargs)"
+    e=/sys/class/powercap/intel-rapl:0/energy_uj
+    if [ -r $e ]; then
+        a=$(cat $e); sleep 2; b=$(cat $e)
+        [ "$b" -ge "$a" ] && awk -v a="$a" -v b="$b" 'BEGIN { printf "package:   %.2f W\n", (b - a) / 2e6 }'
+    fi
+}
+
+apply() {
+    mkdir -p $RUN
+    "$1" && echo "$1" > $RUN/profile
+}
+
+case "${1:-}" in
+    save|transmit) apply "$1" ;;
+    default) [ -n "$(ls $RUN/on 2>/dev/null)" ] && apply transmit || apply save ;;
+    status) status ;;
+    hook)
+        systemctl -q is-enabled dvbtx-power.service 2>/dev/null || exit 0
+        mkdir -p $RUN/on
+        case "${2:-}" in
+            start) touch "$RUN/on/${3:-dvbtx}"; apply transmit ;;
+            stop)  rm -f "$RUN/on/${3:-dvbtx}"; [ -n "$(ls $RUN/on)" ] || apply save ;;
+            *) exit 2 ;;
+        esac ;;
+    *) sed -n '3,14s/^# \{0,1\}//p' "$0"; exit 2 ;;
+esac
