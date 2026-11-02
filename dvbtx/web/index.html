@@ -384,9 +384,9 @@ function render(s) {
         <td style="white-space:nowrap"><button class="icon" onclick="rateOpen(${sv.sid})" title="détails : débit, retard, marge, pertes sur les dernières heures" aria-label="détails">${ICON_INFO}</button> <button class="icon" onclick="chEdit(${sv.sid})" title="modifier la chaîne" aria-label="modifier">${ICON_EDIT}</button> <button class="danger" onclick="chRemove(${sv.sid})" title="Supprimer la chaîne">✕</button></td>
       </tr>`;
     }).join("");
-    const head = `<div class="row"><span style="display:inline-flex;gap:10px;align-items:baseline;white-space:nowrap"><b style="font-size:16px">${esc(c.name)}</b>
+    // the figures wrap among themselves; the button stays at the right of the first line
+    const head = `<div style="display:flex;gap:10px 22px;align-items:baseline"><div class="row" style="flex:1;min-width:0"><b style="font-size:16px">${esc(c.name)}</b>
         ${c.enabled ? "" : '<span class="pill warning" title="multiplex arrêté : rien à l\'antenne, ses sources en pause, sa radio éteinte si elle n\'a plus que lui">arrêté</span>'}
-        <button onclick="carrierPower(${c.index}, ${!c.enabled})" title="${c.enabled ? "arrêter l'émission de ce multiplex (les autres continuent)" : "remettre ce multiplex à l'antenne"}">${c.enabled ? "■ Arrêter" : "▶ Démarrer"}</button></span>
         <span class="muted">${std} · ${c.frequency ? (c.frequency / 1e6).toFixed(3) + " MHz" : ""} · TSID ${c.tsid}${c.radio ? " · " + esc(c.radio) : ""}</span>
         <span style="flex:1"></span>
         <span class="muted">capacité</span><span class="big">${mbps(cap)}</span><span class="muted">Mbit/s</span>
@@ -394,6 +394,7 @@ function render(s) {
         ${l && l.cpu != null ? `<span class="muted" title="modulation de ce multiplex (100 % = un cœur)">modulation ${l.cpu.toFixed(1)} % d'un cœur</span>` : ""}
         ${off ? "" : loadPills(c.sources_load)}
       </div>
+      <button style="flex-shrink:0;white-space:nowrap" onclick="carrierPower(${c.index}, ${!c.enabled})" title="${c.enabled ? "arrêter l'émission de ce multiplex (les autres continuent)" : "remettre ce multiplex à l'antenne"}">${c.enabled ? "■ Arrêter" : "▶ Démarrer"}</button></div>
       <div class="bar">${bar}</div><div class="legend">${legend}</div>`;
     const summary = `<div class="card">${head}
       ${chart(c.index, cap)}
