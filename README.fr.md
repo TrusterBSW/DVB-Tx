@@ -61,17 +61,17 @@ programmes, comme sur la TNT.
 
 ## Installation
 
-Téléchargez le paquet de votre système dans les
-[releases](https://github.com/TrusterBSW/DVB-Tx/releases) et installez-le avec apt (qui installe
-les dépendances) :
+Téléchargez le paquet de votre système (dossier [`releases/`](releases/), sommes de contrôle dans
+[`SHA256SUMS`](releases/SHA256SUMS)) et installez-le avec apt (qui installe les dépendances) :
 
 | Système | Paquet |
 |---|---|
-| Debian 13 (trixie), Proxmox VE 9 | `dvbtx_0.1.0+deb13_amd64.deb` |
-| Debian 12 (bookworm), Proxmox VE 8 | `dvbtx_0.1.0+deb12_amd64.deb` |
-| Ubuntu 24.04 (noble) | `dvbtx_0.1.0+ubuntu24.04_amd64.deb` |
+| Debian 13 (trixie), Proxmox VE 9 | [`dvbtx_0.1.0+deb13_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb13_amd64.deb) |
+| Debian 12 (bookworm), Proxmox VE 8 | [`dvbtx_0.1.0+deb12_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb12_amd64.deb) |
+| Ubuntu 24.04 (noble) | [`dvbtx_0.1.0+ubuntu24.04_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bubuntu24.04_amd64.deb) |
 
 ```bash
+wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb13_amd64.deb -O dvbtx_0.1.0+deb13_amd64.deb
 sudo apt install ./dvbtx_0.1.0+deb13_amd64.deb
 sudo apt install streamlink yt-dlp tsduck     # facultatif : HLS sans blocage, YouTube, analyse
 ```

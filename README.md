@@ -60,17 +60,17 @@ on the coax finds them with their names, numbers and programme guide, as on regu
 
 ## Install
 
-Download the package for your system from the
-[releases](https://github.com/TrusterBSW/DVB-Tx/releases) and install it with apt (it pulls the
-dependencies):
+Download the package for your system (folder [`releases/`](releases/), checksums in
+[`SHA256SUMS`](releases/SHA256SUMS)) and install it with apt (it pulls the dependencies):
 
 | System | Package |
 |---|---|
-| Debian 13 (trixie), Proxmox VE 9 | `dvbtx_0.1.0+deb13_amd64.deb` |
-| Debian 12 (bookworm), Proxmox VE 8 | `dvbtx_0.1.0+deb12_amd64.deb` |
-| Ubuntu 24.04 (noble) | `dvbtx_0.1.0+ubuntu24.04_amd64.deb` |
+| Debian 13 (trixie), Proxmox VE 9 | [`dvbtx_0.1.0+deb13_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb13_amd64.deb) |
+| Debian 12 (bookworm), Proxmox VE 8 | [`dvbtx_0.1.0+deb12_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb12_amd64.deb) |
+| Ubuntu 24.04 (noble) | [`dvbtx_0.1.0+ubuntu24.04_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bubuntu24.04_amd64.deb) |
 
 ```bash
+wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb13_amd64.deb -O dvbtx_0.1.0+deb13_amd64.deb
 sudo apt install ./dvbtx_0.1.0+deb13_amd64.deb
 sudo apt install streamlink yt-dlp tsduck     # optional: HLS without stalls, YouTube, analysis
 ```

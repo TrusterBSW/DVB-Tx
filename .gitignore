@@ -6,3 +6,6 @@ __pycache__/
 /run24/
 /.wt/
 /dist/
+
+# built packages published in releases/ (packaging/build-all-debs.sh writes dist/)
+!/releases/*.deb
