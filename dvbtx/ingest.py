@@ -50,6 +50,8 @@ def _die_with_parent():
         pass
     os.setsid()
 
+NVENC_PRESETS = {"p1", "p2", "p3", "p4", "p5", "p6", "p7", "default", "slow", "medium", "fast", "hp", "hq", "bd",
+                 "ll", "llhq", "llhp", "lossless", "losslesshp"}
 VIDEO_EXT = (".mkv", ".mp4", ".ts", ".m2ts", ".mov", ".avi", ".webm", ".mpg", ".mpeg", ".flv", ".m4v", ".wmv")
 _FF_CAPS = {}
 
@@ -449,7 +451,9 @@ def encode_args(svc_opts, rec, svc, ing):
         if codec == "libx264":
             a += ["-x264-params", "nal-hrd=vbr:repeat-headers=1"]
     elif codec.endswith("_nvenc"):
-        a += ["-preset", enc.get("preset", "p4"), "-rc", "cbr"]
+        # the inherited x264 preset (defaults.encode: "veryfast") means nothing to NVENC: p4
+        pr = enc.get("preset") or "p4"
+        a += ["-preset", pr if pr in NVENC_PRESETS else "p4", "-rc", "cbr"]
     return a + audio
 
 

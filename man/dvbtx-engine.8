@@ -89,13 +89,10 @@ removed; a key may repeat (only
 .B table
 uses that); keys the engine does not know are ignored.
 .PP
-Integers are read with
-.BR strtoll (3)
-in base 0: decimal,
-.B 0x
-hexadecimal, and a leading
+Integers are decimal (a leading
 .B 0
-means octal.
+does not make them octal), or hexadecimal with
+.BR 0x .
 Other numbers are decimal (or
 .BR 0x ).
 Frequencies and rates are in hertz and samples per second.
@@ -396,6 +393,13 @@ default 64qam),
 .B frequency
 (signalled in L1, Hz; 0: 729833333).
 Combinations EN 302 755 forbids are refused.
+An unknown value of
+.BR fft ,
+.B constellation
+or
+.B l1_constellation
+is refused too (as an unknown DVB\-T
+.BR mode ).
 .PP
 .B ts
 keys (no radio: the multiplex is written out, paced by the system clock):
@@ -406,7 +410,7 @@ keys (no radio: the multiplex is written out, paced by the system clock):
 .BI udp:// address : port
 with an IPv4 address, or a file path, optionally prefixed with
 .BR file:// ,
-opened for writing without truncation).
+truncated when opened; a FIFO is simply written).
 .SS [service N]
 .TP
 .B carrier
@@ -452,7 +456,7 @@ Default 600.
 .TP
 .B early_ms
 A packet may leave that much before its ideal departure time.
-Default 0 in the engine (the supervisor writes 100 unless configured otherwise).
+Default 100.
 .TP
 .B pcr_max_ms
 A PCR-only packet is inserted when no PCR has been sent for that long; 0 never.
@@ -890,7 +894,7 @@ other than
 .B internal
 selects the clock source;
 .B ppm
-corrects the frequency only.
+corrects both the sample rate (and the master clock it computes) and the frequency.
 A ring of
 .B buffer_ms
 (50 ms when 0) is drained by a sender thread; underflows come from the
@@ -913,7 +917,7 @@ is the overall TX gain;
 .B bandwidth
 is set when not 0;
 .B ppm
-corrects the frequency;
+corrects both the sample rate and the frequency;
 .B amp
 and
 .B clock

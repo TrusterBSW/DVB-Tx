@@ -133,7 +133,9 @@ long long conf_int(const conf_sec *s, const char *key, long long def)
     const char *v = conf_nth(s, key, 0);
     if (!v || !*v)
         return def;
-    return strtoll(v, NULL, 0);
+    if (v[0] == '0' && (v[1] == 'x' || v[1] == 'X'))
+        return strtoll(v, NULL, 16);
+    return strtoll(v, NULL, 10);            /* "010" is ten, not octal */
 }
 
 const char *conf_req(const conf_sec *s, const char *key)

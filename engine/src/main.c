@@ -10,6 +10,7 @@
  *   service del carrier=N sid=N
  *   service set carrier=N sid=N [primary=ID] [backup=ID|-1] [name=...]
  *   carrier set id=N on=0|1              (off the air: still modulated, its radio and the others go on)
+ *   monitor add|del carrier=N addr=udp://HOST:PORT   (a copy of a carrier's output: previews)
  * name= takes the rest of the line. Any command may start with seq=N: the answer is a JSON line
  * {"type":"reply","seq":N,"ok":true} or {..."ok":false,"error":"..."}. */
 #define _GNU_SOURCE
@@ -236,7 +237,7 @@ static void command(char *line, int *quit, int *reload)
             sc.switch_timeout_ms = (int)kv_int(&o, "switch_timeout_ms", 3000);
             sc.return_ms = (int)kv_int(&o, "return_ms", 10000);
             sc.max_late_ms = (int)kv_int(&o, "max_late_ms", 600);
-            sc.early_ms = (int)kv_int(&o, "early_ms", 0);
+            sc.early_ms = (int)kv_int(&o, "early_ms", 100);
             sc.pcr_max_ms = (int)kv_int(&o, "pcr_max_ms", 35);
             sc.pmt_period_ms = (int)kv_int(&o, "pmt_period_ms", 100);
             sc.priority = (int)kv_int(&o, "priority", 5);

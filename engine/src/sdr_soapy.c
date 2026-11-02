@@ -54,16 +54,17 @@ static sdr_dev *sp_open(const sdr_params *p, char *err, int errlen)
         free(d);
         return NULL;
     }
-    double corr = 1.0 / (1.0 + p->ppm * 1e-6);
-    if (SoapySDRDevice_setSampleRate(d->dev, SOAPY_SDR_TX, 0, p->rate) ||
+    double corr = 1.0 / (1.0 + p->ppm * 1e-6);   /* crystal error moves rate and LO alike */
+    double rate = p->rate * corr;
+    if (SoapySDRDevice_setSampleRate(d->dev, SOAPY_SDR_TX, 0, rate) ||
         SoapySDRDevice_setFrequency(d->dev, SOAPY_SDR_TX, 0, p->freq_hz * corr, NULL)) {
         snprintf(err, errlen, "SoapySDR setup: %s", SoapySDRDevice_lastError());
         sp_close(d);
         return NULL;
     }
     double actual = SoapySDRDevice_getSampleRate(d->dev, SOAPY_SDR_TX, 0);
-    if (fabs(actual - p->rate) > 1e-5 * p->rate) {
-        snprintf(err, errlen, "device gives %.6f MS/s instead of %.6f MS/s", actual / 1e6, p->rate / 1e6);
+    if (fabs(actual - rate) > 1e-5 * rate) {
+        snprintf(err, errlen, "device gives %.6f MS/s instead of %.6f MS/s", actual / 1e6, rate / 1e6);
         sp_close(d);
         return NULL;
     }

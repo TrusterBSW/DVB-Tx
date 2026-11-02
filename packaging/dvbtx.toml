@@ -53,6 +53,7 @@ tsp = "tsp"
 margin_min_ms = 150                     # warn when the decoding margin of a service drops below this
 overload_percent = 98.0                 # warn when a multiplex is this full
 late_ms = 300                           # warn when packets leave this late (the margin usually absorbs it)
+input_down_s = 10                       # warn when a running source has sent nothing for this long (0: never)
 webhook = ""                            # POST every alert (JSON) to this URL
 command = ""                            # or run this command (env DVBTX_ALERT_EVENT/LEVEL/KEY/MESSAGE)
 repeat_s = 300
@@ -98,7 +99,8 @@ transmit_command = ""
 
 # Defaults of every service (each key can be set per service too)
 [defaults]
-backup = "/var/lib/dvbtx/backup.ts"     # played when the source stops (false: none); dvbtx make-backup creates one
+backup = "/var/lib/dvbtx/backup.ts"     # played when the source stops (default "": none); the package creates
+                                        # this one (dvbtx make-backup)
 buffer_ms = "auto"                      # de-jitter buffer between arrival and transmission (ms); auto: 6000 for
                                         # live sources sent in segments (YouTube, Twitch, *.m3u8: at the live edge
                                         # of the playlist they arrive in bursts, one per segment), 1000 otherwise
@@ -122,16 +124,18 @@ max_bitrate = ""                        # at most this for a re-encoded channel 
                                         # and the lower ones get the delays (then the losses)
 pcr_max_ms = 35                         # a PCR is inserted if the source leaves a longer gap
 mux_delay = 0.7                         # ffmpeg -muxdelay: decoding margin given to the receiver (s)
-readrate = "auto"                       # pace the reading at real time (-re): auto = files, HTTP/HLS, playlists
+readrate = "auto"                       # pace the reading at real time (-re): auto = every source that is not
+                                        # live by nature (files, HTTP/HLS, playlists, exec:, streamlink...)
 hls = "auto"                            # HLS URLs: "auto" = through streamlink when installed (ffmpeg's HLS
                                         # reader stalls at ads and episode changes), "ffmpeg", "streamlink"
 loop = true                             # loop files and folders
 map = ["0:v:0?", "0:a?"]                # streams kept: first video, every audio track
-copy_audio_codecs = ["aac", "mp2", "mp3", "ac3", "eac3"]   # audio copied as is; others are encoded (a TV
+copy_audio_codecs = ["aac", "mp2", "mp3", "ac3", "eac3", "aac_latm"]   # audio copied as is; others are encoded (a TV
                                         # without E-AC-3: remove "eac3" and the 5.1 tracks become AAC stereo)
 codec_check = true                      # copied files/HTTP/playlists: ffprobe first; video not in H.264/HEVC/MPEG-2
                                         # (VP9, AV1...) is encoded, audio not in AAC/MP2/AC-3/E-AC-3 (Opus...) too
-# ytdlp_format = "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/b"   # yt-dlp format selection
+# ytdlp_format = "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/b[vcodec^=avc1]/bv*[height<=1080]+ba/b"
+                                        # yt-dlp format selection
 # ffmpeg_input = ["-extension_picky", "0"]   # extra ffmpeg input options
 # ffmpeg_output = []                         # extra ffmpeg output options
 

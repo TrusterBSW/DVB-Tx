@@ -76,7 +76,7 @@ const char *dvbt_cfg_check(const dvbt_cfg *c)
     if (c->gi != 4 && c->gi != 8 && c->gi != 16 && c->gi != 32)
         return "DVB-T guard interval must be 1/4, 1/8, 1/16 or 1/32";
     if (c->bw_hz < 1e6 || c->bw_hz > 10e6)
-        return "DVB-T bandwidth must be 5, 6, 7 or 8 MHz";
+        return "DVB-T bandwidth must be between 1 and 10 MHz (5, 6, 7 or 8 MHz in the standard)";
     return NULL;
 }
 

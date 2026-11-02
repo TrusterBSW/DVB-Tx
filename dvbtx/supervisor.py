@@ -578,6 +578,7 @@ class Supervisor:
         from .ingest import _die_with_parent
         self.engine = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        preexec_fn=_die_with_parent)
+        self.engine_started = time.monotonic()
         threading.Thread(target=self._read_engine_out, args=(self.engine,), daemon=True).start()
         threading.Thread(target=self._read_engine_err, args=(self.engine,), daemon=True).start()
 
@@ -636,6 +637,8 @@ class Supervisor:
                                      for c in st.get("carriers", []) for x in c.get("services", [])})
         self.stats_exporter.send(dict(st, alerts=list(self.alerts.active.values())))
 
+    ENGINE_STABLE_S = 600   # an engine that ran this long before exiting: its restart delay starts again at 2 s
+
     def engine_poll(self):
         if self.engine is None:
             if time.monotonic() >= self.engine_next:
@@ -648,6 +651,8 @@ class Supervisor:
                 self.engine_planned = False
                 self.engine_next = 0
                 return
+            if time.monotonic() - getattr(self, "engine_started", 0) > self.ENGINE_STABLE_S:
+                self.engine_restarts = 0         # it had run well: a crash days later starts again at 2 s
             self.engine_restarts += 1
             wait = min(30, 2 ** min(self.engine_restarts, 5))
             log.error("engine exited (%s), restart in %d s", rc, wait)
@@ -764,6 +769,16 @@ class Supervisor:
             for i in st.get("inputs", []):
                 if i.get("faster_than_realtime"):
                     conds[f"fast.{i['index']}"] = ("warning", f"input {i['name']}: arrives faster than real time (readrate?)")
+            down = float(a.get("input_down_s", 0) or 0)
+            now = time.monotonic()
+            for p in self.ingest if down > 0 else ():
+                i = ins.get(p.inp.index)
+                if i is None or p.paused or p.state != "running" or now - p.started_at < down:
+                    continue                     # paused with its multiplex, or just (re)started
+                ms = i.get("idle_ms", -1)
+                if ms < 0 or ms > down * 1000:
+                    conds[f"down.{p.inp.index}"] = ("warning", f"input {p.inp.name}: nothing received for "
+                                                    f"{(now - p.started_at) if ms < 0 else ms / 1000:.0f} s")
             for r in st.get("radios", []):
                 if r.get("state", "on") not in ("on", "idle"):
                     cars = ", ".join(c.name for c in self.plan.carriers if c.radio is not None and c.radio.index == r["index"])

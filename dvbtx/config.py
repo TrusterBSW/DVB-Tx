@@ -62,7 +62,7 @@ CARRIER_DEFAULTS = {"standard": "dvbt", "bandwidth": 8_000_000, "mode": "8k", "c
 # modulation parameters of each standard (the other keys of a [[carrier]] are common to all)
 STD_KEYS = {"dvbt": ("bandwidth", "mode", "constellation", "code_rate", "guard"),
             "dvbc": ("constellation", "symbol_rate", "rolloff"),
-            "dvbs": ("code_rate", "symbol_rate", "rolloff", "polarization", "orbital"),
+            "dvbs": ("code_rate", "symbol_rate", "rolloff", "polarization", "orbital", "lnb_lo"),
             "dvbt2": ("bandwidth", "fft", "extended", "guard", "pilot", "constellation", "rotation", "code_rate",
                       "frame", "fec_blocks", "data_symbols", "ti_blocks", "l1_constellation", "cell_id",
                       "network_id", "t2_system_id", "t2_frames"),
@@ -442,8 +442,15 @@ def build(cfg):
         if std in ("dvbs", "dvbs2") and "code_rate" not in c:
             cc["code_rate"] = "3/4"
         params = {k: cc[k] for k in keys if k in cc}
+        for k in ("mode", "fft"):                # "8k" read as 8000 from the command line (-s carrier.0.mode=8k)
+            v = params.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 and v % 1000 == 0:
+                params[k] = f"{int(v) // 1000}k"
+        for k in ("bandwidth", "ts_rate", "symbol_rate", "lnb_lo"):
+            if k in params:
+                params[k] = _num(params[k], f"carrier {ci} {k}")
         if "bandwidth" in params:
-            params["bandwidth"] = int(_num(params["bandwidth"], "bandwidth"))
+            params["bandwidth"] = int(params["bandwidth"])
         try:
             ts_rate = capacity.rate(std, **params)
         except (capacity.CapacityError, KeyError) as e:

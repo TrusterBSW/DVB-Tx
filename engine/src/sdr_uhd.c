@@ -177,13 +177,15 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
     char args[512];
     const char *ua = p->args ? p->args : "";
     int n = snprintf(args, sizeof args, "%s", ua);
+    /* crystal error: it moves rate and LO alike, both asked corrected (as the HackRF and Soapy plugins) */
+    double corr = 1.0 / (1.0 + p->ppm * 1e-6), rate = p->rate * corr;
     if (!strstr(ua, "master_clock_rate")) {
         int k = (int)floor(61.44e6 / p->rate);
         if (k < 1)
             k = 1;
         while (k > 1 && p->rate * k > 56e6)   /* keep the AD9361 within its 56 MHz analog bandwidth */
             k--;
-        n += snprintf(args + n, sizeof args - n, "%smaster_clock_rate=%.6f", n ? "," : "", p->rate * k);
+        n += snprintf(args + n, sizeof args - n, "%smaster_clock_rate=%.6f", n ? "," : "", rate * k);
     }
     if (!strstr(ua, "num_send_frames"))
         snprintf(args + n, sizeof args - n, "%snum_send_frames=64", n ? "," : "");
@@ -196,21 +198,21 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
     size_t ch = 0;
     if (p->clock && *p->clock && strcmp(p->clock, "internal"))
         uhd_usrp_set_clock_source(d->usrp, p->clock, 0);
-    if (uhd_usrp_set_tx_rate(d->usrp, p->rate, ch)) {
+    if (uhd_usrp_set_tx_rate(d->usrp, rate, ch)) {
         last_error(err, errlen, "set_tx_rate");
         ud_close(d);
         return NULL;
     }
     double actual = 0;
     uhd_usrp_get_tx_rate(d->usrp, ch, &actual);
-    if (fabs(actual - p->rate) > 1e-6 * p->rate) {
+    if (fabs(actual - rate) > 1e-6 * rate) {
         snprintf(err, errlen, "USRP gives %.6f MS/s instead of %.6f MS/s (set master_clock_rate=... in args)",
-                 actual / 1e6, p->rate / 1e6);
+                 actual / 1e6, rate / 1e6);
         ud_close(d);
         return NULL;
     }
     d->rate = actual;
-    uhd_tune_request_t tr = { .target_freq = p->freq_hz * (1.0 - p->ppm * 1e-6),
+    uhd_tune_request_t tr = { .target_freq = p->freq_hz * corr,
                               .rf_freq_policy = UHD_TUNE_REQUEST_POLICY_AUTO,
                               .dsp_freq_policy = UHD_TUNE_REQUEST_POLICY_AUTO };
     uhd_tune_result_t res;

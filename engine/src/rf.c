@@ -156,7 +156,7 @@ const sdr_driver *sdr_load(const char *name, char *err, int errlen)
             char *slash = strrchr(exe, '/');
             if (slash)
                 *slash = 0;
-            snprintf(path, sizeof path, "%s/dvbtx-sdr-%s.so", exe, name);
+            snprintf(path, sizeof path, "%.4000s/dvbtx-sdr-%.64s.so", exe, name);
             h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
         }
     }
@@ -491,7 +491,7 @@ static int open_output(carrier *c, const char *out, char *err, int errlen)
         return 0;
     }
     const char *path = !strncmp(out, "file://", 7) ? out + 7 : out;
-    c->out_fd = open(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+    c->out_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);   /* a FIFO ignores O_TRUNC */
     if (c->out_fd < 0) {
         snprintf(err, errlen, "carrier %d: cannot open %s: %s", c->idx, path, strerror(errno));
         return -1;
@@ -642,7 +642,11 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
         if (!strcmp(c->standard, "dvbt")) {
             dvbt_cfg tc = { 0 };
             const char *mode = conf_str(s, "mode", "8k");
-            tc.fft = !strcmp(mode, "2k") ? 2048 : 8192;
+            tc.fft = !strcmp(mode, "2k") ? 2048 : !strcmp(mode, "8k") ? 8192 : 0;
+            if (!tc.fft) {
+                snprintf(err, errlen, "carrier %d: DVB-T mode must be 2k or 8k", c->idx);
+                return -1;
+            }
             const char *cons = conf_str(s, "constellation", "64qam");
             tc.bits = !strcmp(cons, "qpsk") ? 2 : !strcmp(cons, "16qam") ? 4 : !strcmp(cons, "64qam") ? 6 : 0;
             if (parse_code_rate(conf_str(s, "code_rate", "7/8"), &tc.cr_k, &tc.cr_n)) {
@@ -730,7 +734,11 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             t.bw_hz = conf_num(s, "bandwidth", 8e6);
             const char *f = conf_str(s, "fft", "32k");
             t.fft = !strcmp(f, "1k") ? 1024 : !strcmp(f, "2k") ? 2048 : !strcmp(f, "4k") ? 4096 : !strcmp(f, "8k") ? 8192 :
-                    !strcmp(f, "16k") ? 16384 : 32768;
+                    !strcmp(f, "16k") ? 16384 : !strcmp(f, "32k") ? 32768 : 0;
+            if (!t.fft) {
+                snprintf(err, errlen, "carrier %d: DVB-T2 fft must be 1k, 2k, 4k, 8k, 16k or 32k", c->idx);
+                return -1;
+            }
             t.extended = (int)conf_int(s, "extended", 1);
             if (sscanf(conf_str(s, "guard", "1/128"), "%d/%d", &t.gi_num, &t.gi_den) != 2) {
                 snprintf(err, errlen, "carrier %d: bad guard", c->idx);
@@ -739,7 +747,12 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             const char *pp = conf_str(s, "pilot", "PP7");
             t.pilot = atoi(pp + ((pp[0] == 'P' || pp[0] == 'p') ? 2 : 0));
             const char *cons = conf_str(s, "constellation", "256qam");
-            t.bits = !strcmp(cons, "qpsk") ? 2 : !strcmp(cons, "16qam") ? 4 : !strcmp(cons, "64qam") ? 6 : 8;
+            t.bits = !strcmp(cons, "qpsk") ? 2 : !strcmp(cons, "16qam") ? 4 : !strcmp(cons, "64qam") ? 6 :
+                     !strcmp(cons, "256qam") ? 8 : 0;
+            if (!t.bits) {
+                snprintf(err, errlen, "carrier %d: DVB-T2 constellation must be qpsk, 16qam, 64qam or 256qam", c->idx);
+                return -1;
+            }
             t.rotation = (int)conf_int(s, "rotation", 1);
             if (parse_code_rate(conf_str(s, "code_rate", "2/3"), &t.cr_num, &t.cr_den)) {
                 snprintf(err, errlen, "carrier %d: bad code_rate", c->idx);
@@ -750,7 +763,12 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             t.data_symbols = (int)conf_int(s, "data_symbols", 0);
             t.ti_blocks = (int)conf_int(s, "ti_blocks", 0);
             const char *l1 = conf_str(s, "l1_constellation", "64qam");
-            t.l1_bits = !strcmp(l1, "bpsk") ? 1 : !strcmp(l1, "qpsk") ? 2 : !strcmp(l1, "16qam") ? 4 : 6;
+            t.l1_bits = !strcmp(l1, "bpsk") ? 1 : !strcmp(l1, "qpsk") ? 2 : !strcmp(l1, "16qam") ? 4 :
+                        !strcmp(l1, "64qam") ? 6 : 0;
+            if (!t.l1_bits) {
+                snprintf(err, errlen, "carrier %d: DVB-T2 l1_constellation must be bpsk, qpsk, 16qam or 64qam", c->idx);
+                return -1;
+            }
             t.cell_id = (int)conf_int(s, "cell_id", 0);
             t.network_id = (int)conf_int(s, "network_id", 0x3085);
             t.t2_system_id = (int)conf_int(s, "t2_system_id", 0x8001);
@@ -838,7 +856,7 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
         sc.switch_timeout_ms = (int)conf_int(s, "switch_timeout_ms", 3000);
         sc.return_ms = (int)conf_int(s, "return_ms", 10000);
         sc.max_late_ms = (int)conf_int(s, "max_late_ms", 600);
-        sc.early_ms = (int)conf_int(s, "early_ms", 0);
+        sc.early_ms = (int)conf_int(s, "early_ms", 100);      /* the supervisor's default */
         sc.pcr_max_ms = (int)conf_int(s, "pcr_max_ms", 35);
         sc.pmt_period_ms = (int)conf_int(s, "pmt_period_ms", 100);
         sc.priority = (int)conf_int(s, "priority", 5);

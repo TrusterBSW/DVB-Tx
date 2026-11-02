@@ -80,10 +80,9 @@ and the carrier keys
 .BR frequency ,
 .BR bandwidth ,
 .BR symbol_rate .
-.B ts_rate
-and
+.BR ts_rate ,
 .B lnb_lo
-take plain numbers only.
+too.
 .TP
 .B Bit rates of the encoder
 .RB ( video_bitrate ,
@@ -323,7 +322,8 @@ and
 in its environment.
 .TP
 \fBinput_down_s\fR (number; default 10)
-Accepted, currently unused.
+Warning when a running source has sent nothing for this long (its process alive, its multiplex on
+the air); 0: never.
 .SH [ingest]
 The processes that turn each source into an MPEG\-TS on a local UDP port (see
 .BR dvbtx\-sources (7)).
@@ -641,10 +641,15 @@ Other names
 are used as given; the encoder must exist in ffmpeg.
 .TP
 \fBpreset\fR (string; default "veryfast")
-Encoder preset (libx264, libx265; with an explicit
-.B *_nvenc
-codec, set an NVENC one such as
-.BR p4 ).
+Encoder preset (libx264, libx265).
+An NVENC encoder takes its own presets
+.RB ( p1 " to " p7 ,
+.BR fast ,
+.BR hq ...);
+an x264 one such as the default
+.B veryfast
+gives it
+.BR p4 .
 .TP
 \fBtune\fR (string; default "")
 libx264/libx265
@@ -767,7 +772,8 @@ TX gain in dB: hackrf TX VGA 0\(en47, uhd 0\(en89.75.
 HackRF +14 dB amplifier.
 .TP
 \fBppm\fR (number; default 0.0)
-Oscillator correction.
+Error of the radio's crystal in parts per million: the sample rate and the LO asked from the radio
+are both divided by 1 + ppm/10^6 (HackRF, UHD, SoapySDR alike).
 .TP
 \fBcenter\fR (Hz; default 0)
 LO frequency; 0: automatic, see
@@ -1027,7 +1033,9 @@ QPSK.
 .TP
 \fBorbital\fR (degrees east; default 19.2)
 Orbital position in the NIT.
-The NIT frequency is the carrier frequency plus 9.75 GHz.
+.TP
+\fBlnb_lo\fR (Hz; default 9_750_000_000)
+LNB oscillator added to the carrier frequency in the NIT.
 .SS standard = \(dqdvbs2\(dq
 CCM, single TS input.
 .TP
@@ -1200,9 +1208,14 @@ is a number with a k/M/G multiplier
 .RB ( 498MHz
 becomes 498000000.0), else a TOML value (number, boolean, array, quoted string), else a plain
 string.
-A value that looks like a number with a multiplier but is a name must be quoted for TOML:
-.BR "\-s \(aqcarrier.0.mode=\(dq8k\(dq\(aq" ,
-.BR "\-s \(aqcarrier.0.fft=\(dq16k\(dq\(aq" .
+The DVB\-T
+.B mode
+and DVB\-T2
+.B fft
+are names: read as numbers
+.RB ( "\-s carrier.0.mode=8k"
+gives 8000), they are turned back into
+.BR 8k .
 When
 .B \-s
 sets a
