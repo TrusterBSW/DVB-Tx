@@ -302,6 +302,11 @@ sudo packaging/install-service.sh -c /chemin/vers/dvbtx.toml   # en service, dep
 
 Python ≥ 3.11, bibliothèque standard seulement. TSDuck est facultatif (analyse).
 
+## Première version
+
+La première version de DVB-Tx (scripts bash autour de ffmpeg, TSDuck et d'un graphe GNU Radio) est
+conservée dans [`old/`](old/), avec son historique.
+
 ## Licence
 
 GPL-3.0-or-later. © 2024–2026 BILLY Rémi.
