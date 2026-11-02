@@ -611,16 +611,17 @@ class Supervisor:
         vals = {}
         for c in st.get("carriers", []):
             i = c["carrier"]
-            vals[f"c{i}.rate"] = round(c["rate"] - c["null_rate"])
-            vals[f"c{i}.null"] = round(c["null_rate"])
-            vals[f"c{i}.si"] = round(c["si_rate"])
+            on = c.get("on", 1)                  # stopped: still multiplexed (backup clips), nothing on air
+            vals[f"c{i}.rate"] = round(c["rate"] - c["null_rate"]) if on else 0
+            vals[f"c{i}.null"] = round(c["null_rate"]) if on else 0
+            vals[f"c{i}.si"] = round(c["si_rate"]) if on else 0
             vals[f"c{i}.lead"] = c.get("clock_lead_ms")
             for s in c.get("services", []):
                 k = f"s{i}.{s['sid']}"
-                vals[k + ".rate"] = round(s["rate"])
-                vals[k + ".vmargin"] = s.get("video_margin_min_ms")
-                vals[k + ".amargin"] = s.get("audio_margin_min_ms")
-                vals[k + ".late"] = s.get("late_max_ms")
+                vals[k + ".rate"] = round(s["rate"]) if on else 0
+                vals[k + ".vmargin"] = s.get("video_margin_min_ms") if on else None
+                vals[k + ".amargin"] = s.get("audio_margin_min_ms") if on else None
+                vals[k + ".late"] = s.get("late_max_ms") if on else None
                 # service type from the streams
                 vt = s.get("video_type", -1)
                 if s.get("streams"):
@@ -634,6 +635,7 @@ class Supervisor:
         prim = {sv.sid: sv.input.index for sv in self.plan.services if sv.input}
         self.rates.add(time.time(), {x["sid"]: {"rate": x.get("rate"), "late": x.get("late_max_ms"),
                                                 "margin": x.get("video_margin_min_ms"), "cc": cc.get(prim.get(x["sid"]))}
+                                     if c.get("on", 1) else {"rate": 0, "late": None, "margin": None, "cc": None}
                                      for c in st.get("carriers", []) for x in c.get("services", [])})
         self.stats_exporter.send(dict(st, alerts=list(self.alerts.active.values())))
 
