@@ -85,7 +85,12 @@ cpus = "auto"                           # auto: every engine thread kept off the
 cpu_latency_us = 0                      # processor wake-up latency allowed while transmitting (/dev/cpu_dma_latency):
                                         # deep C-states delay the USB DMA and empty the radio's FIFO (-1: no request);
                                         # 100 saves power when the processor is busy, but a HackRF with the
-                                        # processor mostly idle had ~150 gaps/s with it: measure before changing
+                                        # processor mostly idle had ~150 gaps/s with it: measure before changing.
+                                        # "auto": starts at 0, one idle state more after each cpu_latency_step_s
+                                        # without gap on air, back to the last good step at the first gap
+                                        # (and twice as long before trying again)
+# cpu_latency_max_us = 100              # with "auto": the highest latency tried
+# cpu_latency_step_s = 30               # with "auto": seconds without gap before the next step
 
 # Power profiles of the whole machine (dvbtx power, dvbtx-power(8)): only once enabled with
 # "systemctl enable --now dvbtx-power"; save while nothing is on air, transmit while dvbtx runs

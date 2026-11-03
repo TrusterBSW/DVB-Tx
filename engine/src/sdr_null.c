@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * "null" radio: consumes samples at the nominal rate of the system clock, for tests without
  * hardware. args: file=/path writes the I/Q (cf32, or cs8 with format=cs8, cs16 with format=cs16);
- * absent=/path: the radio is missing while that file exists (not found, or unplugged while running). */
+ * absent=/path: the radio is missing while that file exists (not found, or unplugged while running);
+ * gaps=/path: its "late" counter grows while that file exists (gaps on air, for the tests). */
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -21,7 +22,8 @@ struct sdr_dev {
     int64_t at_ns;
     void *conv;
     size_t conv_len;
-    char absent[512];
+    char absent[512], gaps[512];
+    uint64_t late;
     int calls;
 };
 
@@ -53,6 +55,7 @@ static sdr_dev *nl_open(const sdr_params *p, char *err, int errlen)
     sdr_dev *d = calloc(1, sizeof *d);
     d->rate = p->rate;
     arg(p->args, "absent", d->absent, sizeof d->absent);
+    arg(p->args, "gaps", d->gaps, sizeof d->gaps);
     if (d->absent[0] && !access(d->absent, F_OK)) {
         snprintf(err, errlen, "no null radio (%s exists)", d->absent);
         free(d);
@@ -126,6 +129,9 @@ static void nl_stats(sdr_dev *d, sdr_stats *s)
     s->samples = played < d->samples ? played : d->samples;
     s->at_ns = now;
     s->fill = 0.5;
+    if (d->gaps[0] && !access(d->gaps, F_OK))
+        d->late++;
+    s->late = d->late;
 }
 
 static void nl_close(sdr_dev *d)

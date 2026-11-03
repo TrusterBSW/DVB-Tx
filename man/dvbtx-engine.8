@@ -133,7 +133,19 @@ while the engine runs (see
 .BR "PROCESSOR LATENCY" ).
 Default 0;
 .B \-1
-makes no request.
+makes no request;
+.B auto
+adapts it to the gaps on air.
+.TP
+.B cpu_latency_max_us
+With
+.BR "cpu_latency_us = auto" :
+the highest latency tried (default 100).
+.TP
+.B cpu_latency_step_s
+With
+.BR "cpu_latency_us = auto" :
+seconds without gap before the next step (default 30).
 .SS [input N]
 One UDP input carrying one MPEG\-TS program (usually written by an ffmpeg
 ingest process).
@@ -632,6 +644,7 @@ the engine prints one line:
 .PP
 .EX
 {"type":"stats","time":...,"uptime":...,"interval":...,
+ "cpu_latency_us":...,"cpu_latency_auto":...,
  "inputs":[...],"radios":[...],"carriers":[...]}
 .EE
 .PP
@@ -641,6 +654,11 @@ is the wall clock (Unix seconds),
 and
 .I interval
 in seconds.
+.I cpu_latency_us
+is the processor wake-up latency held (\-1: no request),
+.I cpu_latency_auto
+true while it adapts itself (see
+.BR "PROCESSOR LATENCY" ).
 Rates are in bit/s over the interval.
 .TP
 .B inputs[]
@@ -804,6 +822,25 @@ sleep between two buffers and saves power (see
 Writing the file needs root or
 .BR CAP_SYS_ADMIN ;
 on failure the engine warns and goes on.
+.PP
+With
+.BR "cpu_latency_us = auto" ,
+the engine starts at 0 and, after
+.B cpu_latency_step_s
+seconds without a new gap
+.RB ( underruns " or " late
+of any radio on the air), relaxes the latency to the next step, up to
+.BR cpu_latency_max_us .
+The steps sit just below the exit latency of each idle state of the machine
+.RI ( /sys/devices/system/cpu/cpu0/cpuidle/state*/latency ),
+each one letting one more C-state in.
+A new gap brings it back at once to the last step that held without gap (0 if
+the gap came at that step), and the next try waits twice as long (up to 6 h);
+a step that holds a whole wait is kept and the wait goes back to
+.BR cpu_latency_step_s .
+Every change is logged; the value held is
+.B cpu_latency_us
+in the statistics (\-1: none).
 .SH RADIO PLUGINS
 Each driver is a shared object
 .BI dvbtx\-sdr\- name .so
@@ -942,6 +979,14 @@ The radio is missing while
 exists: opening fails, and a running radio stops (as if unplugged) once the
 file appears.
 Used to test the missing-radio handling.
+.TP
+.BI gaps= path
+The radio's
+.B late
+counter grows while
+.I path
+exists (gaps on air), to test
+.BR "cpu_latency_us = auto" .
 .SH EXIT STATUS
 .TP
 0
