@@ -501,8 +501,9 @@ def build(cfg):
                 params.setdefault("code_rate", "3/4")
                 params.setdefault("pilots", True)
                 params.setdefault("frame", "normal")
-                if float(params["rolloff"]) not in (0.35, 0.25, 0.2):
-                    raise ConfigError(f"carrier {ci}: DVB-S2 rolloff must be 0.35, 0.25 or 0.20")
+                if not any(abs(float(params["rolloff"]) - r) < 1e-6 for r in capacity.DVBS2_ROLLOFFS):
+                    raise ConfigError(f"carrier {ci}: DVB-S2 rolloff must be 0.35, 0.25 or 0.20 "
+                                      f"(DVB-S2X: 0.15, 0.10 or 0.05)")
                 ts_rate = capacity.rate(std, **params)
             if std == "dvbs":
                 params.setdefault("symbol_rate", 27_500_000)

@@ -358,18 +358,19 @@ Clés
 Clés
 .BR dvbs2  :
 .B modulation
-.RB ( qpsk ", " 8psk ", " 16apsk ", " 32apsk  ;
+.RB ( qpsk ", " 8psk ", " 16apsk ", " 32apsk ", " 64apsk ", " 128apsk ", " 256apsk  ;
 par défaut 8psk),
 .B code_rate
-(par défaut 3/4 ; les rendements que EN 302 307 définit pour la modulation, pas
-de 9/10 en trames courtes),
+(par défaut 3/4 ; les rendements que EN 302 307-1 définit pour la modulation, pas
+de 9/10 en trames courtes ; ou un rendement DVB-S2X de EN 302 307-2, VL-SNR exceptés,
+la variante de constellation en découlant),
 .B frame
 .RB ( normal " ou " short ,
 par défaut normal),
 .B pilots
 (par défaut 1),
 .B rolloff
-(par défaut 0.35),
+(par défaut 0.35 ; 0.25, 0.20, et en DVB-S2X 0.15, 0.10, 0.05),
 .B gold_code
 (0 à 262141, par défaut 0),
 .B symbol_rate

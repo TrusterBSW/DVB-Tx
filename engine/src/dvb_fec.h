@@ -45,12 +45,15 @@ typedef struct dvb_bbframer {
     uint8_t crc;              /* running CRC-8 of the current packet */
     uint8_t pkt[188];
     long sync_errors;         /* packets that did not start with 0x47 */
+    int ro_alt;               /* DVB-S2X low roll-off: RO code sent every other frame (-1: none) */
+    unsigned nframe;
     ts_pull_fn pull;
     void *ctx;
     uint8_t crc_tab[4][256];  /* [k][x]: CRC-8 register x after k + 1 more zero bytes */
 } dvb_bbframer;
 
-/* ro: DVB-S2 roll-off code (0: 0.35, 1: 0.25, 2: 0.20), 0 for DVB-T2 */
+/* ro: DVB-S2 roll-off code (0: 0.35, 1: 0.25, 2: 0.20), 0 for DVB-T2; DVB-S2X (EN 302 307-2
+ * 5.1.6) 4: 0.15, 5: 0.10, 6: 0.05, sent as RO = 11 and 00 / 01 / 10 in alternate BBHEADERs */
 void dvb_bbframer_init(dvb_bbframer *b, int kbch, int ro, ts_pull_fn pull, void *ctx);
 /* Writes kbch / 8 bytes; pulls TS packets as needed ((kbch - 80) / 8 bytes of them). */
 void dvb_bbframer_frame(dvb_bbframer *b, uint8_t *out);

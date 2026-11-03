@@ -14,6 +14,9 @@
 | `live_supervisor_test.py` | the same through `dvbtx run` and `dvbtx channel`: PAT and SDT received, the configuration file rewritten, a hand edit applied by SIGHUP, an engine crash after changes, the API refusing `exec:` and other sites, the file edited when dvbtx is stopped (32 checks) | ffmpeg |
 | `live_failover_test.py` | a channel with two sources in order of preference (UDP streams started and stopped): an unstable source (on 5 s, off 2.5 s) left for the next one and not taken back at once, the second used when the first fails, back to the first without a cut, backup when both fail, the list changed through the API and written to the file; the other channel undisturbed (19 checks) | ffmpeg |
 | `live_discont_test.py` | an HTTP source whose ffmpeg keeps reporting timestamp discontinuities (audio PTS moved back 0.17 s every other 0.33 s by a local server): started again beside itself and swapped in without a cut, the new ffmpeg clean, the other channel undisturbed (8 checks) | ffmpeg |
+| `cmp_dvbs2x.py` | every DVB-S2X MODCOD (55, pilots off and on) of the dvbtx coder against GNU Radio gr-dtv, symbol by symbol (110 of 110 identical) | GNU Radio with gr-dtv |
+| `dvbs2_coder_check.c` | DVB-S2 symbols of several MODCODs written to a file, to compare two builds with `cmp` (bit-exactness of an optimisation), and their speed | — |
+| `planner_test.py` | the frequency planner: LO inside a single wide carrier, warnings near a radio's practical rate | — |
 | `channels_test.py` | the channel operations on the configuration and the TOML editor (comments kept, sub-tables, refusals, a file edited meanwhile left untouched) | — |
 | `bench_dvbt.c` | speed of the DVB-T coder (share of one core per carrier) | — |
 | `gr_dvbt_tx.py` | known-good GNU Radio DVB-T transmitter on a HackRF, to compare reception | gr-osmosdr |

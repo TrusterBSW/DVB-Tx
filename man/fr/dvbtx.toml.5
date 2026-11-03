@@ -1089,16 +1089,31 @@ CCM, entrée TS unique.
 .BR qpsk ,
 .BR 8psk ,
 .BR 16apsk ,
-.BR 32apsk .
+.BR 32apsk \~;
+DVB-S2X (EN 302 307-2) aussi
+.BR 64apsk ,
+.BR 128apsk ,
+.BR 256apsk
+(et
+.BR 8apsk ,
+.B 8+8apsk
+comme noms des variantes S2X à 8 et 16 points).
 .TP
 \fBcode_rate\fR (chaîne\~; défaut "3/4")
 qpsk\~: 1/4 1/3 2/5 1/2 3/5 2/3 3/4 4/5 5/6 8/9 9/10\~; 8psk\~: 3/5 2/3 3/4 5/6 8/9 9/10\~;
 16apsk\~: 2/3 3/4 4/5 5/6 8/9 9/10\~; 32apsk\~: 3/4 4/5 5/6 8/9 9/10 (9/10 exclu en trames courtes).
+DVB-S2X, trames normales\~: qpsk 13/45 9/20 11/20\~; 8psk 23/36 25/36 13/18, 8apsk 100/180 104/180\~;
+16apsk 26/45 3/5 28/45 23/36 25/36 13/18 140/180 154/180, 8+8apsk 90/180 96/180 100/180 18/30 20/30\~;
+32apsk 2/3 128/180 132/180 140/180\~; 64apsk 128/180 132/180 7/9 4/5 5/6\~; 128apsk 135/180 140/180\~;
+256apsk 116/180 124/180 128/180 135/180 20/30 22/30. Trames courtes\~: qpsk 11/45 4/15 14/45 7/15 8/15
+32/45\~; 8psk 7/15 8/15 26/45 32/45\~; 16apsk 26/45 3/5 7/15 8/15 32/45\~; 32apsk 2/3 32/45.
+La variante de constellation (8APSK, 8+8APSK, 4+12+16APSK...) découle du rendement.
 .TP
 \fBsymbol_rate\fR (symboles/s\~; défaut 27_500_000)
 .TP
 \fBrolloff\fR (nombre\~; défaut 0.35)
-0.35, 0.25 ou 0.20.
+0.35, 0.25 ou 0.20\~; en DVB-S2X 0.15, 0.10 ou 0.05 (signalés dans un BBHEADER sur deux\~; le
+descripteur de livraison satellite de la NIT annonce 0.20 pour eux).
 .TP
 \fBpilots\fR (booléen\~; défaut true)
 .TP

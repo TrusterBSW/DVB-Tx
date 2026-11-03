@@ -223,7 +223,8 @@ def satellite_delivery(freq_hz, symbol_rate, code_rate, polarization="h", s2=Fal
     f = _bcd_digits(round(freq_hz / 10000), 8)              # GHz with 5 decimals = 10 kHz units
     pos = _bcd_digits(round(orbital * 10), 4)
     pol = {"h": 0, "v": 1, "l": 2, "r": 3}[polarization[0].lower()]
-    ro = {0.35: 0, 0.25: 1, 0.20: 2}.get(rolloff, 0)
+    # DVB-S2X roll-offs (0.15, 0.10, 0.05) are not in this descriptor: 0.20, the nearest
+    ro = 0 if rolloff > 0.3 else 1 if rolloff > 0.22 else 2
     mt = {"auto": 0, "qpsk": 1, "8psk": 2, "16qam": 3}.get(modulation, 0)
     b = (0x80 if east else 0) | (pol << 5) | ((ro if s2 else 0) << 3) | ((1 if s2 else 0) << 2) | mt
     sr = _bcd_digits(round(symbol_rate / 100) * 10, 8)

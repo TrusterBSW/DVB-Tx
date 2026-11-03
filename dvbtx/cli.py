@@ -674,7 +674,8 @@ def main(argv=None):
     k.add_argument("--bandwidth", help="DVB-T/T2 channel bandwidth (default 8MHz)")
     k.add_argument("--mode", choices=["2k", "8k"], help="DVB-T (default 8k)")
     k.add_argument("--constellation", help="DVB-T: qpsk 16qam 64qam; DVB-T2 up to 256qam; DVB-C: 16qam-256qam")
-    k.add_argument("--modulation", help="DVB-S2: qpsk 8psk 16apsk 32apsk")
+    k.add_argument("--modulation", help="DVB-S2: qpsk 8psk 16apsk 32apsk; DVB-S2X also 64apsk 128apsk 256apsk "
+                   "(8apsk, 8+8apsk)")
     k.add_argument("--code-rate", dest="code_rate", help="e.g. 3/4")
     k.add_argument("--guard", help="guard interval, e.g. 1/32")
     k.add_argument("--symbol-rate", dest="symbol_rate", help="DVB-C/S/S2, e.g. 27.5M")
