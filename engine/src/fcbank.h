@@ -30,6 +30,8 @@ int fcbank_add(fcbank *b, double symbol_rate, int pulse, double rolloff, double 
 void fcbank_block(fcbank *b, float complex *out, int n);
 void fcbank_free(fcbank *b);
 int fcbank_members(const fcbank *b);
+/* member i off the air (its symbols still pulled, not filtered) or back */
+void fcbank_mute(fcbank *b, int i, int muted);
 /* frequency offset of member i (as synthesised) */
 double fcbank_offset(const fcbank *b, int i);
 /* block sizes, for the logs */
