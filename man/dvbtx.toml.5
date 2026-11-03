@@ -791,7 +791,13 @@ Analog filter; 0: automatic (hackrf: the narrowest baseband filter that passes t
 With a single carrier and an automatic LO, the LO is put this far below the carrier, to keep its
 leakage out of the channel;
 .BR auto :
-1.05 times half the occupied bandwidth.
+1.05 times half the occupied bandwidth, or, when that needs more than the radio's maximum rate,
+the largest offset that fits, down to 0 (LO in the middle of the channel, its leakage there;
+.B dvbtx check
+says so).
+.B dvbtx check
+also warns when the rate is near the radio's practical limit (hackrf above 19.7 MS/s: USB FIFO
+gaps; uhd B2xx above 56 MS/s): a lower symbol rate is then safer.
 .TP
 \fBbackoff_db\fR (number; default 13.0)
 RMS level below full scale (room for the OFDM peaks).

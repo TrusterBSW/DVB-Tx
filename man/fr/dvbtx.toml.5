@@ -797,7 +797,15 @@ les bords de la bande).
 Avec une seule porteuse et un oscillateur local automatique, l'oscillateur local est placé à cette
 distance sous la porteuse, pour garder sa fuite hors du canal\~;
 .BR auto "\~:"
-1,05 fois la moitié de la largeur de bande occupée.
+1,05 fois la moitié de la largeur de bande occupée ou, si cela demande plus que le débit maximal de
+la radio, le plus grand décalage qui tient, jusqu'à 0 (oscillateur local au milieu du canal, sa fuite
+aussi\~;
+.B dvbtx check
+le signale).
+.B dvbtx check
+prévient aussi quand le débit approche la limite pratique de la radio (hackrf au\-dessus de
+19,7 MS/s\~: trous dans la FIFO USB\~; uhd B2xx au\-dessus de 56 MS/s)\~: un débit symbole plus
+bas est alors plus sûr.
 .TP
 \fBbackoff_db\fR (nombre\~; défaut 13.0)
 Niveau efficace sous la pleine échelle (marge pour les crêtes OFDM).

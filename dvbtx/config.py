@@ -74,6 +74,9 @@ CARRIER_COMMON_KEYS = ("name", "radio", "standard", "frequency", "channel", "tsi
 
 HACKRF_FILTERS = [1.75e6, 2.5e6, 3.5e6, 5e6, 5.5e6, 6e6, 7e6, 8e6, 9e6, 10e6, 12e6, 14e6, 15e6, 20e6, 24e6, 28e6]
 DRIVER_RATES = {"hackrf": (8e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6, 1e9), "null": (1, 1e10)}
+# above these the radio works but at its edge: hackrf USB 2 FIFO gaps (~15/min at 20 MS/s, none at 19.62),
+# uhd B2xx AD9361 analog filter limit (56 MHz)
+PRACTICAL_RATES = {"hackrf": 19.7e6, "uhd": 56e6}
 
 
 def occupied_half(car):
@@ -269,6 +272,7 @@ class Radio:
     clock: str
     carriers: list = field(default_factory=list)
     nfft: int = 0
+    notes: list = field(default_factory=list)   # remarks and warnings of the plan, printed by describe()
 
 
 @dataclass
@@ -727,7 +731,59 @@ def _input_kind(src, opts):
     return "ffmpeg", ""
 
 
+class _RateError(ConfigError):
+    """the carriers do not fit the radio's sample rate"""
+
+
 def _plan_radio(r):
+    r.notes = []
+    cars = r.carriers
+    if r.center > 0 or len(cars) != 1 or r.lo_offset != "auto":
+        _plan_radio_at(r, None)
+    else:
+        # LO out of the channel (its leakage out of it); when that needs too high a rate, the largest offset
+        # that fits, down to 0 (LO in the middle), preferring one under the radio's practical limit
+        half = occupied_half(cars[0])
+        saved = (r.center, r.rate, r.bandwidth, r.nfft)
+        try:
+            _plan_radio_at(r, half * 1.05)
+        except _RateError as e:
+            first = e
+            practical = PRACTICAL_RATES.get(r.driver)
+            fits = []
+            for k in range(int(half * 1.05 / 100e3), -1, -1):
+                r.center, r.rate, r.bandwidth, r.nfft = saved
+                try:
+                    _plan_radio_at(r, k * 100e3)
+                except _RateError:
+                    continue
+                fits.append((k * 100e3, r.rate))
+                if not practical or r.rate <= practical:
+                    break
+            r.center, r.rate, r.bandwidth, r.nfft = saved
+            if not fits:
+                raise first from None
+            lo = next((f for f in fits if not practical or f[1] <= practical), fits[0])[0]
+            _plan_radio_at(r, lo)
+            if lo <= 0:
+                r.notes.append("LO inside the channel (its leakage in the middle): outside it would need "
+                               "too high a rate")
+            elif lo < half:
+                r.notes.append(f"LO inside the channel, {lo / 1e6:g} MHz below its centre (its leakage in it): "
+                               "outside it would need too high a rate")
+            else:
+                r.notes.append(f"LO {lo / 1e6:g} MHz below the carrier, closer to the channel edge than usual: "
+                               "further would need too high a rate")
+    practical = PRACTICAL_RATES.get(r.driver)
+    if practical and r.rate > practical:
+        r.notes.append(f"warning: {r.rate / 1e6:.3f} MS/s is close to the {r.driver} limit (above "
+                       f"{practical / 1e6:g} MS/s: "
+                       f"{'USB FIFO gaps' if r.driver == 'hackrf' else 'the AD9361 analog filter edge'}); "
+                       "a lower symbol rate keeps it safe")
+
+
+def _plan_radio_at(r, lo):
+    """plans radio r; lo: the LO offset below a single carrier (automatic LO), None: from the configuration"""
     cars = r.carriers
     ofdm = [c for c in cars if c.standard == "dvbt"]
     if ofdm:
@@ -754,7 +810,8 @@ def _plan_radio(r):
     if r.center <= 0:
         if len(cars) == 1:
             c = cars[0]
-            lo = occupied_half(c) * 1.05 if r.lo_offset == "auto" else float(_num(r.lo_offset, "lo_offset"))
+            if lo is None:
+                lo = occupied_half(c) * 1.05 if r.lo_offset == "auto" else float(_num(r.lo_offset, "lo_offset"))
             target = c.frequency - lo             # keep the LO leakage out of the channel
         else:
             target = (lo_edge + hi_edge) / 2
@@ -805,9 +862,9 @@ def _plan_radio(r):
             if fr:
                 r.rate = fr
     if r.rate < need:
-        raise ConfigError(f"radio {r.name}: rate {r.rate / 1e6:.3f} MS/s too low for the carriers (needs {need / 1e6:.3f})")
+        raise _RateError(f"radio {r.name}: rate {r.rate / 1e6:.3f} MS/s too low for the carriers (needs {need / 1e6:.3f})")
     if r.rate > hi_rate * 1.0001:
-        raise ConfigError(f"radio {r.name}: {len(cars)} carriers need {r.rate / 1e6:.3f} MS/s, more than "
+        raise _RateError(f"radio {r.name}: {len(cars)} carriers need {r.rate / 1e6:.3f} MS/s, more than "
                           f"{r.driver} can do ({hi_rate / 1e6:.2f}); split them over several radios")
 
 
@@ -895,6 +952,7 @@ def describe(plan):
         out.append(f"radio {r.name} ({r.driver}{' ' + r.args if r.args else ''}): LO {r.center / 1e6:.4f} MHz, "
                    f"{r.rate / 1e6:.6f} MS/s{f' (FFT {r.nfft})' if r.nfft else ''}"
                    f"{f', filter {r.bandwidth / 1e6:g} MHz' if r.bandwidth else ''}, gain {r.gain:g} dB{' +amp' if r.amp else ''}")
+        out.extend(f"   {n}" for n in r.notes)
     for c in plan.carriers:
         p = c.params
         where = f"{c.frequency / 1e6:.3f} MHz (offset {c.offset / 1e6:+.3f})" if c.radio else f"-> {c.output}"
