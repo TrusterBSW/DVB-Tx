@@ -392,7 +392,8 @@ to a transmit profile while a dvbtx unit runs (called by the units at start and
 stop, also after a crash).
 With
 .B engine.cpu_latency_us = 100
-the cores may still sleep between two radio buffers.
+the cores may still sleep between two radio buffers, but only safely while the processor is
+busy (with it mostly idle, a HackRF at 19.6 MS/s ran short of data): the default 0 is the safe one.
 See
 .BR dvbtx\-power (8).
 .SH TIMING

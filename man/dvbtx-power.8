@@ -79,6 +79,9 @@ the engine exits, even after a crash.
 100 lets the cores sleep down to C6 (85 \(mcs to wake up on an Intel 8th generation) and forbids
 only the deepest states (C7 to C10, 124 to 890 \(mcs), whose exit delays the USB DMA long enough
 to empty the HackRF's 1 ms FIFO: gaps on air.
+That holds only while the processor is busy: on the same i3 with the HackRF alone at 19.6 MS/s
+(the B210 unplugged, the processor mostly idle), 100 gave about 150 gaps a second, 0 none.
+Keep the default 0 unless you have measured another value with your radios and your load.
 \-1 makes no request.
 .SS Measured
 Intel Core i3-8100T, four multiplexes on a HackRF and a B210 (DVB-T, DVB-T2, DVB-C), processor

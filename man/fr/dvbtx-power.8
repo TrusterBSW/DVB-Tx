@@ -89,6 +89,10 @@ l'abandonne quand le moteur se termine, même après un plantage.
 100 laisse les cœurs dormir jusqu'à C6 (85 \(mcs pour se réveiller sur un Intel de 8e génération) et
 n'interdit que les états les plus profonds (C7 à C10, de 124 à 890 \(mcs), dont la latence de sortie
 retarde le DMA USB assez longtemps pour vider la FIFO de 1 ms du HackRF\~: des trous à l'antenne.
+Cela ne vaut que tant que le processeur est occupé\~: sur le même i3, avec le HackRF seul à
+19,6 MS/s (le B210 débranché, le processeur presque au repos), 100 a donné environ 150 trous par
+seconde, 0 aucun.
+Gardez la valeur par défaut, 0, sauf à avoir mesuré une autre valeur avec vos radios et votre charge.
 \-1 ne fait aucune requête.
 .SS Mesures
 Intel Core i3-8100T, quatre multiplex sur un HackRF et un B210 (DVB-T, DVB-T2, DVB-C), puissance du

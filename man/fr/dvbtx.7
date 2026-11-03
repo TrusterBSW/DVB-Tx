@@ -414,7 +414,9 @@ passe à un profil d'émission tant qu'une unité dvbtx tourne (appelé par les 
 au démarrage et à l'arrêt, y compris après un plantage).
 Avec
 .B engine.cpu_latency_us = 100
-les cœurs peuvent encore se mettre en veille entre deux tampons radio.
+les cœurs peuvent encore se mettre en veille entre deux tampons radio, mais sans risque
+seulement tant que le processeur est occupé (presque au repos, un HackRF à 19,6 MS/s manquait de
+données)\~: la valeur par défaut, 0, est la plus sûre.
 Voir
 .BR dvbtx\-power (8).
 .SH HORLOGE
