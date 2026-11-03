@@ -705,8 +705,10 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             clk = radio_clock;
         } else if (!strcmp(c->standard, "dvbs2")) {
             const char *mod = conf_str(s, "modulation", "8psk");
-            c->s2.bits = !strcmp(mod, "qpsk") ? 2 : !strcmp(mod, "8psk") ? 3 : !strcmp(mod, "16apsk") ? 4 :
-                         !strcmp(mod, "32apsk") ? 5 : 0;
+            /* the DVB-S2X variants (8APSK, 8+8APSK, ...) follow from the code rate */
+            c->s2.bits = !strcmp(mod, "qpsk") ? 2 : !strcmp(mod, "8psk") || !strcmp(mod, "8apsk") ? 3
+                         : !strcmp(mod, "16apsk") || !strcmp(mod, "8+8apsk") ? 4 : !strcmp(mod, "32apsk") ? 5
+                         : !strcmp(mod, "64apsk") ? 6 : !strcmp(mod, "128apsk") ? 7 : !strcmp(mod, "256apsk") ? 8 : 0;
             if (parse_code_rate(conf_str(s, "code_rate", "3/4"), &c->s2.cr_num, &c->s2.cr_den)) {
                 snprintf(err, errlen, "carrier %d: bad code_rate", c->idx);
                 return -1;

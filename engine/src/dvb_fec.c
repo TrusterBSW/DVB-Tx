@@ -9,6 +9,7 @@
 
 #define DVBT2_TABLES_LDPC
 #include "dvbt2_tables.h"
+#include "dvbs2x_tables.h"
 
 static const struct { int num, den, kbch_n, kldpc_n, par_n, kbch_s, kldpc_s; } rates[] = {
     { 1, 4, 16008, 16200, 192, 3072, 3240 },
@@ -50,6 +51,23 @@ int dvb_fec_code_get(int short_frame, int cr_num, int cr_den, int standard, dvb_
         c->q = (c->nldpc - c->kldpc) / 360;
         return 0;
     }
+    /* DVB-S2X (EN 302 307-2) code rates */
+    for (unsigned i = 0; standard == DVB_FEC_S2 && i < sizeof dvbs2x_fec / sizeof dvbs2x_fec[0]; i++) {
+        const struct dvbs2x_fec_row *r = &dvbs2x_fec[i];
+        if (r->num != cr_num || r->den != cr_den || r->short_frame != (short_frame ? 1 : 0))
+            continue;
+        memset(c, 0, sizeof *c);
+        c->short_frame = r->short_frame;
+        c->cr_num = cr_num;
+        c->cr_den = cr_den;
+        c->standard = standard;
+        c->nldpc = r->short_frame ? 16200 : 64800;
+        c->kbch = r->kbch;
+        c->kldpc = r->kldpc;
+        c->nparity_bch = r->nparity;
+        c->q = (c->nldpc - c->kldpc) / 360;
+        return 0;
+    }
     return -1;
 }
 
@@ -63,7 +81,8 @@ void dvb_bbframer_init(dvb_bbframer *b, int kbch, int ro, ts_pull_fn pull, void 
     memset(b, 0, sizeof *b);
     b->kbch = kbch;
     /* TS/GS = 11 (transport), SIS/MIS = 1, CCM = 1, ISSYI = 0, NPD = 0, RO */
-    b->matype1 = (uint8_t)(0xC0 | 0x20 | 0x10 | (ro & 3));
+    b->ro_alt = ro >= 4 ? ro - 4 : -1;
+    b->matype1 = (uint8_t)(0xC0 | 0x20 | 0x10 | (ro >= 4 ? 3 : ro & 3));
     b->pull = pull;
     b->ctx = ctx;
     for (int i = 0; i < 256; i++) {
@@ -89,6 +108,8 @@ void dvb_bbframer_frame(dvb_bbframer *b, uint8_t *out)
 {
     int dfl = b->kbch - 80;
     int syncd = b->count == 0 ? 0 : (188 - b->count) * 8;
+    if (b->ro_alt >= 0)
+        b->matype1 = (uint8_t)((b->matype1 & ~3) | (b->nframe++ & 1 ? b->ro_alt : 3));
     out[0] = b->matype1;
     out[1] = 0;                       /* MATYPE-2 (ISI), single stream */
     out[2] = (188 * 8) >> 8;          /* UPL */
@@ -293,8 +314,10 @@ void dvb_bch_encode(const dvb_bch *b, const uint8_t *in, int kbch, uint8_t *pari
 int dvb_ldpc_init(dvb_ldpc *l, const dvb_fec_code *c)
 {
     const struct dvb_ldpc_code_desc *d = NULL;
-    for (unsigned i = 0; i < sizeof dvb_ldpc_codes / sizeof dvb_ldpc_codes[0]; i++) {
-        const struct dvb_ldpc_code_desc *e = &dvb_ldpc_codes[i];
+    const unsigned n1 = sizeof dvb_ldpc_codes / sizeof dvb_ldpc_codes[0];
+    const unsigned n2 = sizeof dvbs2x_ldpc_codes / sizeof dvbs2x_ldpc_codes[0];
+    for (unsigned i = 0; i < n1 + n2; i++) {
+        const struct dvb_ldpc_code_desc *e = i < n1 ? &dvb_ldpc_codes[i] : &dvbs2x_ldpc_codes[i - n1];
         if (e->short_frame != c->short_frame || e->num != c->cr_num || e->den != c->cr_den)
             continue;
         if (e->variant == 1 && c->standard != DVB_FEC_T2)

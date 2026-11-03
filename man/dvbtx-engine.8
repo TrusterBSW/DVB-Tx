@@ -337,18 +337,19 @@ keys:
 .B dvbs2
 keys:
 .B modulation
-.RB ( qpsk ", " 8psk ", " 16apsk ", " 32apsk ;
+.RB ( qpsk ", " 8psk ", " 16apsk ", " 32apsk ", " 64apsk ", " 128apsk ", " 256apsk ;
 default 8psk),
 .B code_rate
-(default 3/4; the rates EN 302 307 defines for the modulation, no 9/10 with
-short frames),
+(default 3/4; the rates EN 302 307-1 defines for the modulation, no 9/10 with
+short frames; or a DVB-S2X rate of EN 302 307-2, VL-SNR excepted, the
+constellation variant following from it),
 .B frame
 .RB ( normal " or " short ,
 default normal),
 .B pilots
 (default 1),
 .B rolloff
-(default 0.35),
+(default 0.35; 0.25, 0.20, and the DVB-S2X 0.15, 0.10, 0.05),
 .B gold_code
 (0 to 262141, default 0),
 .B symbol_rate

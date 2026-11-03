@@ -1053,16 +1053,30 @@ CCM, single TS input.
 .BR qpsk ,
 .BR 8psk ,
 .BR 16apsk ,
-.BR 32apsk .
+.BR 32apsk ;
+DVB-S2X (EN 302 307-2) also
+.BR 64apsk ,
+.BR 128apsk ,
+.BR 256apsk
+(and
+.BR 8apsk ,
+.B 8+8apsk
+as names of the 8- and 16-point S2X variants).
 .TP
 \fBcode_rate\fR (string; default "3/4")
 qpsk: 1/4 1/3 2/5 1/2 3/5 2/3 3/4 4/5 5/6 8/9 9/10; 8psk: 3/5 2/3 3/4 5/6 8/9 9/10;
 16apsk: 2/3 3/4 4/5 5/6 8/9 9/10; 32apsk: 3/4 4/5 5/6 8/9 9/10 (9/10 not with short frames).
+DVB-S2X, normal frames: qpsk 13/45 9/20 11/20; 8psk 23/36 25/36 13/18, 8apsk 100/180 104/180;
+16apsk 26/45 3/5 28/45 23/36 25/36 13/18 140/180 154/180, 8+8apsk 90/180 96/180 100/180 18/30 20/30;
+32apsk 2/3 128/180 132/180 140/180; 64apsk 128/180 132/180 7/9 4/5 5/6; 128apsk 135/180 140/180;
+256apsk 116/180 124/180 128/180 135/180 20/30 22/30. Short frames: qpsk 11/45 4/15 14/45 7/15 8/15 32/45;
+8psk 7/15 8/15 26/45 32/45; 16apsk 26/45 3/5 7/15 8/15 32/45; 32apsk 2/3 32/45.
 .TP
 \fBsymbol_rate\fR (symbols/s; default 27_500_000)
 .TP
 \fBrolloff\fR (number; default 0.35)
-0.35, 0.25 or 0.20.
+0.35, 0.25 or 0.20; DVB-S2X 0.15, 0.10 or 0.05 (signalled in alternate BBHEADERs; the NIT
+satellite delivery descriptor announces 0.20 for them).
 .TP
 \fBpilots\fR (boolean; default true)
 .TP

@@ -5,14 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "dvbs2x_tables.h"
 #include "util.h"
 
 struct dvbs2 {
     dvbs2_cfg c;
+    const struct dvbs2x_modcod *x; /* DVB-S2X MODCOD, NULL for DVB-S2 */
     dvb_fec fec;
     int nldpc, nsym, slots, npilot;
-    int rowaddr[5];
-    float complex constel[32];
+    int rowaddr[8];
+    float complex constel[256];
     float complex plh[90];
     uint8_t *cscram;           /* scrambling of the slot and pilot symbols */
     uint8_t cw[8100];
@@ -44,6 +46,20 @@ static int rate_index(const dvbs2_cfg *c)
     return -1;
 }
 
+/* the DVB-S2X MODCOD (not a DVB-S2 one) of a configuration, NULL if none */
+static const struct dvbs2x_modcod *s2x_modcod(const dvbs2_cfg *c)
+{
+    if (rate_index(c) >= 0)
+        return NULL;
+    for (unsigned i = 0; i < sizeof dvbs2x_modcods / sizeof dvbs2x_modcods[0]; i++) {
+        const struct dvbs2x_modcod *m = &dvbs2x_modcods[i];
+        if (m->bits == c->bits && m->num == c->cr_num && m->den == c->cr_den &&
+            m->short_frame == (c->short_frame ? 1 : 0))
+            return m;
+    }
+    return NULL;
+}
+
 static int modcod(const dvbs2_cfg *c)
 {
     int i = rate_index(c);
@@ -52,9 +68,16 @@ static int modcod(const dvbs2_cfg *c)
 
 const char *dvbs2_cfg_check(const dvbs2_cfg *c)
 {
-    if (rate_index(c) < 0)
-        return "DVB-S2: code rate not defined for this modulation (QPSK 1/4-9/10, 8PSK 3/5-9/10, "
-               "16APSK 2/3-9/10, 32APSK 3/4-9/10)";
+    if (rate_index(c) < 0 && !s2x_modcod(c))
+        return "DVB-S2: code rate not defined for this modulation and frame size (DVB-S2: QPSK "
+               "1/4-9/10, 8PSK 3/5-9/10, 16APSK 2/3-9/10, 32APSK 3/4-9/10; DVB-S2X: see EN 302 307-2 "
+               "table 17a/17b)";
+    static const double rolloffs[] = { 0.35, 0.25, 0.20, 0.15, 0.10, 0.05 };
+    int ro_ok = 0;
+    for (int i = 0; i < 6; i++)
+        ro_ok |= fabs(c->rolloff - rolloffs[i]) < 1e-3;
+    if (!ro_ok)
+        return "DVB-S2: roll-off 0.35, 0.25, 0.20 (DVB-S2X: 0.15, 0.10, 0.05)";
     if (c->short_frame && c->cr_num == 9 && c->cr_den == 10)
         return "DVB-S2: no 9/10 with short frames";
     if (c->gold_code < 0 || c->gold_code > 262141)
@@ -68,8 +91,8 @@ const char *dvbs2_cfg_check(const dvbs2_cfg *c)
 static void geometry(const dvbs2_cfg *c, int *nldpc, int *nsym, int *slots, int *npilot)
 {
     *nldpc = c->short_frame ? 16200 : 64800;
-    *nsym = *nldpc / c->bits;
-    *slots = *nsym / 90;
+    *nsym = (*nldpc + c->bits - 1) / c->bits;   /* 128APSK: 9258 symbols ... */
+    *slots = (*nsym + 89) / 90;                 /* ... in 103 slots, 12 dummy symbols */
     *npilot = c->pilots ? ((*slots - 1) / 16) * 36 : 0;
 }
 
@@ -80,13 +103,18 @@ double dvbs2_ts_rate(const dvbs2_cfg *c, double rs)
         return 0;
     int nldpc, nsym, slots, npilot;
     geometry(c, &nldpc, &nsym, &slots, &npilot);
-    return (double)(fc.kbch - 80) * rs / (90 + nsym + npilot);
+    return (double)(fc.kbch - 80) * rs / (90 + 90 * slots + npilot);
 }
 
 static float complex polar(double r, double a) { return (float)(r * cos(a)) + (float)(r * sin(a)) * I; }
 
 static void build_constellation(dvbs2 *s)
 {
+    if (s->x) {
+        for (int k = 0; k < (1 << s->c.bits); k++)
+            s->constel[k] = s->x->pts[k][0] + s->x->pts[k][1] * I;
+        return;
+    }
     const double P = M_PI;
     float complex *m = s->constel;
     int i = rate_index(&s->c);
@@ -136,7 +164,9 @@ static void build_plheader(dvbs2 *s)
     for (int i = 0; i < 26; i++)
         b[i] = sof[i];
     int type = (s->c.short_frame ? 2 : 0) | (s->c.pilots ? 1 : 0);
-    unsigned code = (unsigned)((modcod(&s->c) << 2) | type);
+    /* DVB-S2X: the 8-bit PLS code of the MODCOD (frame size implied), pilot bit 0 */
+    unsigned code = s->x ? (unsigned)(s->x->pls | (s->c.pilots ? 1 : 0))
+                         : (unsigned)((modcod(&s->c) << 2) | type);
     unsigned long t = 0;
     for (int k = 0; k < 7; k++)
         if (code & (0x80u >> k))
@@ -154,6 +184,9 @@ static void build_plheader(dvbs2 *s)
         else
             s->plh[i] = b[i] ? ((float)cos(a) + (float)sin(5 * a) * I) : ((float)cos(5 * a) + (float)sin(a) * I);
     }
+    if (code & 0x80)     /* DVB-S2X PLS codes: the PLS part rotated by 90 degrees (EN 302 307-2 5.5.2) */
+        for (int i = 26; i < 90; i++)
+            s->plh[i] *= I;
 }
 
 static void build_scrambler(dvbs2 *s, int n)
@@ -185,9 +218,15 @@ dvbs2 *dvbs2_new(const dvbs2_cfg *c, ts_pull_fn pull, void *ctx)
         return NULL;
     dvbs2 *s = xcalloc(1, sizeof *s);
     s->c = *c;
+    s->x = s2x_modcod(c);
     dvb_fec_code fc;
     dvb_fec_code_get(c->short_frame, c->cr_num, c->cr_den, DVB_FEC_S2, &fc);
-    int ro = fabs(c->rolloff - 0.25) < 1e-3 ? 1 : fabs(c->rolloff - 0.20) < 1e-3 ? 2 : 0;
+    int ro = fabs(c->rolloff - 0.25) < 1e-3   ? 1
+             : fabs(c->rolloff - 0.20) < 1e-3 ? 2
+             : fabs(c->rolloff - 0.15) < 1e-3 ? 4
+             : fabs(c->rolloff - 0.10) < 1e-3 ? 5
+             : fabs(c->rolloff - 0.05) < 1e-3 ? 6
+                                              : 0;
     if (dvb_fec_init(&s->fec, &fc, ro, pull, ctx)) {
         free(s);
         return NULL;
@@ -201,10 +240,13 @@ dvbs2 *dvbs2_new(const dvbs2_cfg *c, ts_pull_fn pull, void *ctx)
         s->rowaddr[1] = rows;
         s->rowaddr[2] = 0;
     }
+    if (s->x && s->x->order[0] >= 0)                            /* DVB-S2X column orders */
+        for (int k = 0; k < c->bits; k++)
+            s->rowaddr[k] = s->x->order[k] * rows;
     build_constellation(s);
     build_plheader(s);
-    build_scrambler(s, s->nsym + s->npilot);
-    s->flen = 90 + s->nsym + s->npilot;
+    build_scrambler(s, 90 * s->slots + s->npilot);
+    s->flen = 90 + 90 * s->slots + s->npilot;
     s->frame = xcalloc(s->flen, sizeof(float complex));
     s->fpos = s->flen;
     return s;
@@ -221,6 +263,9 @@ void dvbs2_free(dvbs2 *s)
 }
 
 static inline int bit_at(const uint8_t *cw, int i) { return (cw[i >> 3] >> (7 - (i & 7))) & 1; }
+
+/* 128APSK: the 7 x 9258 interleaver reads 6 bits past the codeword (zeros) */
+static inline int bit_or0(const uint8_t *cw, int i, int n) { return i < n ? bit_at(cw, i) : 0; }
 
 static inline float complex scramble(float complex v, int r)
 {
@@ -243,12 +288,14 @@ static void next_frame(dvbs2 *s)
     for (int slot = 0; slot < s->slots; slot++) {
         for (int k = 0; k < 90; k++, j++) {
             int sym;
-            if (bits == 2)
+            if (j >= s->nsym)
+                sym = 0x7f;   /* 128APSK dummy symbols, as gr-dtv */
+            else if (bits == 2)
                 sym = (bit_at(s->cw, 2 * j) << 1) | bit_at(s->cw, 2 * j + 1);
             else {
                 sym = 0;
                 for (int b = 0; b < bits; b++)
-                    sym = (sym << 1) | bit_at(s->cw, s->rowaddr[b] + j);
+                    sym = (sym << 1) | bit_or0(s->cw, s->rowaddr[b] + j, s->nldpc);
             }
             *o++ = scramble(s->constel[sym], s->cscram[n++]);
         }
