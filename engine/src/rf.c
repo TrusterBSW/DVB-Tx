@@ -89,7 +89,10 @@ typedef struct carrier {
 
     pthread_t th;
     int started;
-    volatile int muted;           /* stopped from the web page: modulated (its multiplex keeps its clock), not sent */
+    volatile int muted;           /* stopped from the web page: off the air, not coded nor synthesised */
+    double owed;                  /* muted: packets its multiplex owes for the air time skipped */
+    struct carrier *bank;         /* in_bank: the bank's pseudo-carrier and the member number in it */
+    int bank_idx;
 } carrier;
 
 struct radio {
@@ -264,6 +267,20 @@ static void bank_sym(void *ctx, float complex *v)
 
 /* ---- carrier threads ---- */
 
+/* A muted carrier skips its coding and synthesis but still pulls (and drops) the packets its
+ * multiplex would have sent during that air time, so that the mux clock (PCR, CC, inputs, backup
+ * clips) goes on and the carrier comes back seamlessly. */
+static void skip_air(carrier *c, float complex *slot, double seconds)
+{
+    uint8_t pkt[TS_PKT];
+    memset(slot, 0, sizeof(float complex) * (size_t)c->ncar);
+    c->owed += seconds * 1e9 / c->pkt_ns;
+    while (c->owed >= 1) {
+        mux_pull(c->mux, pkt);
+        c->owed -= 1;
+    }
+}
+
 static void rt_priority(int prio, const char *what)
 {
     static int warned;
@@ -293,9 +310,13 @@ static void *dvbt_thread(void *arg)
             else if (c->t2g)
                 for (int k = 0; k < c->ncar;)
                     k += dvbt2_group_samples(c->t2g, slot + k, c->ncar - k);
+            else if (c->in_bank && c->muted)
+                skip_air(c, slot, c->ncar / c->symbol_rate);
             else if (c->in_bank)
                 for (int k = 0; k < c->ncar; k++)
                     c->symf(c->symctx, &slot[k]);
+            else if (c->muted)
+                skip_air(c, slot, c->ncar / c->radio->p.rate);
             else
                 scgen_block(c->sg, slot, c->ncar);
             pthread_mutex_lock(&c->lock);
@@ -312,7 +333,11 @@ static void *dvbt_thread(void *arg)
         pthread_mutex_unlock(&c->lock);
         if (!g_running)
             break;
-        dvbt_symbol(c->mod, c->ring + (size_t)(c->wr % RING_SYMS) * c->ncar);
+        float complex *slot = c->ring + (size_t)(c->wr % RING_SYMS) * c->ncar;
+        if (c->muted)
+            skip_air(c, slot, c->radio->blklen / c->radio->p.rate);
+        else
+            dvbt_symbol(c->mod, slot);
         pthread_mutex_lock(&c->lock);
         c->wr++;
         pthread_cond_broadcast(&c->cond);
@@ -994,22 +1019,26 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             if (strcmp(c->synth, "fir")) {
                 int ok = -1;
                 for (int b = 0; b < nbanks && ok < 0; b++)
-                    ok = fcbank_add(banks[b]->fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym, c);
+                    if ((ok = fcbank_add(banks[b]->fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym,
+                                         c)) >= 0)
+                        c->bank = banks[b];
                 if (ok < 0 && nbanks < 64 && g_nbanks < MAX_BANKS) {
                     fcbank *fb = fcbank_new(r->p.rate, c->symbol_rate, (double)df);
-                    if (fb && fcbank_add(fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym, c) >= 0) {
+                    if (fb && (ok = fcbank_add(fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym,
+                                               c)) >= 0) {
                         carrier *bc = pseudo_carrier(r, "bank");
                         bc->fb = fb;
                         banks[nbanks++] = bc;
                         g_banks[g_nbanks++] = bc;
                         r->sc[r->nsc++] = bc;
-                        ok = 0;
+                        c->bank = bc;
                     } else {
                         fcbank_free(fb);
                     }
                 }
                 if (ok >= 0) {
                     c->in_bank = 1;
+                    c->bank_idx = ok;
                     c->sym_pos = SYMBLK;
                     c->ncar = SYMBLK;
                     c->ring = xcalloc((size_t)RING_SYMS * c->ncar, sizeof(float complex));
@@ -1104,6 +1133,8 @@ int rf_carrier_on(int ci, int on)
     c->muted = !on;
     if (c->in_group && c->group && c->group->t2g)
         dvbt2_group_mute(c->group->t2g, c->member, !on);
+    if (c->in_bank && c->bank && c->bank->fb)
+        fcbank_mute(c->bank->fb, c->bank_idx, !on);
     LOGI("carrier %d: %s", ci, on ? "on the air" : "off the air");
     return 0;
 }

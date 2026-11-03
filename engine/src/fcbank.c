@@ -27,6 +27,7 @@ typedef struct member {
     double fph, dfph;            /* residual offset (off - bin), applied to the symbols (cycles) */
     sym_fn get;
     void *ctx;
+    volatile int muted;          /* off the air: its symbols are pulled (and dropped), not filtered */
 } member;
 
 struct fcbank {
@@ -230,6 +231,16 @@ static void next_block(fcbank *k)
     float complex *Y = (float complex *)k->Y;
     for (int i = 0; i < k->nm; i++) {
         member *m = &k->m[i];
+        if (m->muted) {
+            /* keep its symbol clock and phases; the window restarts from silence */
+            float complex dummy;
+            for (int s = 0; s < m->h; s++)
+                m->get(m->ctx, &dummy);
+            memset(m->win, 0, sizeof(float complex) * m->L);
+            m->fph = fmod(m->fph + m->dfph * m->h, 1.0);
+            m->ph = fmod(m->ph + m->dph, 1.0);
+            continue;
+        }
         /* slide the symbol window by h and pull h new symbols */
         memmove(m->win, m->win + m->h, sizeof(float complex) * (m->L - m->h));
         for (int s = m->L - m->h; s < m->L; s++)
@@ -252,9 +263,22 @@ static void next_block(fcbank *k)
         for (int j = 0; j < m->nbins; j++)
             Y[m->dst[j]] += X[m->src[j]] * (m->w[j] * rot);
     }
-    fftwf_execute(k->inv);
-    memcpy(k->fifo, Y + k->V / 2, sizeof(float complex) * k->H);
+    int live = 0;
+    for (int i = 0; i < k->nm; i++)
+        live |= !k->m[i].muted;
+    if (live) {
+        fftwf_execute(k->inv);
+        memcpy(k->fifo, Y + k->V / 2, sizeof(float complex) * k->H);
+    } else {
+        memset(k->fifo, 0, sizeof(float complex) * k->H);   /* all its members off the air */
+    }
     k->fpos = 0;
+}
+
+void fcbank_mute(fcbank *k, int i, int muted)
+{
+    if (i >= 0 && i < k->nm)
+        k->m[i].muted = muted;
 }
 
 void fcbank_block(fcbank *k, float complex *out, int n)

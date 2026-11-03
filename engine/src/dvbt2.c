@@ -1289,12 +1289,17 @@ err:
 /* ------------------------------------------------------------------ running */
 
 /* Encode the next FEC block of the frame being prepared into mbuf[!cur]. */
-static void encode_block(dvbt2 *t)
+/* skip: off the air, the block's packets are pulled (the multiplex keeps its clock), not coded */
+static void encode_block(dvbt2 *t, int skip)
 {
     const t2p *p = &t->p;
     int cells = p->cells;
-    dvb_fec_frame(&t->fec, t->cw, t->bi_ncol != 0);
-    bits_to_cells(t);
+    if (skip)
+        dvb_bbframer_frame(&t->fec.bb, t->cw);
+    else {
+        dvb_fec_frame(&t->fec, t->cw, t->bi_ncol != 0);
+        bits_to_cells(t);
+    }
     const uint8_t *cv = t->cellv;
     /* position in the TI structure */
     int big = t->enc_ti >= t->nsmall;
@@ -1312,6 +1317,8 @@ static void encode_block(dvbt2 *t)
         }
         t->enc_n++;
     }
+    if (skip)
+        goto advance;
     /* modulation (with the cyclic Q delay of rotated constellations) */
     const float complex *m = t->constel;
     float complex *mc = t->mcells;
@@ -1344,7 +1351,7 @@ static void encode_block(dvbt2 *t)
             M[zzpos(t, (int)d)] = mc[ic[P]];
         }
     }
-    /* advance */
+advance:
     if (++t->enc_r == per) {
         t->enc_r = 0;
         t->enc_tistart += per * cells;
@@ -1354,11 +1361,11 @@ static void encode_block(dvbt2 *t)
 }
 
 /* Complete the frame being prepared (L1, dummy cells) and make it current. */
-static void finish_frame(dvbt2 *t)
+static void finish_frame(dvbt2 *t, int skip)
 {
     const t2p *p = &t->p;
     while (t->enc_block < p->nfec)
-        encode_block(t);
+        encode_block(t, skip);
     float complex *M = t->mbuf[!t->cur];
     int np = p->npost / p->eta;
     for (int i = 0; i < N_L1PRE; i++)
@@ -1380,15 +1387,15 @@ static void finish_frame(dvbt2 *t)
 
 /* Before each step (P1 or symbol) of a member: frame boundaries and the share of the FEC
  * work of the next frame (spread over the LF + 1 steps of the current one). */
-static void member_step(dvbt2 *t)
+static void member_step(dvbt2 *t, int skip)
 {
     const t2p *p = &t->p;
     if (!t->started) {
-        finish_frame(t);   /* encode the whole first frame */
+        finish_frame(t, skip);   /* encode the whole first frame */
         t->started = 1;
         t->l = -1;
     } else if (t->l == p->lf) {
-        finish_frame(t);
+        finish_frame(t, skip);
         t->l = -1;
     }
     int step = t->l + 1;
@@ -1396,7 +1403,7 @@ static void member_step(dvbt2 *t)
     if (target > p->nfec)
         target = p->nfec;
     while (t->enc_block < target)
-        encode_block(t);
+        encode_block(t, skip);
 }
 
 /* Place the carriers of symbol l (0 = first P2) in the spectrum b of size Nt, centre carrier
@@ -1762,7 +1769,8 @@ static void group_job(dvbt2_group *g, int w)
     float complex *b = (float complex *)g->fbuf[g->job_bi];
     for (int i = w; i < g->n; i += step) {
         const struct gmember *m = &g->m[i];
-        member_step(m->t);
+        int muted = m->muted;
+        member_step(m->t, muted);
         if (g->job_l >= 0) {
             /* this member's bins (the IFFT does not modify its input; gaps stay zero) */
             int lo = m->lo, hi = m->hi;
@@ -1776,7 +1784,7 @@ static void group_job(dvbt2_group *g, int w)
             }
             float complex ph = cis_frac((int64_t)m->off * (g->job_win % Nt), Nt);
             int unit = ph == 1.0f && m->pre == 1.0f;
-            if (!m->muted)
+            if (!muted)
                 member_place(m->t, g->job_l, b, Nt, m->off, m->pre * ph, unit);
         }
         m->t->l++;
