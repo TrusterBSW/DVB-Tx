@@ -431,6 +431,25 @@ Latence de réveil du processeur autorisée pendant l'émission, maintenue via
 les C\-states profonds retardent le DMA USB et vident la FIFO de la radio.
 0 les bloque tous\~; une valeur telle que 100 laisse les cœurs dormir dans des états peu profonds\~;
 \-1\~: aucune demande.
+.BR auto \~:
+part de 0, puis après chaque
+.B cpu_latency_step_s
+sans nouveau trou sur aucune radio, autorise un état de veille de plus (d'après les latences de
+sortie de la machine elle-même), jusqu'à
+.BR cpu_latency_max_us \~;
+un trou ramène aussitôt à la dernière valeur qui a tenu, et l'essai suivant attend deux fois plus
+longtemps.
+La valeur tenue figure dans les statistiques du moteur.
+.TP
+\fBcpu_latency_max_us\fR (entier\~; défaut 100)
+Avec
+.BR auto \~:
+la latence la plus haute essayée.
+.TP
+\fBcpu_latency_step_s\fR (entier\~; défaut 30)
+Avec
+.BR auto \~:
+secondes sans trou avant le palier suivant.
 .SH [power]
 Profils d'énergie de la machine appliqués par
 .B dvbtx power

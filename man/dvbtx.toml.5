@@ -426,6 +426,24 @@ Processor wake\-up latency allowed while transmitting, held through
 .IR /dev/cpu_dma_latency :
 deep C\-states delay the USB DMA and empty the radio's FIFO.
 0 blocks them all; a value such as 100 lets the cores sleep in shallow states; \-1: no request.
+.BR auto :
+starts at 0, then after each
+.B cpu_latency_step_s
+without a new gap on any radio lets in one idle state more (from the machine's own exit
+latencies), up to
+.BR cpu_latency_max_us ;
+a gap brings it back at once to the last value that held, and the next try waits twice as long.
+The value held is in the engine statistics.
+.TP
+\fBcpu_latency_max_us\fR (integer; default 100)
+With
+.BR auto :
+the highest latency tried.
+.TP
+\fBcpu_latency_step_s\fR (integer; default 30)
+With
+.BR auto :
+seconds without a gap before the next step.
 .SH [power]
 Machine power profiles applied by
 .B dvbtx power

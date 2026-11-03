@@ -32,7 +32,7 @@ DEFAULTS = {
                "discontinuity_restart": 10,
                "loglevel": "warning", "gpu": "auto", "gpu_cache": ""},
     "engine": {"binary": "", "log_level": "info", "stats_interval_ms": 1000, "cpus": "auto",
-               "cpu_latency_us": 0},
+               "cpu_latency_us": 0, "cpu_latency_max_us": 100, "cpu_latency_step_s": 30},
     "defaults": {
         "backup": "", "buffer_ms": "auto", "switch_timeout_ms": 3000, "return_ms": 10000, "max_late_ms": 600,
         "early_ms": 100, "pcr_max_ms": 35, "priority": 5, "pmt_period_ms": 100, "mux_delay": 0.7, "ring_pkts": "auto",
