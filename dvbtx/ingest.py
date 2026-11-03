@@ -558,6 +558,10 @@ class IngestProc:
         self.prog = {}              # its last -progress report
         self.usage = {}             # {"cpu": %, "gpu": {engine: %}} of its processes
         self._usage_prev = None
+        self._building = False      # its command being built in a thread (URL resolution, see start)
+        self._built = None          # (generation, result of build_command or the exception)
+        self._gen = 0               # bumped by start/stop/restart: a resolution finished after it is dropped
+        self._build_lock = threading.Lock()
 
     def _reader(self, stream, tag):
         for raw in iter(stream.readline, b""):
@@ -627,12 +631,69 @@ class IngestProc:
         self.usage = {"cpu": round(100 * (ticks - prev[1]) / hz / dt),
                       "gpu": {k: min(100, round(100 * (v - prev[2].get(k, v)) / 1e9 / dt)) for k, v in eng.items()}}
 
+    def _slow_to_build(self):
+        """a source whose URL is resolved first (yt-dlp, an m3u list, twitch without streamlink): it can take
+        20 s or more, so its command is built in a thread instead of the supervisor's main loop"""
+        src = self.inp.source or ""
+        return src.startswith(("ytdlp:", "m3u:")) or (src.startswith("twitch://")
+                                                       and not shutil.which(self.ing["streamlink"]))
+
+    def _build_bg(self, gen, bad):
+        try:
+            res = build_command(self.inp, self.plan, self.pl_index, bad)
+        except (ValueError, OSError) as e:
+            res = e
+        except Exception as e:                              # noqa: BLE001
+            res = ValueError(f"{type(e).__name__}: {e}")
+        with self._build_lock:
+            if gen == self._gen:
+                self._built = (gen, res)
+                return
+        self._drop_built(res)
+
+    def _drop_built(self, res):
+        if not isinstance(res, Exception) and res[4].gpu_way is not None and gpu.MANAGER:
+            gpu.MANAGER.release(res[4].gpu_way)            # resolved for a start that was called off
+
     def start(self):
         if self.inp.kind != "ffmpeg" or self._stop:
             return
+        bad = [k for k, n in self.gpu_fails.items() if n >= 2]
+        if self._building:                                  # its URL still being resolved: poll() goes on
+            return
+        if self._slow_to_build():
+            with self._build_lock:
+                self._gen += 1
+                gen = self._gen
+                self._building, self._built = True, None
+            self.state = "resolving"
+            threading.Thread(target=self._build_bg, args=(gen, bad), daemon=True,
+                             name=f"resolve-{self.inp.index}").start()
+            return
         try:
-            bad = [k for k, n in self.gpu_fails.items() if n >= 2]
-            prod, ff, use_stdin, self.playlist, rec = build_command(self.inp, self.plan, self.pl_index, bad)
+            built = build_command(self.inp, self.plan, self.pl_index, bad)
+        except (ValueError, OSError) as e:
+            built = e
+        self._launch(built)
+
+    def _poll_built(self):
+        """the command resolved in the background: launched, or dropped if stopped or restarted since"""
+        with self._build_lock:
+            got = self._built
+            if got is None:
+                return
+            self._building, self._built = False, None
+        gen, res = got
+        if gen != self._gen or self._stop:
+            self._drop_built(res)
+            return
+        self._launch(res)
+
+    def _launch(self, built):
+        try:
+            if isinstance(built, Exception):
+                raise built
+            prod, ff, use_stdin, self.playlist, rec = built
         except (ValueError, OSError) as e:
             self.error = str(e)
             self.state = "error"
@@ -694,8 +755,20 @@ class IngestProc:
             gpu.MANAGER.release(self.gpu_way)
         self.gpu_way = None
 
+    def _cancel_build(self):
+        with self._build_lock:
+            self._gen += 1                                  # a resolution still running drops its result
+            got, self._built = self._built, None
+            if self._building:
+                self._building = False
+                if self.state == "resolving":
+                    self.state = "stopped"
+        if got is not None:
+            self._drop_built(got[1])
+
     def stop(self):
         self._stop = True
+        self._cancel_build()
         self._kill(self.prod)
         self._kill(self.proc)
         self._release_gpu()
@@ -713,6 +786,7 @@ class IngestProc:
         self.state = "stopped"
 
     def restart(self):
+        self._cancel_build()
         self._kill(self.prod)
         self._kill(self.proc)
         self.proc = self.prod = None
@@ -726,7 +800,9 @@ class IngestProc:
             return
         now = time.monotonic()
         if self.proc is None:
-            if now >= self.next_start:
+            if self._building:
+                self._poll_built()
+            elif now >= self.next_start:
                 self.start()
             return
         rc = self.proc.poll()
