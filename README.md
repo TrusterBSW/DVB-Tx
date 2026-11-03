@@ -153,6 +153,9 @@ standard = "dvbt"              # dvbt, dvbt2, dvbc, dvbs, dvbs2
   source = "dir:/srv/films"
 ```
 
+For DVB-S/S2, `frequency` is the satellite frequency entered on the TV (`10_950_000_000`): the
+L-band IF sent on the cable is computed for its LNB (universal by default).
+
 Everything not given is computed: radio frequency and sample rate, service_id, channel numbers,
 PIDs, service type. `-s radio.0.gain=40` overrides any key for one run. Every key is described in
 `man 5 dvbtx.toml` and, commented, in [`packaging/dvbtx.toml`](packaging/dvbtx.toml); more examples

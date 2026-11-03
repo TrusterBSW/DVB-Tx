@@ -155,6 +155,9 @@ standard = "dvbt"              # dvbt, dvbt2, dvbc, dvbs, dvbs2
   source = "dir:/srv/films"
 ```
 
+En DVB-S/S2, `frequency` est la fréquence satellite à entrer sur la TV (`10_950_000_000`) : la FI en
+bande L émise sur le câble est calculée pour son LNB (universel par défaut).
+
 Tout ce qui n'est pas donné est calculé : fréquence et cadence de la radio, service_id, numéros de
 chaînes, PID, type de service. `-s radio.0.gain=40` remplace n'importe quelle clé le temps d'un
 lancement. Chaque clé est décrite dans `man 5 dvbtx.toml` et, commentée, dans

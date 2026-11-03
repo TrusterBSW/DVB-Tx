@@ -103,13 +103,13 @@ class SiManager:
                                   p.get("guard", "1/128"), p.get("fft", "32k"), car.cell_id,
                                   unspecified=not self.net["frequency_in_nit"])
         if car.standard == "dvbs2":
-            return si.satellite_delivery(car.frequency + float(p.get("lnb_lo", 9_750_000_000)), p["symbol_rate"],
+            return si.satellite_delivery(car.sat_frequency, p["symbol_rate"],
                                          p["code_rate"], p.get("polarization", "h"), True,
                                          p["modulation"] if p["modulation"] in ("qpsk", "8psk") else "auto",
                                          float(p.get("rolloff", 0.35)), float(p.get("orbital", 19.2)))
         if car.standard == "dvbs":
-            # the frequency in the NIT is the satellite one: the L-band IF + the LNB oscillator
-            return si.satellite_delivery(car.frequency + float(p.get("lnb_lo", 9_750_000_000)), p["symbol_rate"],
+            # the frequency in the NIT is the satellite one (the TV's), not the L-band IF sent
+            return si.satellite_delivery(car.sat_frequency, p["symbol_rate"],
                                          p["code_rate"], p.get("polarization", "h"), False, "qpsk",
                                          float(p.get("rolloff", 0.35)), float(p.get("orbital", 19.2)))
         if car.standard == "dvbt" or (car.standard == "ts" and car.frequency and "constellation" in p):
@@ -1757,6 +1757,7 @@ class Supervisor:
                     per.append({"name": sv.name, "gpu": max(u["gpu"].values()), "cpu": u.get("cpu")})
             an = next((a for a in self.analyzers if a.car is c), None)
             out["carriers"].append({"index": c.index, "name": c.name, "standard": c.standard, "frequency": c.frequency,
+                                    "sat_frequency": c.sat_frequency or None,
                                     "offset": c.offset, "params": c.params, "tsid": c.tsid, "capacity": c.ts_rate,
                                     "radio": c.radio.name if c.radio else None, "live": live, "services": svcs,
                                     "enabled": c.enabled,

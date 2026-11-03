@@ -182,7 +182,7 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
     <div class="row" style="gap:6px 14px">
       <span><label for="cd_radio">Radio</label><select id="cd_radio"></select></span>
       <span><label for="cd_std">Norme</label><select id="cd_std" onchange="carFields()"><option value="dvbt">DVB-T</option><option value="dvbt2">DVB-T2</option><option value="dvbc">DVB-C</option><option value="dvbs">DVB-S</option><option value="dvbs2">DVB-S2</option></select></span>
-      <span><label for="cd_freq">Fréquence (MHz)</label><input id="cd_freq" type="number" step="any" required style="width:9em" oninput="carCalc()"></span>
+      <span><label for="cd_freq">Fréquence (MHz)</label><input id="cd_freq" type="number" step="any" required style="width:9em" oninput="carCalc()"><div id="cd_freqhint" class="muted" style="font-size:11px"></div></span>
       <span><label for="cd_tsid">TSID</label><input id="cd_tsid" type="number" min="0" max="65535" style="width:6em" placeholder="auto"></span>
     </div>
     <div class="row" id="cd_fields" style="gap:6px 14px"></div>
@@ -387,7 +387,7 @@ function render(s) {
     // the figures wrap among themselves; the button stays at the right of the first line
     const head = `<div style="display:flex;gap:10px 22px;align-items:baseline"><div class="row" style="flex:1;min-width:0"><b style="font-size:16px">${esc(c.name)}</b>
         ${c.enabled ? "" : '<span class="pill warning" title="multiplex arrêté : rien à l\'antenne, ses sources en pause, sa radio éteinte si elle n\'a plus que lui">arrêté</span>'}
-        <span class="muted">${std} · ${c.frequency ? (c.frequency / 1e6).toFixed(3) + " MHz" : ""} · TSID ${c.tsid}${c.radio ? " · " + esc(c.radio) : ""}</span>
+        <span class="muted">${std} · ${c.sat_frequency ? `${(c.sat_frequency / 1e6).toFixed(3)} MHz <span title="fréquence intermédiaire émise sur le câble (bande L), celle que la TV calcule avec son LNB">(FI ${(c.frequency / 1e6).toFixed(3)})</span>` : c.frequency ? (c.frequency / 1e6).toFixed(3) + " MHz" : ""} · TSID ${c.tsid}${c.radio ? " · " + esc(c.radio) : ""}</span>
         <span style="flex:1"></span>
         <span class="muted">capacité</span><span class="big">${mbps(cap)}</span><span class="muted">Mbit/s</span>
         <span class="muted">occupé</span><span class="big" style="color:${occ > 98 ? "var(--crit)" : occ > 90 ? "var(--warn)" : "inherit"}">${occ == null ? "–" : occ.toFixed(1) + " %"}</span>
@@ -1076,6 +1076,8 @@ function carOpen(i) {
 }
 function carFields(c) {
   const std = $("#cd_std").value, f = KFIELDS[std] || {}, d = KDEFAULT[std] || {};
+  $("#cd_freqhint").textContent = std === "dvbs" || std === "dvbs2"
+    ? "celle à entrer sur la TV (10700 à 12750, LNB universel) ; ou la FI émise (950 à 2150)" : "";
   const cur = c && (c.standard || "dvbt") === std ? c : {};
   $("#cd_fields").innerHTML = Object.entries(f).map(([k, v]) => {
     let val = cur[k] ?? d[k];

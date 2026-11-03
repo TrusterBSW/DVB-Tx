@@ -249,6 +249,7 @@ class Carrier:
     output: str = ""
     enabled: bool = True          # false: stopped (from the web page), its sources paused, its radio off if it has no other
     synth: str = "auto"
+    sat_frequency: float = 0.0    # DVB-S/S2: the frequency the TV is told (frequency is the L-band IF sent)
 
 
 @dataclass
@@ -293,6 +294,31 @@ def channel_frequency(ch, band="eu"):
     if 5 <= ch <= 12:
         return (142.5 + 7 * ch) * 1e6
     raise ConfigError(f"unknown channel {ch} (UHF 21-69, VHF 5-12)")
+
+
+SAT_MIN = 9.5e9                     # a DVB-S/S2 frequency from here up is a satellite one (Ku band), below an IF
+UNIVERSAL = (11.7e9, 9.75e9, 10.6e9)   # universal LNB: below 11.7 GHz LO 9.75 GHz, above 10.6 GHz (22 kHz tone)
+
+
+def satellite_if(freq, params, what):
+    """(IF the radio sends, satellite frequency the TV is told) of a DVB-S/S2 carrier whose frequency is given
+    either way. lnb_lo: "universal" (default: the TV picks 9.75 or 10.6 GHz as for a universal LNB) or Hz."""
+    lo = params.get("lnb_lo", "universal")
+    universal = isinstance(lo, str) and lo.strip().lower() == "universal"
+    if not universal:
+        lo = float(_num(lo, f"{what} lnb_lo"))
+        if lo < 1e9:
+            raise ConfigError(f"{what}: lnb_lo {lo:g} Hz: the LNB oscillator in Hz (9_750_000_000), or \"universal\"")
+    if freq >= SAT_MIN:
+        lof = (UNIVERSAL[1] if freq < UNIVERSAL[0] else UNIVERSAL[2]) if universal else lo
+        if_ = freq - lof
+        if not 950e6 <= if_ <= 2150e6:
+            raise ConfigError(f"{what}: {freq / 1e6:g} MHz with an LNB at {lof / 1e6:g} MHz is {if_ / 1e6:g} MHz of IF, "
+                              "outside the 950-2150 MHz a satellite tuner receives")
+        return if_, freq
+    # an IF: the satellite frequency as a TV with that LNB computes it back
+    lof = (UNIVERSAL[1] if freq + UNIVERSAL[1] < UNIVERSAL[0] else UNIVERSAL[2]) if universal else lo
+    return freq, freq + lof
 
 
 def _num(v, what):
@@ -446,7 +472,7 @@ def build(cfg):
             v = params.get(k)
             if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 and v % 1000 == 0:
                 params[k] = f"{int(v) // 1000}k"
-        for k in ("bandwidth", "ts_rate", "symbol_rate", "lnb_lo"):
+        for k in ("bandwidth", "ts_rate", "symbol_rate"):
             if k in params:
                 params[k] = _num(params[k], f"carrier {ci} {k}")
         if "bandwidth" in params:
@@ -489,9 +515,13 @@ def build(cfg):
                 ts_rate = capacity.rate(std, **params)
             if freq <= 0:
                 raise ConfigError(f"carrier {ci}: frequency (or channel) is required")
+        sat_freq = 0.0
+        if std in ("dvbs", "dvbs2"):
+            freq, sat_freq = satellite_if(freq, params, f"carrier {ci} ({cc.get('name', '')})")
         tsid = int(cc.get("tsid", ci + 1))
         car = Carrier(ci, str(cc.get("name", f"Mux {ci + 1}")), radio, std, freq, params, tsid,
                       int(cc.get("onid", net["onid"])), ts_rate)
+        car.sat_frequency = sat_freq
         car.cell_id = int(cc["cell_id"])
         car.gain_db = float(cc["gain_db"])
         car.synth = str(cc.get("synth", "auto")).lower()
@@ -868,6 +898,9 @@ def describe(plan):
     for c in plan.carriers:
         p = c.params
         where = f"{c.frequency / 1e6:.3f} MHz (offset {c.offset / 1e6:+.3f})" if c.radio else f"-> {c.output}"
+        if c.sat_frequency:
+            where = (f"{c.sat_frequency / 1e6:.3f} MHz on the TV, IF {c.frequency / 1e6:.3f} MHz "
+                     f"(LNB {(c.sat_frequency - c.frequency) / 1e6:g} MHz, offset {c.offset / 1e6:+.3f})")
         if c.standard == "dvbt":
             desc_ = (f"DVB-T {p.get('mode')} {p.get('constellation')} {p.get('code_rate')} GI {p.get('guard')} "
                      f"{int(p.get('bandwidth', 0)) // 1000000} MHz")

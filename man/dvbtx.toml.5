@@ -834,7 +834,14 @@ Centre frequency.
 Required for a radio standard, unless
 .B channel
 is given.
-For DVB\-S/S2 it is the L\-band frequency transmitted.
+For DVB\-S/S2, the satellite frequency entered on the TV (Ku band, from 9.5 GHz up, e.g.
+.BR 10_950_000_000 ):
+the L\-band IF sent on the cable is computed with
+.B lnb_lo
+(10950 MHz \- 9750 MHz = 1200 MHz) and must lie within 950\(en2150 MHz.
+A value below 9.5 GHz is taken as the IF itself.
+.B dvbtx check
+and the web page show both; the NIT carries the satellite frequency.
 .TP
 \fBchannel\fR (integer)
 UHF channel 21\(en69 ((306 + 8 \(mu ch) MHz) or VHF band III 5\(en12 ((142.5 + 7 \(mu ch) MHz),
@@ -1034,8 +1041,11 @@ QPSK.
 \fBorbital\fR (degrees east; default 19.2)
 Orbital position in the NIT.
 .TP
-\fBlnb_lo\fR (Hz; default 9_750_000_000)
-LNB oscillator added to the carrier frequency in the NIT.
+\fBlnb_lo\fR ("universal" or Hz; default "universal")
+The LNB the TV is set for.
+.BR universal :
+9750 MHz below 11700 MHz, 10600 MHz above (the TV then sends its 22 kHz tone, which does not
+matter here), as a TV set for a universal LNB computes it; or the oscillator of a single LNB in Hz.
 .SS standard = \(dqdvbs2\(dq
 CCM, single TS input.
 .TP
@@ -1067,8 +1077,11 @@ Physical layer scrambling.
 \fBpolarization\fR, \fBorbital\fR
 As for DVB\-S.
 .TP
-\fBlnb_lo\fR (Hz; default 9_750_000_000)
-LNB oscillator added to the carrier frequency in the NIT.
+\fBlnb_lo\fR ("universal" or Hz; default "universal")
+The LNB the TV is set for.
+.BR universal :
+9750 MHz below 11700 MHz, 10600 MHz above (the TV then sends its 22 kHz tone, which does not
+matter here), as a TV set for a universal LNB computes it; or the oscillator of a single LNB in Hz.
 .SS standard = \(dqts\(dq
 .TP
 \fBts_rate\fR (bit/s, required)

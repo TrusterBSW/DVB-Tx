@@ -83,7 +83,9 @@ cpus = "auto"                           # auto: every engine thread kept off the
                                         # interrupts (a real-time thread there delays the USB work: gaps on
                                         # air); "all", or a list such as "1-5"
 cpu_latency_us = 0                      # processor wake-up latency allowed while transmitting (/dev/cpu_dma_latency):
-                                        # deep C-states delay the USB DMA and empty the radio's FIFO (-1: no request)
+                                        # deep C-states delay the USB DMA and empty the radio's FIFO (-1: no request);
+                                        # 100 saves power when the processor is busy, but a HackRF with the
+                                        # processor mostly idle had ~150 gaps/s with it: measure before changing
 
 # Power profiles of the whole machine (dvbtx power, dvbtx-power(8)): only once enabled with
 # "systemctl enable --now dvbtx-power"; save while nothing is on air, transmit while dvbtx runs
@@ -211,3 +213,22 @@ cell_id = 0
 #            "http://provider.example/u/p/319",   # when the one playing fails, back to a preferred one when
 #            "http://other.example/info.m3u8"]    # it works again; none works: the backup clip
 #  buffer_ms = 8000                     # cache of this channel (ms), instead of auto
+
+# A satellite multiplex for the satellite input of a TV (closed coax, through a DC block: the TV puts
+# 13/18 V on its cable). frequency is the one entered on the TV; the L-band IF sent (here 1200 MHz)
+# is computed with the LNB the TV is set for. Its radio must cover that band (not the one of a DVB-T
+# carrier): a [[radio]] of its own.
+# [[carrier]]
+# name = "Sat"
+# radio = "sat"
+# standard = "dvbs2"                    # or "dvbs" (QPSK, code_rate 1/2 2/3 3/4 5/6 7/8)
+# frequency = 10_950_000_000            # entered on the TV; below 9.5 GHz: the IF itself
+# lnb_lo = "universal"                  # 9750 MHz below 11700 MHz, 10600 above; or Hz (single LNB)
+# symbol_rate = 15_500_000              # HackRF: 15.5 Msym/s at most (lo_offset = 0 on its radio)
+# modulation = "8psk"                   # qpsk 8psk 16apsk 32apsk (TVs: qpsk and 8psk at least)
+# code_rate = "9/10"                    # -> 40.59 Mbit/s with these values
+# rolloff = 0.2                         # 0.35 0.25 0.2
+# polarization = "h"                    # in the NIT
+#   [[carrier.service]]
+#   name = "Sat 1"
+#   source = "lavfi:testsrc2"

@@ -839,7 +839,15 @@ Fréquence centrale.
 Obligatoire pour une norme radio, sauf si
 .B channel
 est donné.
-Pour le DVB\-S/S2, c'est la fréquence en bande L émise.
+Pour le DVB\-S/S2, la fréquence satellite à entrer sur la TV (bande Ku, à partir de 9,5 GHz, par
+exemple
+.BR 10_950_000_000 )\~:
+la FI en bande L émise sur le câble est calculée avec
+.B lnb_lo
+(10950 MHz \- 9750 MHz = 1200 MHz) et doit tomber entre 950 et 2150 MHz.
+Une valeur sous 9,5 GHz est prise comme la FI elle-même.
+.B dvbtx check
+et la page web affichent les deux\~; la NIT annonce la fréquence satellite.
 .TP
 \fBchannel\fR (entier)
 Canal UHF 21\(en69 ((306 + 8 \(mu ch) MHz) ou bande III VHF 5\(en12 ((142,5 + 7 \(mu ch) MHz),
@@ -1042,8 +1050,11 @@ QPSK.
 \fBorbital\fR (degrés est\~; défaut 19.2)
 Position orbitale dans la NIT.
 .TP
-\fBlnb_lo\fR (Hz\~; défaut 9_750_000_000)
-Oscillateur du LNB, ajouté à la fréquence de la porteuse dans la NIT.
+\fBlnb_lo\fR ("universal" ou Hz\~; défaut "universal")
+Le LNB pour lequel la TV est réglée.
+.BR universal \~:
+9750 MHz sous 11700 MHz, 10600 MHz au-dessus (la TV envoie alors sa tonalité 22 kHz, sans effet
+ici), comme le calcule une TV réglée pour un LNB universel\~; ou l'oscillateur d'un LNB simple, en Hz.
 .SS standard = \(dqdvbs2\(dq
 CCM, entrée TS unique.
 .TP
@@ -1075,8 +1086,11 @@ Embrouillage de la couche physique.
 \fBpolarization\fR, \fBorbital\fR
 Comme pour le DVB\-S.
 .TP
-\fBlnb_lo\fR (Hz\~; défaut 9_750_000_000)
-Oscillateur du LNB, ajouté à la fréquence de la porteuse dans la NIT.
+\fBlnb_lo\fR ("universal" ou Hz\~; défaut "universal")
+Le LNB pour lequel la TV est réglée.
+.BR universal \~:
+9750 MHz sous 11700 MHz, 10600 MHz au-dessus (la TV envoie alors sa tonalité 22 kHz, sans effet
+ici), comme le calcule une TV réglée pour un LNB universel\~; ou l'oscillateur d'un LNB simple, en Hz.
 .SS standard = \(dqts\(dq
 .TP
 \fBts_rate\fR (bit/s, obligatoire)
