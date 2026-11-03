@@ -78,6 +78,10 @@ sudo apt install streamlink yt-dlp tsduck     # optional: HLS without stalls, Yo
 One package per release because the radio plugins link that release's UHD and SoapySDR
 libraries. Each plugin is only *recommended*: a missing library disables that radio, nothing else.
 
+The packages are also on the [Releases](https://github.com/TrusterBSW/DVB-Tx/releases) page, with their
+`SHA256SUMS`: GitHub Actions builds them on each tag, in a container of each release, and installs
+and checks each one in a fresh container before publishing it.
+
 ## Quick start
 
 ```bash

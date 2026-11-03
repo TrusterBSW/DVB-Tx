@@ -1,0 +1,163 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Debian packages: one .deb per release, built in a container of that release (the radio plugins
+# link its UHD / SoapySDR libraries), then installed and checked in a fresh container of the same
+# release, then published on the Releases page when the run comes from a tag v*.
+# Same steps as packaging/build-all-debs.sh, which does it locally with docker or podman.
+name: packages
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12
+            suffix: deb12
+          - image: debian:13
+            suffix: deb13
+          - image: ubuntu:24.04
+            suffix: ubuntu24.04
+    container: ${{ matrix.image }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Build dependencies
+        # git before the checkout: without it actions/checkout downloads an archive without .git
+        # and the changelog loses its git describe
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential pkg-config libfftw3-dev \
+              libhackrf-dev libuhd-dev libsoapysdr-dev dpkg-dev git ca-certificates >/dev/null
+
+      - uses: actions/checkout@v4
+        with:
+          lfs: false          # old/ holds LFS videos, not needed for the package
+          fetch-depth: 0      # tags, for git describe
+
+      - name: Tag matches VERSION
+        if: github.ref_type == 'tag'
+        run: |
+          v=$(cat VERSION)
+          [ "$GITHUB_REF_NAME" = "v$v" ] || { echo "tag $GITHUB_REF_NAME but VERSION is $v" >&2; exit 1; }
+
+      - name: Build the package
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          deb=$(./packaging/build-deb.sh dist)
+          echo "$deb"
+          case "$deb" in *"+${{ matrix.suffix }}_"*) ;; *) echo "unexpected name $deb" >&2; exit 1 ;; esac
+          dpkg-deb --info "$deb"
+          echo "radio plugins: $(dpkg-deb --contents "$deb" | grep -o 'dvbtx-sdr-[a-z]*\.so' | tr '\n' ' ')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.suffix }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  check:
+    name: check ${{ matrix.image }}
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12
+            suffix: deb12
+          - image: debian:13
+            suffix: deb13
+          - image: ubuntu:24.04
+            suffix: ubuntu24.04
+    container: ${{ matrix.image }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb-${{ matrix.suffix }}
+          path: dist
+
+      - name: Install the package
+        run: |
+          rm -f /etc/dpkg/dpkg.cfg.d/excludes /etc/dpkg/dpkg.cfg.d/docker   # images without man pages
+          apt-get update -qq
+          # with the Recommends: the radio libraries
+          apt-get install -y -qq man-db lintian ./dist/dvbtx_*.deb >/dev/null 2>&1 ||
+              apt-get install -y man-db lintian ./dist/dvbtx_*.deb
+
+      - name: Run it
+        run: |
+          set -e
+          dvbtx --version
+          dvbtx -h >/dev/null
+          dvbtx check -c /usr/share/dvbtx/configs/hackrf-1mux.toml
+          dvbtx calc dvbt | head -1
+          bad=0
+          for f in /usr/lib/dvbtx/dvbtx-engine /usr/lib/dvbtx/dvbtx-sdr-*.so; do
+              if ldd "$f" | grep "not found"; then echo "$f: library missing"; bad=1; fi
+          done
+          echo "radio plugins: $(cd /usr/lib/dvbtx && ls dvbtx-sdr-*.so | tr '\n' ' ')"
+          exit $bad
+
+      - name: Manual pages
+        run: |
+          man=$(command -v man.REAL || command -v man)    # minimized Ubuntu images: man is a stub
+          bad=0
+          for p in dvbtx.1 dvbtx-channel.1 dvbtx.toml.5 dvbtx-sources.7 dvbtx.7 dvbtx-web.7 dvbtx-engine.8 dvbtx-power.8; do
+              sec=${p##*.}
+              $man -w "$sec" "${p%.*}" 2>/dev/null | grep -q "/man$sec/$p" || { echo "missing man page $p"; bad=1; }
+              $man -L fr -w "$sec" "${p%.*}" 2>/dev/null | grep -q "/fr/man$sec/$p" || { echo "missing French man page $p"; bad=1; }
+          done
+          echo "man pages: $(ls /usr/share/man/man*/dvbtx* | wc -l) in English, $(ls /usr/share/man/fr/man*/dvbtx* 2>/dev/null | wc -l) in French"
+          exit $bad
+
+      - name: Lintian
+        run: |
+          out=$(lintian --no-tag-display-limit dist/dvbtx_*.deb 2>&1 || true)
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -q '^E:'; then echo "lintian errors" >&2; exit 1; fi
+          echo "lintian: no error"
+
+  release:
+    name: GitHub release
+    needs: check
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum dvbtx_*.deb > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=$GITHUB_REF_NAME
+          if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" dist/*.deb dist/SHA256SUMS --clobber    # workflow run again
+          else
+              gh release create "$tag" dist/*.deb dist/SHA256SUMS --verify-tag --title "dvbtx ${tag#v}" \
+                  --generate-notes
+          fi

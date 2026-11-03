@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Fast checks without any radio: the engine builds, the channel operations and TOML editor pass
+# their tests, every example configuration is accepted by dvbtx check.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04      # Python 3.12 (dvbtx needs >= 3.11 for tomllib)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false          # old/ holds LFS videos
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              build-essential pkg-config libfftw3-dev libhackrf-dev >/dev/null
+
+      - name: Build the engine
+        run: make -C engine -j"$(nproc)"
+
+      - name: Channel operations and TOML editor
+        run: python3 tests/channels_test.py
+
+      - name: Example configurations
+        run: |
+          for f in configs/*.toml; do
+              echo "== $f"
+              python3 -m dvbtx check -c "$f"
+          done

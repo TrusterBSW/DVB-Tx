@@ -80,6 +80,10 @@ Un paquet par version parce que les modules radio sont liés aux bibliothèques 
 cette version. Chaque module n'est que *recommandé* : s'il manque une bibliothèque, seule cette
 radio est indisponible.
 
+Les paquets sont aussi sur la page [Releases](https://github.com/TrusterBSW/DVB-Tx/releases), avec
+leur `SHA256SUMS` : GitHub Actions les construit à chaque étiquette (tag), dans un conteneur de chaque
+version, puis installe et vérifie chacun dans un conteneur neuf avant de le publier.
+
 ## Démarrage rapide
 
 ```bash
