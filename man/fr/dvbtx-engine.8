@@ -138,7 +138,19 @@ pendant que le moteur tourne (voir
 .BR "LATENCE PROCESSEUR" ).
 Par défaut 0 ;
 .B \-1
-ne fait aucune demande.
+ne fait aucune demande ;
+.B auto
+l'adapte aux trous à l'antenne.
+.TP
+.B cpu_latency_max_us
+Avec
+.BR "cpu_latency_us = auto" " :"
+la plus haute latence essayée (100 par défaut).
+.TP
+.B cpu_latency_step_s
+Avec
+.BR "cpu_latency_us = auto" " :"
+secondes sans trou avant le palier suivant (30 par défaut).
 .SS [input N]
 Une entrée UDP portant un programme MPEG\-TS (écrite en général par un
 processus d'ingestion ffmpeg).
@@ -652,6 +664,7 @@ le moteur affiche une ligne :
 .PP
 .EX
 {"type":"stats","time":...,"uptime":...,"interval":...,
+ "cpu_latency_us":...,"cpu_latency_auto":...,
  "inputs":[...],"radios":[...],"carriers":[...]}
 .EE
 .PP
@@ -661,6 +674,11 @@ est l'heure murale (secondes Unix),
 et
 .I interval
 sont en secondes.
+.I cpu_latency_us
+est la latence de réveil du processeur tenue (\-1 : aucune demande),
+.I cpu_latency_auto
+vrai tant qu'elle s'adapte d'elle-même (voir
+.BR "LATENCE PROCESSEUR" ).
 Les débits sont en bit/s sur l'intervalle.
 .TP
 .B inputs[]
@@ -831,6 +849,27 @@ comme 100 laisse les cœurs dormir entre deux tampons et économise de l'énergi
 Écrire le fichier demande root ou
 .BR CAP_SYS_ADMIN  ;
 en cas d'échec, le moteur avertit et continue.
+.PP
+Avec
+.BR "cpu_latency_us = auto" ,
+le moteur part de 0 et, après
+.B cpu_latency_step_s
+secondes sans nouveau trou
+.RB ( underruns " ou " late
+d'une radio à l'antenne), relâche la latence au palier suivant, jusqu'à
+.BR cpu_latency_max_us .
+Les paliers sont juste sous la latence de sortie de chaque état de veille de la
+machine
+.RI ( /sys/devices/system/cpu/cpu0/cpuidle/state*/latency ),
+chacun autorisant un C-state de plus.
+Un nouveau trou la ramène aussitôt au dernier palier tenu sans trou (0 si le
+trou est venu à ce palier), et l'essai suivant attend deux fois plus longtemps
+(jusqu'à 6 h) ; un palier qui tient toute une attente est gardé et l'attente
+revient à
+.BR cpu_latency_step_s .
+Chaque changement est journalisé ; la valeur tenue est
+.B cpu_latency_us
+dans les statistiques (\-1 : aucune).
 .SH MODULES RADIO
 Chaque pilote est un objet partagé
 .BI dvbtx\-sdr\- name .so
@@ -976,6 +1015,14 @@ La radio est absente tant que
 existe : l'ouverture échoue, et une radio en marche s'arrête (comme si elle
 était débranchée) dès que le fichier apparaît.
 Sert à tester la gestion des radios absentes.
+.TP
+.BI gaps= path
+Le compteur
+.B late
+de la radio augmente tant que
+.I path
+existe (trous à l'antenne), pour tester
+.BR "cpu_latency_us = auto" .
 .SH CODE DE RETOUR
 .TP
 0

@@ -20,6 +20,7 @@ int rf_stalled(int64_t now, int64_t timeout_ns);
 int rf_carrier_on(int ci, int on);            /* 0: off the air (still modulated), 1: back */
 void rf_radio_lost(int ri, const char *why);   /* its carriers off the air, the other radios go on */
 int rf_radios_lost(void);
+uint64_t rf_gaps(void);                      /* underruns + late of the radios on the air */
 int rf_probe(const conf *cf, int index, char *err, int errlen);
 mux *rf_carrier_mux(int ci);     /* NULL: no such carrier */
 /* appends "radios":[...],"carriers":[...] to buf */

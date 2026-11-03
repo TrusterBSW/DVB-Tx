@@ -391,14 +391,17 @@ static void place_threads(const char *spec)
  * on air. Measured on the PVE host with the stock hackrf_transfer and the engine running beside it:
  * 3 gaps in 90 s at 16.46 MS/s, 8 a minute at 18.29 MS/s; none with /dev/cpu_dma_latency held at 0
  * (as the CMTS bench does). The request lasts as long as the file stays open. cpu_latency_us: the
- * latency allowed (default 0), -1: no request. */
+ * latency allowed (default 0), -1: no request, "auto": see lat_tick(). DVBTX_CPU_LATENCY_DEV (tests)
+ * replaces the device by a file. */
 static int g_lat_fd = -1;
+static long g_lat_us = -1;          /* the latency held, -1: none (stats) */
 
 static void hold_cpu_latency(long us)
 {
     if (us < 0)
         return;
-    int fd = open("/dev/cpu_dma_latency", O_WRONLY | O_CLOEXEC);
+    const char *dev = getenv("DVBTX_CPU_LATENCY_DEV");
+    int fd = open(dev && *dev ? dev : "/dev/cpu_dma_latency", O_WRONLY | O_CLOEXEC);
     int32_t v = (int32_t)us;
     if (fd < 0 || write(fd, &v, sizeof v) != (ssize_t)sizeof v) {
         LOGW("deep C-states not blocked (/dev/cpu_dma_latency: %s): gaps on air are likely at high rates; "
@@ -408,7 +411,147 @@ static void hold_cpu_latency(long us)
         return;
     }
     g_lat_fd = fd;
+    g_lat_us = us;
     LOGI("processor wake-up latency held at %ld us while transmitting", us);
+}
+
+/* cpu_latency_us = "auto": start at 0; after cpu_latency_step_s without a new gap (underruns, late) on
+ * any radio on the air, relax to the next step, up to cpu_latency_max_us. The steps sit just below
+ * the exit latency of each idle state of the machine (each one lets one more C-state in). A new gap:
+ * back to the last step that held without gap (0 if the gap came at that very step), and the next
+ * try waits twice as long (up to 6 h); a step that holds a whole wait is known good, the wait back
+ * to cpu_latency_step_s. Writing the open file updates the request. */
+#define LAT_MAX_STEPS 16
+#define LAT_HOLD_MAX_NS (6 * 3600 * 1000000000LL)
+static struct {
+    int on;
+    long steps[LAT_MAX_STEPS];
+    int nsteps, idx, good;
+    int64_t base_ns, hold_ns, since, settle;   /* settle: gaps until then come from the step left */
+    uint64_t gaps;
+    int primed;
+} g_lat;
+
+static int lat_cmp(const void *a, const void *b)
+{
+    long x = *(const long *)a, y = *(const long *)b;
+    return x < y ? -1 : x > y;
+}
+
+static void lat_steps(long ceil)
+{
+    long l[LAT_MAX_STEPS];
+    int k = 0;
+    for (int i = 0; i < 32 && k < LAT_MAX_STEPS; i++) {
+        char p[96];
+        snprintf(p, sizeof p, "/sys/devices/system/cpu/cpu0/cpuidle/state%d/latency", i);
+        FILE *f = fopen(p, "r");
+        if (!f)
+            break;
+        long v = -1;
+        if (fscanf(f, "%ld", &v) != 1)
+            v = -1;
+        fclose(f);
+        snprintf(p, sizeof p, "/sys/devices/system/cpu/cpu0/cpuidle/state%d/disable", i);
+        int dis = 0;
+        if ((f = fopen(p, "r"))) {
+            if (fscanf(f, "%d", &dis) != 1)
+                dis = 0;
+            fclose(f);
+        }
+        int dup = 0;
+        for (int j = 0; j < k; j++)
+            dup |= l[j] == v;
+        if (v > 0 && !dis && !dup)
+            l[k++] = v;
+    }
+    qsort(l, k, sizeof *l, lat_cmp);
+    g_lat.nsteps = 0;
+    g_lat.steps[g_lat.nsteps++] = 0;
+    for (int i = 0; i < k && l[i] <= ceil; i++) {     /* this step: the states up to l[i] allowed */
+        long v = i + 1 < k && l[i + 1] - 1 < ceil ? l[i + 1] - 1 : ceil;
+        if (v > g_lat.steps[g_lat.nsteps - 1] && g_lat.nsteps < LAT_MAX_STEPS)
+            g_lat.steps[g_lat.nsteps++] = v;
+    }
+    if (!k && ceil > 0)                              /* no cpuidle information: 0 or the ceiling */
+        g_lat.steps[g_lat.nsteps++] = ceil;
+}
+
+static void lat_set(int idx, const char *why)
+{
+    int32_t v = (int32_t)g_lat.steps[idx];
+    if (write(g_lat_fd, &v, sizeof v) != (ssize_t)sizeof v) {
+        LOGW("processor wake-up latency: cannot change it (%s): automatic mode stopped", strerror(errno));
+        g_lat.on = 0;
+        return;
+    }
+    LOGI("processor wake-up latency %ld -> %ld us (%s)", g_lat_us, (long)v, why);
+    g_lat.idx = idx;
+    g_lat_us = v;
+}
+
+static void lat_tick(int64_t now)
+{
+    if (!g_lat.on || g_lat_fd < 0)
+        return;
+    uint64_t gaps = rf_gaps();
+    if (!g_lat.primed || gaps < g_lat.gaps) {         /* a radio gone: its counters with it */
+        g_lat.primed = 1;
+        g_lat.gaps = gaps;
+        g_lat.since = now;
+        return;
+    }
+    if (gaps > g_lat.gaps) {
+        unsigned long long d = (unsigned long long)(gaps - g_lat.gaps);
+        int settling = now < g_lat.settle;
+        g_lat.gaps = gaps;
+        g_lat.since = now;
+        if (settling)                                  /* just stepped back: the radio's counters lag */
+            return;
+        if (g_lat.idx > 0) {
+            char why[128];
+            int back = g_lat.idx > g_lat.good ? g_lat.good : 0;
+            g_lat.good = back;
+            g_lat.hold_ns = g_lat.hold_ns * 2 > LAT_HOLD_MAX_NS ? LAT_HOLD_MAX_NS : g_lat.hold_ns * 2;
+            snprintf(why, sizeof why, "%llu new gap(s) on air, next try in %lld s", d,
+                     (long long)(g_lat.hold_ns / 1000000000));
+            lat_set(back, why);
+            g_lat.settle = now + 1000000000LL;
+        }
+        return;
+    }
+    if (now - g_lat.since < g_lat.hold_ns)
+        return;
+    g_lat.since = now;
+    if (g_lat.idx > g_lat.good) {                      /* held a whole wait without gap */
+        g_lat.good = g_lat.idx;
+        g_lat.hold_ns = g_lat.base_ns;
+        LOGI("processor wake-up latency %ld us: no gap, kept", g_lat_us);
+    }
+    if (g_lat.idx + 1 < g_lat.nsteps)
+        lat_set(g_lat.idx + 1, "no gap on air, trying it");
+}
+
+static void setup_cpu_latency(const conf_sec *eng)
+{
+    const char *v = conf_str(eng, "cpu_latency_us", "0");
+    if (strcmp(v, "auto")) {
+        hold_cpu_latency(conf_int(eng, "cpu_latency_us", 0));
+        return;
+    }
+    long ceil = (long)conf_int(eng, "cpu_latency_max_us", 100);
+    long step_s = (long)conf_int(eng, "cpu_latency_step_s", 30);
+    if (step_s < 1)
+        step_s = 1;
+    lat_steps(ceil < 0 ? 0 : ceil);
+    g_lat.base_ns = g_lat.hold_ns = step_s * 1000000000LL;
+    char list[256];
+    int n = 0;
+    for (int i = 0; i < g_lat.nsteps && n < (int)sizeof list - 24; i++)
+        n += snprintf(list + n, sizeof list - n, "%s%ld", i ? " " : "", g_lat.steps[i]);
+    hold_cpu_latency(0);
+    g_lat.on = g_lat_fd >= 0 && g_lat.nsteps > 1;
+    LOGI("processor wake-up latency automatic: steps %s us, %ld s without gap between two", list, step_s);
 }
 
 int main(int argc, char **argv)
@@ -450,7 +593,7 @@ int main(int argc, char **argv)
         g_log_level = !strcmp(ll, "debug") ? LOG_DEBUG : !strcmp(ll, "warn") ? LOG_WARN : !strcmp(ll, "error") ? LOG_ERR : LOG_INFO;
     int stats_ms = (int)conf_int(eng, "stats_interval_ms", 1000);
     place_threads(conf_str(eng, "cpus", "auto"));
-    hold_cpu_latency(conf_int(eng, "cpu_latency_us", 0));
+    setup_cpu_latency(eng);
 
     /* inputs by id: removals while the supervisor runs leave gaps in the numbering */
     for (int si = 0; si < cf->nsec; si++) {
@@ -524,14 +667,16 @@ int main(int argc, char **argv)
             LOGI("SI tables reload requested");
         }
         int64_t now = mono_ns();
+        lat_tick(now);
         int stalled = rf_stalled(now, 5000000000LL);
         if (stalled >= 0 && now - t_start > 10000000000LL)
             rf_radio_lost(stalled, "does not consume samples any more (unplugged?)");
         if (now - t_prev >= (int64_t)stats_ms * 1000000 - 5000000) {
             double dt = (now - t_prev) / 1e9;
             t_prev = now;
-            int n = snprintf(buf, sizeof buf, "{\"type\":\"stats\",\"time\":%.3f,\"uptime\":%.1f,\"interval\":%.3f,",
-                             real_ns() / 1e9, (now - t_start) / 1e9, dt);
+            int n = snprintf(buf, sizeof buf, "{\"type\":\"stats\",\"time\":%.3f,\"uptime\":%.1f,\"interval\":%.3f,"
+                             "\"cpu_latency_us\":%ld,\"cpu_latency_auto\":%s,",
+                             real_ns() / 1e9, (now - t_start) / 1e9, dt, g_lat_us, g_lat.on ? "true" : "false");
             n += inputs_json(buf + n, sizeof buf - n, g_in, g_nin, dt);
             buf[n++] = ',';
             n += rf_stats_json(buf + n, sizeof buf - n - 4, dt);

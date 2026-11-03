@@ -1126,6 +1126,16 @@ int rf_radios_lost(void)
     return 0;
 }
 
+/* gaps on air so far (underruns + late) of the radios on the air: a new one shows in the next stats */
+uint64_t rf_gaps(void)
+{
+    uint64_t n = 0;
+    for (int ri = 0; ri < g_nradios; ri++)
+        if (g_radios[ri]->dev && atomic_load(&g_radios[ri]->state) == RADIO_ON)
+            n += g_radios[ri]->last.underruns + g_radios[ri]->last.late;
+    return n;
+}
+
 void rf_stop(void)
 {
     g_running = 0;
