@@ -798,6 +798,7 @@ class Supervisor:
                     conds[f"late.radio{r['index']}"] = ("critical", f"radio {r['index']}: {r['late'] - prev} gaps on air "
                                                          "reported by the radio (USB path too slow: hub, dock?)")
                 self.__dict__.setdefault("_late", {})[r["index"]] = r.get("late", 0)
+            self._clock_lead(conds, st)
         for p in self.ingest:
             if p.state in ("backoff", "error") and p.restarts >= 2:
                 conds[f"ingest.{p.inp.index}"] = ("warning", f"input {p.inp.name}: {p.state}, {p.restarts} restarts "
@@ -807,6 +808,59 @@ class Supervisor:
             if s and (s.get("transport_errors") or 0) > 0:
                 conds[f"tsduck.{an.car.index}"] = ("warning", f"{an.car.name}: tsduck sees {s['transport_errors']} transport errors")
         self.alerts.evaluate(conds)
+
+    CLOCK_LEAD_MIN_MS = -1000       # a multiplex this far behind its radio's clock (normally ~+300 ms) ...
+    CLOCK_LEAD_HOLD_S = 5           # ... for that long: critical alert
+    CLOCK_LEAD_RESTART_S = 30       # ... for that long: the engine started again, its clocks recaled
+    CLOCK_LEAD_RESTART_EVERY_S = 600  # not more often than that
+    CLOCK_LEAD_GRACE_S = 15         # the lead of a just started engine not looked at
+
+    def _clock_lead(self, conds, st):
+        """a radio that takes fewer samples than its sample rate (USB starved: hundreds of gaps a second) slows
+        the multiplexer it clocks: its lead falls to tens of seconds behind, the sources stop flowing, even the
+        backup clips. Alerted per multiplex; held too long, the engine is started again (clocks recaled)."""
+        now = time.monotonic()
+        bad = self.__dict__.setdefault("_lead_bad", {})      # carrier index -> [since, radio gaps then]
+        fresh = (self.engine is not None and time.time() - self.stats_at < 5
+                 and now - getattr(self, "engine_started", 0) > self.CLOCK_LEAD_GRACE_S)
+        radios = {r["index"]: r for r in st.get("radios", [])}
+        seen = set()
+        for c in st.get("carriers", []) if fresh else ():
+            if c["carrier"] >= len(self.plan.carriers):
+                continue
+            car = self.plan.carriers[c["carrier"]]
+            lead = c.get("clock_lead_ms")
+            r = radios.get(car.radio.index) if car.radio is not None else None
+            if (lead is None or lead >= self.CLOCK_LEAD_MIN_MS or not car.enabled or not c.get("on", 1)
+                    or r is None or r.get("state", "on") != "on" or car.radio.index in self.radios_off):
+                continue                         # in time, stopped, or its radio off or lost (alerted apart)
+            seen.add(car.index)
+            since, late0 = bad.setdefault(car.index, [now, r.get("late", 0)])
+            if now - since < self.CLOCK_LEAD_HOLD_S:
+                continue
+            conds[f"clock.{car.index}"] = (
+                "critical", f"{car.name}: radio {r['index']} ({r.get('driver', '?')}) sends slower than its sample "
+                f"rate ({r.get('late', 0) - late0} gaps reported in {now - since:.0f} s): the multiplex is "
+                f"{-lead / 1000:.0f} s behind its clock and unusable (USB path too slow: hub, dock?)")
+        for k in [k for k in bad if k not in seen]:
+            del bad[k]
+        long_bad = [k for k, (t, _) in bad.items() if now - t >= self.CLOCK_LEAD_RESTART_S]
+        if not long_bad:
+            self._lead_skip_logged = False
+            return
+        last = getattr(self, "_lead_restart_at", None)
+        if last is None or now - last >= self.CLOCK_LEAD_RESTART_EVERY_S:
+            self._lead_restart_at = now
+            log.warning("%s: behind the radio clock for %.0f s: the engine is started again to recale the clocks "
+                        "(not again within %d min)", ", ".join(self.plan.carriers[k].name for k in long_bad),
+                        max(now - bad[k][0] for k in long_bad), self.CLOCK_LEAD_RESTART_EVERY_S // 60)
+            bad.clear()
+            self._restart_engine()
+        elif not getattr(self, "_lead_skip_logged", False):
+            self._lead_skip_logged = True
+            log.warning("%s: behind the radio clock again, the engine was started again %.0f s ago: not this time "
+                        "(the radio's USB path must be fixed)", ", ".join(self.plan.carriers[k].name for k in long_bad),
+                        now - last)
 
     # ---------------------------------------------------------------- main loop
 
