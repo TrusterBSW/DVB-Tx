@@ -77,6 +77,10 @@ DRIVER_RATES = {"hackrf": (8e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6,
 # above these the radio works but at its edge: hackrf USB 2 FIFO gaps (~15/min at 20 MS/s, none at 19.62),
 # uhd B2xx AD9361 analog filter limit (56 MHz)
 PRACTICAL_RATES = {"hackrf": 19.7e6, "uhd": 56e6}
+# uhd: the AD9361 digital interpolation filters and its analog filter roll off near the band edge
+# (256APSK at 40 Msym/s with its edge 0.2 MHz under Fs / 2: 17.8 dB of SNR instead of 21.2 at 35):
+# the carriers stay within this fraction of the half band
+UHD_FLAT = 0.9
 
 
 def occupied_half(car):
@@ -834,6 +838,8 @@ def _plan_radio_at(r, lo):
         c.offset = round((c.frequency - r.center) / spacing) * spacing if c.standard == "dvbt" else c.frequency - r.center
     edge = max(abs(c.offset) + occupied_half(c) for c in cars)
     need = 2 * (edge + 150e3)
+    if r.driver == "uhd":
+        need = max(need, 2 * edge / UHD_FLAT)
     lo_rate, hi_rate = DRIVER_RATES.get(r.driver, (0, 1e12))
     if r.driver == "hackrf" and r.bandwidth <= 0:
         # analog filter wide enough for the band edges (a filter cutting them distorts single-carrier
