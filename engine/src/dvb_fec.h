@@ -47,7 +47,7 @@ typedef struct dvb_bbframer {
     long sync_errors;         /* packets that did not start with 0x47 */
     ts_pull_fn pull;
     void *ctx;
-    uint8_t crc_tab[256];
+    uint8_t crc_tab[4][256];  /* [k][x]: CRC-8 register x after k + 1 more zero bytes */
 } dvb_bbframer;
 
 /* ro: DVB-S2 roll-off code (0: 0.35, 1: 0.25, 2: 0.20), 0 for DVB-T2 */
@@ -61,7 +61,7 @@ void dvb_bbscramble(uint8_t *buf, int nbytes);
 /* ---- BCH ---- */
 typedef struct dvb_bch {
     int nparity;              /* parity bits */
-    uint64_t tab[256][3];     /* remainder of byte * x^n, left aligned in 192 bits */
+    uint64_t tab[4][256][3];  /* remainder of byte * x^(n + 8 k), left aligned in 192 bits */
 } dvb_bch;
 
 void dvb_bch_init(dvb_bch *b, int short_frame, int nparity);

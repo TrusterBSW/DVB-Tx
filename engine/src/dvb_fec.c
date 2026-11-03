@@ -74,8 +74,11 @@ void dvb_bbframer_init(dvb_bbframer *b, int kbch, int ro, ts_pull_fn pull, void 
             else
                 crc = (crc << 1) & 0xff;
         }
-        b->crc_tab[i] = (uint8_t)crc;
+        b->crc_tab[0][i] = (uint8_t)crc;
     }
+    for (int k = 1; k < 4; k++)
+        for (int i = 0; i < 256; i++)
+            b->crc_tab[k][i] = b->crc_tab[0][b->crc_tab[k - 1][i]];
 }
 
 static uint8_t bitrev8(uint8_t x)
@@ -124,11 +127,14 @@ void dvb_bbframer_frame(dvb_bbframer *b, uint8_t *out)
         int m = 188 - count;
         if (m > n - j)
             m = n - j;
-        for (int k = 0; k < m; k++) {
-            uint8_t v = pkt[count + k];
-            d[j + k] = v;
-            c = b->crc_tab[v ^ c];
-        }
+        const uint8_t *src = pkt + count;
+        memcpy(d + j, src, m);
+        int k = 0;
+        for (; k + 4 <= m; k += 4)   /* CRC-8 is linear: 4 bytes at a time */
+            c = b->crc_tab[3][src[k] ^ c] ^ b->crc_tab[2][src[k + 1]] ^ b->crc_tab[1][src[k + 2]] ^
+                b->crc_tab[0][src[k + 3]];
+        for (; k < m; k++)
+            c = b->crc_tab[0][src[k] ^ c];
         j += m;
         count += m;
         if (count == 188)
@@ -259,18 +265,35 @@ void dvb_bch_init(dvb_bch *b, int short_frame, int nparity)
                 r[2] ^= g[2];
             }
         }
-        b->tab[v][0] = r[0];
-        b->tab[v][1] = r[1];
-        b->tab[v][2] = r[2];
+        b->tab[0][v][0] = r[0];
+        b->tab[0][v][1] = r[1];
+        b->tab[0][v][2] = r[2];
     }
+    /* tab[k][v] = tab[k - 1][v] * x^8 mod g */
+    for (int k = 1; k < 4; k++)
+        for (int v = 0; v < 256; v++) {
+            const uint64_t *p = b->tab[k - 1][v], *t = b->tab[0][p[0] >> 56];
+            b->tab[k][v][0] = ((p[0] << 8) | (p[1] >> 56)) ^ t[0];
+            b->tab[k][v][1] = ((p[1] << 8) | (p[2] >> 56)) ^ t[1];
+            b->tab[k][v][2] = (p[2] << 8) ^ t[2];
+        }
 }
 
 void dvb_bch_encode(const dvb_bch *b, const uint8_t *in, int kbch, uint8_t *parity)
 {
     uint64_t r0 = 0, r1 = 0, r2 = 0;
-    int n = kbch / 8;
-    for (int i = 0; i < n; i++) {
-        const uint64_t *t = b->tab[(r0 >> 56) ^ in[i]];
+    int n = kbch / 8, i = 0;
+    for (; i + 4 <= n; i += 4) {   /* 4 bytes at a time (the remainder is linear) */
+        const uint64_t *t3 = b->tab[3][(r0 >> 56) ^ in[i]];
+        const uint64_t *t2 = b->tab[2][((r0 >> 48) & 0xff) ^ in[i + 1]];
+        const uint64_t *t1 = b->tab[1][((r0 >> 40) & 0xff) ^ in[i + 2]];
+        const uint64_t *t0 = b->tab[0][((r0 >> 32) & 0xff) ^ in[i + 3]];
+        r0 = ((r0 << 32) | (r1 >> 32)) ^ t3[0] ^ t2[0] ^ t1[0] ^ t0[0];
+        r1 = ((r1 << 32) | (r2 >> 32)) ^ t3[1] ^ t2[1] ^ t1[1] ^ t0[1];
+        r2 = (r2 << 32) ^ t3[2] ^ t2[2] ^ t1[2] ^ t0[2];
+    }
+    for (; i < n; i++) {
+        const uint64_t *t = b->tab[0][(r0 >> 56) ^ in[i]];
         r0 = ((r0 << 8) | (r1 >> 56)) ^ t[0];
         r1 = ((r1 << 8) | (r2 >> 56)) ^ t[1];
         r2 = (r2 << 8) ^ t[2];
