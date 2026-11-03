@@ -2,6 +2,7 @@
 #include "dvbs2.h"
 
 #include <math.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,7 +16,10 @@ struct dvbs2 {
     float complex constel[32];
     float complex plh[90];
     uint8_t *cscram;           /* scrambling of the slot and pilot symbols */
-    uint8_t cw[8100];
+    float complex rot[4 * 32]; /* constellation point sym scrambled by r: rot[r << bits | sym] */
+    float complex prot[4];     /* pilot scrambled by r */
+    uint8_t *symv;             /* symbol indices of one frame (nsym rounded up + 8) */
+    uint8_t cw[8100 + 8];      /* + padding for the byte-wise column reads */
     float complex *frame;      /* one PLFRAME */
     int flen, fpos;
 };
@@ -179,6 +183,30 @@ static void build_scrambler(dvbs2 *s, int n)
     }
 }
 
+static inline float complex scramble(float complex v, int r)
+{
+    switch (r) {
+    case 1: return -cimagf(v) + crealf(v) * I;
+    case 2: return -v;
+    case 3: return cimagf(v) - crealf(v) * I;
+    default: return v;
+    }
+}
+
+/* spread[x]: byte k (memory order) = bit 7 - k of x (MSB first), 0 or 1 */
+static uint64_t spread[256];
+static pthread_once_t spread_once = PTHREAD_ONCE_INIT;
+
+static void build_spread(void)
+{
+    for (int x = 0; x < 256; x++) {
+        uint64_t v = 0;
+        for (int k = 0; k < 8; k++)
+            v |= (uint64_t)((x >> (7 - k)) & 1) << (8 * k);   /* little-endian host assumed */
+        spread[x] = v;
+    }
+}
+
 dvbs2 *dvbs2_new(const dvbs2_cfg *c, ts_pull_fn pull, void *ctx)
 {
     if (dvbs2_cfg_check(c))
@@ -202,6 +230,13 @@ dvbs2 *dvbs2_new(const dvbs2_cfg *c, ts_pull_fn pull, void *ctx)
         s->rowaddr[2] = 0;
     }
     build_constellation(s);
+    for (int r = 0; r < 4; r++)
+        for (int k = 0; k < (1 << c->bits); k++)
+            s->rot[r << c->bits | k] = scramble(s->constel[k], r);
+    for (int r = 0; r < 4; r++)
+        s->prot[r] = scramble(polar(1, M_PI / 4), r);
+    pthread_once(&spread_once, build_spread);
+    s->symv = xcalloc((size_t)(s->nsym + 15) / 8 * 8 + 8, 1);
     build_plheader(s);
     build_scrambler(s, s->nsym + s->npilot);
     s->flen = 90 + s->nsym + s->npilot;
@@ -216,45 +251,68 @@ void dvbs2_free(dvbs2 *s)
         return;
     dvb_fec_free(&s->fec);
     free(s->cscram);
+    free(s->symv);
     free(s->frame);
     free(s);
 }
 
-static inline int bit_at(const uint8_t *cw, int i) { return (cw[i >> 3] >> (7 - (i & 7))) & 1; }
-
-static inline float complex scramble(float complex v, int r)
+/* symbol indices: bit b (MSB first) of symbol j is codeword bit rowaddr[b] + j for 8PSK and
+ * above (column-wise bit interleaver), bit 2 j + b for QPSK */
+static void demux_symbols(dvbs2 *s)
 {
-    switch (r) {
-    case 1: return -cimagf(v) + crealf(v) * I;
-    case 2: return -v;
-    case 3: return cimagf(v) - crealf(v) * I;
-    default: return v;
+    const uint8_t *cw = s->cw;
+    uint8_t *sv = s->symv;
+    int nsym = s->nsym, bits = s->c.bits;
+    if (bits == 2) {
+        for (int i = 0; i < nsym / 4; i++) {
+            unsigned v = cw[i];
+            sv[4 * i] = (uint8_t)(v >> 6);
+            sv[4 * i + 1] = (uint8_t)((v >> 4) & 3);
+            sv[4 * i + 2] = (uint8_t)((v >> 2) & 3);
+            sv[4 * i + 3] = (uint8_t)(v & 3);
+        }
+        return;
+    }
+    int ngrp = (nsym + 7) / 8;
+    for (int b = 0; b < bits; b++) {
+        int a = s->rowaddr[b], sh = a & 7, ls = bits - 1 - b;
+        const uint8_t *p = cw + (a >> 3);
+        for (int g = 0; g < ngrp; g++) {
+            unsigned x = (unsigned)((p[g] << 8 | p[g + 1]) >> (8 - sh)) & 0xff;
+            uint64_t v = spread[x] << ls, o;
+            if (b == 0)
+                o = v;
+            else {
+                memcpy(&o, sv + 8 * g, 8);
+                o |= v;
+            }
+            memcpy(sv + 8 * g, &o, 8);
+        }
     }
 }
 
 static void next_frame(dvbs2 *s)
 {
     dvb_fec_frame(&s->fec, s->cw, 0);
+    demux_symbols(s);
     float complex *o = s->frame;
     memcpy(o, s->plh, sizeof s->plh);
     o += 90;
-    int n = 0, bits = s->c.bits, j = 0;
-    const float complex pilot = polar(1, M_PI / 4);
+    const uint8_t *sv = s->symv, *cs = s->cscram;
+    const float complex *rot = s->rot;
+    int bits = s->c.bits;
     for (int slot = 0; slot < s->slots; slot++) {
-        for (int k = 0; k < 90; k++, j++) {
-            int sym;
-            if (bits == 2)
-                sym = (bit_at(s->cw, 2 * j) << 1) | bit_at(s->cw, 2 * j + 1);
-            else {
-                sym = 0;
-                for (int b = 0; b < bits; b++)
-                    sym = (sym << 1) | bit_at(s->cw, s->rowaddr[b] + j);
-            }
-            *o++ = scramble(s->constel[sym], s->cscram[n++]);
-        }
-        if (s->c.pilots && (slot + 1) % 16 == 0 && slot < s->slots - 1)
+        for (int k = 0; k < 90; k++)
+            o[k] = rot[cs[k] << bits | sv[k]];
+        o += 90;
+        sv += 90;
+        cs += 90;
+        if (s->c.pilots && (slot + 1) % 16 == 0 && slot < s->slots - 1) {
             for (int p = 0; p < 36; p++)
-                *o++ = scramble(pilot, s->cscram[n++]);
+                o[p] = s->prot[cs[p]];
+            o += 36;
+            cs += 36;
+        }
     }
     s->fpos = 0;
 }
