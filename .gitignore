@@ -9,3 +9,4 @@ __pycache__/
 
 # built packages published in releases/ (packaging/build-all-debs.sh writes dist/)
 !/releases/*.deb
+/.claude/
