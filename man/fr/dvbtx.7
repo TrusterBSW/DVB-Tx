@@ -338,6 +338,10 @@ cadence de la radio par des bancs de filtres dans le domaine fréquentiel
 réponse exacte en racine de cosinus surélevé (plate pour le rééchantillonnage
 DVB\-T2), placé à la fréquence de la porteuse, et une IFFT par banc donne les
 échantillons de la radio.
+À partir de 30 MS/s, des threads auxiliaires calculent plusieurs blocs à la fois
+.RB ( synth_threads
+dans
+.BR dvbtx\-engine (8)).
 Cela exige des débits symbole qui soient des fractions simples de la cadence de la
 radio\~; sinon, ou avec
 .BR "synth = \(dqfir\(dq" ,

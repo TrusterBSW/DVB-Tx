@@ -58,6 +58,7 @@ typedef struct carrier {
     /* single carrier (dvbc) */
     void *src;                    /* dvbc / dvbs symbol source */
     sym_fn symf;
+    symblk_fn symb;               /* the same n symbols at a time (dvbs2), or NULL */
     scgen *sg;
     fcbank *fb;                   /* this pseudo-carrier runs a filter bank (members in other carriers) */
     int in_bank, held, sym_pos;   /* member of a filter bank: the ring holds symbols */
@@ -103,6 +104,7 @@ struct radio {
     sdr_params p;
     char args[256], clock[32];
     double backoff_db;
+    int synth_threads;            /* worker threads of its filter banks, -1: by the rate */
     float scale;
 
     ofdm_group *grp;
@@ -244,25 +246,34 @@ static void t2_sample(void *ctx, float complex *v)
     *v = c->t2buf[c->t2pos++];
 }
 
-/* symbols of a filter-bank member, from its ring (called by the bank thread) */
-static void bank_sym(void *ctx, float complex *v)
+/* n symbols of a filter-bank member, from its ring (called by the bank thread) */
+static void bank_syms(void *ctx, float complex *v, int n)
 {
     carrier *c = ctx;
-    if (c->sym_pos == SYMBLK) {
-        pthread_mutex_lock(&c->lock);
-        if (c->held) {
-            c->rd++;
-            pthread_cond_broadcast(&c->cond);
+    while (n > 0) {
+        if (c->sym_pos == SYMBLK) {
+            pthread_mutex_lock(&c->lock);
+            if (c->held) {
+                c->rd++;
+                pthread_cond_broadcast(&c->cond);
+            }
+            while (g_running && c->wr == c->rd)
+                pthread_cond_wait(&c->cond, &c->lock);
+            c->held = 1;
+            pthread_mutex_unlock(&c->lock);
+            c->sym_pos = 0;
         }
-        while (g_running && c->wr == c->rd)
-            pthread_cond_wait(&c->cond, &c->lock);
-        c->held = 1;
-        pthread_mutex_unlock(&c->lock);
-        c->sym_pos = 0;
+        int k = SYMBLK - c->sym_pos;
+        if (k > n)
+            k = n;
+        if (c->muted)
+            memset(v, 0, sizeof(float complex) * k);
+        else
+            memcpy(v, c->ring + (size_t)(c->rd % RING_SYMS) * SYMBLK + c->sym_pos, sizeof(float complex) * k);
+        c->sym_pos += k;
+        v += k;
+        n -= k;
     }
-    *v = c->ring[(size_t)(c->rd % RING_SYMS) * SYMBLK + c->sym_pos++];
-    if (c->muted)
-        *v = 0;
 }
 
 /* ---- carrier threads ---- */
@@ -312,6 +323,8 @@ static void *dvbt_thread(void *arg)
                     k += dvbt2_group_samples(c->t2g, slot + k, c->ncar - k);
             else if (c->in_bank && c->muted)
                 skip_air(c, slot, c->ncar / c->symbol_rate);
+            else if (c->in_bank && c->symb)
+                c->symb(c->symctx, slot, c->ncar);
             else if (c->in_bank)
                 for (int k = 0; k < c->ncar; k++)
                     c->symf(c->symctx, &slot[k]);
@@ -622,6 +635,19 @@ static void radio_params(radio *r, const conf_sec *s)
     r->p.clock = r->clock;
     r->p.buffer_ms = (int)conf_int(s, "buffer_ms", 50);
     r->backoff_db = conf_num(s, "backoff_db", 13);
+    r->synth_threads = (int)conf_int(s, "synth_threads", -1);
+}
+
+/* worker threads of a filter bank at this radio's rate: one block of FFTs is about 70 % of a core
+ * at 56 MS/s on a 3 GHz Coffee Lake; below 30 MS/s the bank's own thread is enough */
+static int bank_threads(const radio *r)
+{
+    if (r->synth_threads >= 0)
+        return r->synth_threads;
+    if (r->p.rate < 30e6)
+        return 0;
+    long n = sysconf(_SC_NPROCESSORS_ONLN) - 1;
+    return n < 1 ? 0 : n > 3 ? 3 : (int)n;
 }
 
 int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
@@ -1004,6 +1030,7 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             } else if (!strcmp(c->standard, "dvbs2")) {
                 c->src = dvbs2_new(&c->s2, mux_pull, c->mux);
                 c->symf = dvbs2_symbol;
+                c->symb = dvbs2_symbols;
             } else if (!strcmp(c->standard, "dvbs")) {
                 c->src = dvbs_new(c->cr_k, c->cr_n, mux_pull, c->mux);
                 c->symf = dvbs_symbol;
@@ -1021,15 +1048,16 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             if (strcmp(c->synth, "fir")) {
                 int ok = -1;
                 for (int b = 0; b < nbanks && ok < 0; b++)
-                    if ((ok = fcbank_add(banks[b]->fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym,
+                    if ((ok = fcbank_add_blk(banks[b]->fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_syms,
                                          c)) >= 0)
                         c->bank = banks[b];
                 if (ok < 0 && nbanks < 64 && g_nbanks < MAX_BANKS) {
                     fcbank *fb = fcbank_new(r->p.rate, c->symbol_rate, (double)df);
-                    if (fb && (ok = fcbank_add(fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_sym,
+                    if (fb && (ok = fcbank_add_blk(fb, c->symbol_rate, pulse, c->rolloff, c->offset_hz, g, bank_syms,
                                                c)) >= 0) {
                         carrier *bc = pseudo_carrier(r, "bank");
                         bc->fb = fb;
+                        fcbank_threads(fb, bank_threads(r));
                         banks[nbanks++] = bc;
                         g_banks[g_nbanks++] = bc;
                         r->sc[r->nsc++] = bc;
@@ -1066,8 +1094,8 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             for (int i = 0; i < fcbank_members(banks[b]->fb); i++) {
                 int N, H, L, h;
                 fcbank_sizes(banks[b]->fb, i, &N, &H, &L, &h);
-                LOGD("radio %d: filter bank %d (FFT %d, %d new samples) member %d at %.3f Hz (FFT %d, %d new symbols)",
-                     ri, b, N, H, i, fcbank_offset(banks[b]->fb, i), L, h);
+                LOGD("radio %d: filter bank %d (FFT %d, %d new samples, %d worker threads) member %d at %.3f Hz "
+                     "(FFT %d, %d new symbols)", ri, b, N, H, bank_threads(r), i, fcbank_offset(banks[b]->fb, i), L, h);
             }
         r->scale = (float)pow(10.0, -r->backoff_db / 20.0);
         r->drv = sdr_load(r->driver, err, errlen);
@@ -1258,6 +1286,8 @@ int rf_stats_json(char *buf, int len, double dt)
             if (g_banks[i]->radio != r)
                 continue;
             double bc = g_banks[i]->started ? thread_cpu(g_banks[i]->th) : 0;
+            if (g_banks[i]->fb)                    /* and its worker threads */
+                bc += fcbank_workers_cpu(g_banks[i]->fb);
             bload += dt > 0 ? (bc - prev_bank[i]) / dt * 100 : 0;
             prev_bank[i] = bc;
             nb++;

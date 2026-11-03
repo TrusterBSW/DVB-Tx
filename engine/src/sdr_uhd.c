@@ -2,16 +2,21 @@
  * Ettus USRP back-end (UHD C API), e.g. B200/B210: up to 61.44 MS/s on one TX channel.
  * write() fills a ring buffer (buffer_ms) drained by a sender thread, so that a late synthesis
  * thread does not underflow the radio. The master clock rate is an integer multiple of the
- * sample rate (args may force master_clock_rate=...). Underflows come from async messages. */
+ * sample rate (args may force master_clock_rate=...). Underflows come from async messages.
+ * The ring holds sc16 (the wire format): write() scales and converts, UHD only copies. */
 #include <dirent.h>
 #include <math.h>
 #include <pthread.h>
 #include <sched.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <uhd.h>
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
 
 #include "sdr.h"
 
@@ -22,7 +27,7 @@ struct sdr_dev {
     size_t max_samps;
     double rate;
 
-    float complex *ring;           /* already scaled samples */
+    int16_t (*ring)[2];            /* scaled samples, sc16 */
     size_t size, rd, wr, used;
     pthread_mutex_t lock;
     pthread_cond_t cond;
@@ -231,7 +236,7 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
         ud_close(d);
         return NULL;
     }
-    char cpu[] = "fc32", otw[] = "sc16", sargs[] = "";
+    char cpu[] = "sc16", otw[] = "sc16", sargs[] = "";
     uhd_stream_args_t sa = { .cpu_format = cpu, .otw_format = otw, .args = sargs, .channel_list = &ch, .n_channels = 1 };
     if (uhd_usrp_get_tx_stream(d->usrp, &sa, d->tx)) {
         last_error(err, errlen, "get_tx_stream");
@@ -246,7 +251,7 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
     d->size = (size_t)(p->rate * ms / 1000.0);
     if (d->size < 16 * d->max_samps)
         d->size = 16 * d->max_samps;
-    d->ring = malloc(sizeof(float complex) * d->size);
+    d->ring = malloc(sizeof *d->ring * d->size);
     if (!d->ring) {
         snprintf(err, errlen, "out of memory");
         ud_close(d);
@@ -263,6 +268,31 @@ static int ud_start(sdr_dev *d)
 {
     (void)d;
     return 0;   /* sending starts once the ring is full */
+}
+
+/* n samples times scale to sc16 (full scale 1.0 = 32767, rounded to nearest, saturated) */
+static void to_sc16(const float complex *in, int16_t (*o)[2], size_t n, float scale)
+{
+    const float *f = (const float *)in;
+    int16_t *q = (int16_t *)o;
+    float k = scale * 32767.0f;
+    size_t i = 0;
+#if defined(__SSE2__)
+    /* clamped before the conversion: out of range, cvtps gives INT_MIN (a positive peak would
+     * turn into -32768) */
+    __m128 vk = _mm_set1_ps(k), hi = _mm_set1_ps(32767.0f), lo = _mm_set1_ps(-32768.0f);
+    for (; i + 4 <= n; i += 4) {   /* 4 samples: 8 floats to 8 int16 */
+        __m128 x = _mm_mul_ps(_mm_loadu_ps(f + 2 * i), vk), y = _mm_mul_ps(_mm_loadu_ps(f + 2 * i + 4), vk);
+        __m128i a = _mm_cvtps_epi32(_mm_min_ps(_mm_max_ps(x, lo), hi));
+        __m128i b = _mm_cvtps_epi32(_mm_min_ps(_mm_max_ps(y, lo), hi));
+        _mm_storeu_si128((__m128i *)(q + 2 * i), _mm_packs_epi32(a, b));
+    }
+#endif
+    for (; i < n; i++)
+        for (int c = 0; c < 2; c++) {
+            float v = rintf(f[2 * i + c] * k);
+            q[2 * i + c] = (int16_t)(v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : v);
+        }
 }
 
 static int ud_write(sdr_dev *d, const float complex *const *bufs, int n, float scale)
@@ -289,9 +319,7 @@ static int ud_write(sdr_dev *d, const float complex *const *bufs, int n, float s
             chunk = d->size - d->wr;
         size_t wr = d->wr;
         pthread_mutex_unlock(&d->lock);
-        float complex *o = d->ring + wr;
-        for (size_t i = 0; i < chunk; i++)
-            o[i] = in[done + i] * scale;
+        to_sc16(in + done, d->ring + wr, chunk, scale);
         pthread_mutex_lock(&d->lock);
         d->wr = (d->wr + chunk) % d->size;
         d->used += chunk;

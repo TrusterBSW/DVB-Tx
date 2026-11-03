@@ -32,5 +32,6 @@ double dvbs2_ts_rate(const dvbs2_cfg *c, double symbol_rate);
 dvbs2 *dvbs2_new(const dvbs2_cfg *c, ts_pull_fn pull, void *ctx);
 void dvbs2_free(dvbs2 *s);
 void dvbs2_symbol(void *ctx, float complex *sym);   /* sym_fn: one symbol at the symbol rate */
+void dvbs2_symbols(void *ctx, float complex *sym, int n);   /* the next n symbols */
 
 #endif

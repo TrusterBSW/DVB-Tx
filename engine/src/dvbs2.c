@@ -369,3 +369,19 @@ void dvbs2_symbol(void *ctx, float complex *sym)
         next_frame(s);
     *sym = s->frame[s->fpos++];
 }
+
+void dvbs2_symbols(void *ctx, float complex *sym, int n)
+{
+    dvbs2 *s = ctx;
+    while (n > 0) {
+        if (s->fpos == s->flen)
+            next_frame(s);
+        int c = s->flen - s->fpos;
+        if (c > n)
+            c = n;
+        memcpy(sym, s->frame + s->fpos, sizeof(float complex) * c);
+        s->fpos += c;
+        sym += c;
+        n -= c;
+    }
+}

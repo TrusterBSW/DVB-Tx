@@ -237,6 +237,13 @@ Par défaut 50.
 Niveau du signal synthétisé sous la pleine échelle, en dB : les échantillons
 sont multipliés par 10^(\-backoff_db/20) avant que le module ne les convertisse.
 Par défaut 13.
+.TP
+.B synth_threads
+Threads auxiliaires de chaque banc de filtres de cette radio, qui calculent
+plusieurs blocs à la fois (le thread du banc ne fait plus que rassembler les
+symboles\~; la sortie est identique au bit près).
+Par défaut \-1\~: aucun sous 30 MS/s, sinon le nombre de processeurs moins un,
+au plus 3.
 .SS [carrier N]
 Un multiplex.
 Clés communes à toutes les normes :
@@ -799,8 +806,8 @@ Le moteur donne à ses threads critiques des priorités
 .IP \(bu 2
 threads radio (synthèse et écriture vers le module) : 50 ;
 .IP \(bu
-threads de codage des porteuses, threads du banc de filtres, threads des
-groupes DVB\-T2 et leurs threads auxiliaires : 40 ;
+threads de codage des porteuses, threads des bancs de filtres et des groupes
+DVB\-T2 et leurs threads auxiliaires : 40 ;
 .IP \(bu
 HackRF : le thread d'événements libusb de libhackrf, 60 (argument de module
 .BR rt= ) ;

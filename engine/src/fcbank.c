@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "util.h"
 
@@ -20,15 +21,29 @@ typedef struct member {
     int *src, *dst;              /* used FFT bins and where they go in the output spectrum */
     float *w;                    /* RRC weight * scale */
     float complex *win;          /* last L symbols */
-    fftwf_complex *x;
-    fftwf_plan fwd;
+    fftwf_plan fwd;              /* in place, on any job's x[i] */
     int binoff;
     double ph, dph;              /* continuity phase of the frequency shift (cycles) */
     double fph, dfph;            /* residual offset (off - bin), applied to the symbols (cycles) */
-    sym_fn get;
+    symblk_fn get;
     void *ctx;
+    sym_fn get1;                 /* fcbank_add: one symbol at a time */
+    void *ctx1;
     volatile int muted;          /* off the air: its symbols are pulled (and dropped), not filtered */
 } member;
+
+/* one block: the symbol windows of its members, then (worker) their spectra and the output */
+typedef struct job {
+    fftwf_complex *x[MAX_MEMBERS];   /* window of L symbols, then its FFT */
+    float complex rot[MAX_MEMBERS];
+    unsigned char live[MAX_MEMBERS];
+    int any;                     /* a member on the air */
+    fftwf_complex *Y;            /* N bins, then N samples */
+    int state;                   /* JOB_FREE, JOB_READY (to compute), JOB_BUSY, JOB_DONE */
+} job;
+
+enum { JOB_FREE, JOB_READY, JOB_BUSY, JOB_DONE };
+#define MAX_WORKERS 8
 
 struct fcbank {
     double fs;
@@ -36,10 +51,19 @@ struct fcbank {
     int N, H, V;
     member m[MAX_MEMBERS];
     int nm;
-    fftwf_complex *Y;
-    fftwf_plan inv;
-    float complex *fifo;         /* H valid samples of the last block */
+    fftwf_plan inv;              /* in place, on any job's Y */
+    const float complex *fifo;   /* H valid samples of the current block */
+    float complex *zeros;        /* the block of a bank whose members are all off the air */
     int fpos;
+    /* blocks: job[seq % njobs]; the caller fills them in order, the workers compute them */
+    job *jobs;
+    int njobs, nworkers, started;
+    long filled, taken, used;    /* blocks filled, taken by a worker, given out (current one included) */
+    pthread_t th[MAX_WORKERS];
+    int running;                 /* worker threads created (read by the statistics) */
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    int stop;
 };
 
 static pthread_mutex_t plan_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -118,11 +142,15 @@ fcbank *fcbank_new(double fs, double rs, double df)
         free(k);
         return NULL;
     }
-    k->Y = fftwf_alloc_complex(k->N);
-    k->fifo = xcalloc(k->H, sizeof(float complex));
+    k->zeros = xcalloc(k->H, sizeof(float complex));
     k->fpos = k->H;
+    k->njobs = 1;
+    k->jobs = xcalloc(1, sizeof(job));
+    k->jobs[0].Y = fftwf_alloc_complex(k->N);
+    pthread_mutex_init(&k->lock, NULL);
+    pthread_cond_init(&k->cond, NULL);
     pthread_mutex_lock(&plan_lock);
-    k->inv = fftwf_plan_dft_1d(k->N, k->Y, k->Y, FFTW_BACKWARD, plan_flags(k->N));
+    k->inv = fftwf_plan_dft_1d(k->N, k->jobs[0].Y, k->jobs[0].Y, FFTW_BACKWARD, plan_flags(k->N));
     pthread_mutex_unlock(&plan_lock);
     return k;
 }
@@ -153,7 +181,8 @@ static double response(int pulse, double f, double rs, double alpha, double top)
     return cos(M_PI / (2 * alpha) * (x - lo));
 }
 
-int fcbank_add(fcbank *k, double rs, int pulse, double alpha, double offset_hz, float gain, sym_fn get, void *ctx)
+int fcbank_add_blk(fcbank *k, double rs, int pulse, double alpha, double offset_hz, float gain, symblk_fn get,
+                   void *ctx)
 {
     long a, b;
     if (k->nm >= MAX_MEMBERS || !rational(rs / k->fs, 65536, &a, &b) || !smooth(a) || !smooth(b))
@@ -207,14 +236,41 @@ int fcbank_add(fcbank *k, double rs, int pulse, double alpha, double offset_hz, 
     for (int i = 0; i < m->nbins; i++)
         m->w[i] = (float)(m->w[i] * scale);
     m->win = xcalloc(m->L, sizeof(float complex));
-    m->x = fftwf_alloc_complex(m->L);
+    k->jobs[0].x[k->nm] = fftwf_alloc_complex(m->L);
     pthread_mutex_lock(&plan_lock);
-    m->fwd = fftwf_plan_dft_1d(m->L, m->x, m->x, FFTW_FORWARD, plan_flags(m->L));
+    m->fwd = fftwf_plan_dft_1d(m->L, k->jobs[0].x[k->nm], k->jobs[0].x[k->nm], FFTW_FORWARD, plan_flags(m->L));
     pthread_mutex_unlock(&plan_lock);
     /* phase continuity: block j multiplied by e^{j 2 pi binoff H (j+1) / N} */
     m->dph = fmod((double)m->binoff * k->H / k->N, 1.0);
     m->ph = m->dph;
     return k->nm++;
+}
+
+/* fcbank_add: a source of one symbol at a time */
+static void one_by_one(void *ctx, float complex *v, int n)
+{
+    member *m = ctx;
+    for (int i = 0; i < n; i++)
+        m->get1(m->ctx1, &v[i]);
+}
+
+int fcbank_add(fcbank *k, double rs, int pulse, double alpha, double offset_hz, float gain, sym_fn get, void *ctx)
+{
+    if (k->nm >= MAX_MEMBERS)
+        return -1;
+    int i = fcbank_add_blk(k, rs, pulse, alpha, offset_hz, gain, one_by_one, &k->m[k->nm]);
+    if (i >= 0) {
+        k->m[i].get1 = get;
+        k->m[i].ctx1 = ctx;
+    }
+    return i;
+}
+
+void fcbank_threads(fcbank *k, int n)
+{
+    if (k->started || n < 0)
+        return;
+    k->nworkers = n > MAX_WORKERS ? MAX_WORKERS : n;
 }
 
 void fcbank_sizes(const fcbank *k, int i, int *N, int *H, int *L, int *h)
@@ -225,26 +281,24 @@ void fcbank_sizes(const fcbank *k, int i, int *N, int *H, int *L, int *h)
     *h = k->m[i].h;
 }
 
-static void next_block(fcbank *k)
+/* the sequential part of a block: the members' new symbols (and their phases) into job j */
+static void fill(fcbank *k, job *j)
 {
-    memset(k->Y, 0, sizeof(fftwf_complex) * k->N);
-    float complex *Y = (float complex *)k->Y;
+    j->any = 0;
     for (int i = 0; i < k->nm; i++) {
         member *m = &k->m[i];
         if (m->muted) {
             /* keep its symbol clock and phases; the window restarts from silence */
-            float complex dummy;
-            for (int s = 0; s < m->h; s++)
-                m->get(m->ctx, &dummy);
+            m->get(m->ctx, m->win, m->h);
             memset(m->win, 0, sizeof(float complex) * m->L);
             m->fph = fmod(m->fph + m->dfph * m->h, 1.0);
             m->ph = fmod(m->ph + m->dph, 1.0);
+            j->live[i] = 0;
             continue;
         }
         /* slide the symbol window by h and pull h new symbols */
         memmove(m->win, m->win + m->h, sizeof(float complex) * (m->L - m->h));
-        for (int s = m->L - m->h; s < m->L; s++)
-            m->get(m->ctx, &m->win[s]);
+        m->get(m->ctx, m->win + m->L - m->h, m->h);
         if (m->dfph != 0) {
             /* exact offset: the residual (< half a bin) shifts the symbols; the shaping filter is not
              * shifted with them, an error below -60 dB at the band edges */
@@ -255,23 +309,126 @@ static void next_block(fcbank *k)
             }
             m->fph = fmod(m->fph + m->dfph * m->h, 1.0);
         }
-        memcpy(m->x, m->win, sizeof(float complex) * m->L);
-        fftwf_execute(m->fwd);
-        const float complex *X = (const float complex *)m->x;
-        float complex rot = cexpf(2.0f * (float)M_PI * (float)m->ph * I);
+        memcpy(j->x[i], m->win, sizeof(float complex) * m->L);
+        j->rot[i] = cexpf(2.0f * (float)M_PI * (float)m->ph * I);
         m->ph = fmod(m->ph + m->dph, 1.0);
-        for (int j = 0; j < m->nbins; j++)
-            Y[m->dst[j]] += X[m->src[j]] * (m->w[j] * rot);
+        j->live[i] = 1;
+        j->any = 1;
     }
-    int live = 0;
-    for (int i = 0; i < k->nm; i++)
-        live |= !k->m[i].muted;
-    if (live) {
-        fftwf_execute(k->inv);
-        memcpy(k->fifo, Y + k->V / 2, sizeof(float complex) * k->H);
-    } else {
-        memset(k->fifo, 0, sizeof(float complex) * k->H);   /* all its members off the air */
+}
+
+/* the FFTs of a block (any thread) */
+static void compute(fcbank *k, job *j)
+{
+    if (!j->any)
+        return;
+    float complex *Y = (float complex *)j->Y;
+    memset(Y, 0, sizeof(fftwf_complex) * k->N);
+    for (int i = 0; i < k->nm; i++) {
+        if (!j->live[i])
+            continue;
+        member *m = &k->m[i];
+        fftwf_execute_dft(m->fwd, j->x[i], j->x[i]);
+        const float complex *X = (const float complex *)j->x[i];
+        float complex rot = j->rot[i];
+        for (int b = 0; b < m->nbins; b++)
+            Y[m->dst[b]] += X[m->src[b]] * (m->w[b] * rot);
     }
+    fftwf_execute_dft(k->inv, j->Y, j->Y);
+}
+
+static void *worker(void *arg)
+{
+    fcbank *k = arg;
+    pthread_mutex_lock(&k->lock);
+    for (;;) {
+        while (!k->stop && k->taken == k->filled)
+            pthread_cond_wait(&k->cond, &k->lock);
+        if (k->stop)
+            break;
+        job *j = &k->jobs[k->taken++ % k->njobs];
+        j->state = JOB_BUSY;
+        pthread_mutex_unlock(&k->lock);
+        compute(k, j);
+        pthread_mutex_lock(&k->lock);
+        j->state = JOB_DONE;
+        pthread_cond_broadcast(&k->cond);
+    }
+    pthread_mutex_unlock(&k->lock);
+    return NULL;
+}
+
+/* the job buffers of the workers (job 0 holds the ones the plans were made on) */
+static void start_workers(fcbank *k)
+{
+    k->started = 1;
+    if (k->nworkers <= 0)
+        return;
+    /* enough blocks in flight for every worker, and for the caller to fill the next ones meanwhile */
+    int nj = 2 * k->nworkers + 1;
+    job *jobs = xcalloc(nj, sizeof(job));
+    jobs[0] = k->jobs[0];
+    for (int q = 1; q < nj; q++) {
+        jobs[q].Y = fftwf_alloc_complex(k->N);
+        for (int i = 0; i < k->nm; i++)
+            jobs[q].x[i] = fftwf_alloc_complex(k->m[i].L);
+    }
+    free(k->jobs);
+    k->jobs = jobs;
+    k->njobs = nj;
+    for (int w = 0; w < k->nworkers; w++) {
+        if (pthread_create(&k->th[w], NULL, worker, k)) {
+            k->nworkers = w;
+            break;
+        }
+        __atomic_store_n(&k->running, w + 1, __ATOMIC_RELEASE);
+    }
+}
+
+double fcbank_workers_cpu(const fcbank *k)
+{
+    double t = 0;
+    int n = __atomic_load_n(&k->running, __ATOMIC_ACQUIRE);
+    for (int w = 0; w < n; w++) {
+        clockid_t cid;
+        struct timespec ts;
+        if (!pthread_getcpuclockid(k->th[w], &cid) && !clock_gettime(cid, &ts))
+            t += ts.tv_sec + ts.tv_nsec / 1e9;
+    }
+    return t;
+}
+
+static void next_block(fcbank *k)
+{
+    if (!k->started)
+        start_workers(k);
+    if (k->nworkers <= 0) {
+        job *j = &k->jobs[0];
+        fill(k, j);
+        compute(k, j);
+        k->fifo = j->any ? (const float complex *)j->Y + k->V / 2 : k->zeros;
+        k->fpos = 0;
+        return;
+    }
+    pthread_mutex_lock(&k->lock);
+    if (k->used > 0)                                   /* the block just given out */
+        k->jobs[(k->used - 1) % k->njobs].state = JOB_FREE;
+    /* fill the free blocks ahead (the symbol pulls may wait on the members' sources) */
+    while (k->filled < k->used + k->njobs) {
+        job *j = &k->jobs[k->filled % k->njobs];
+        pthread_mutex_unlock(&k->lock);
+        fill(k, j);
+        pthread_mutex_lock(&k->lock);
+        j->state = JOB_READY;
+        k->filled++;
+        pthread_cond_broadcast(&k->cond);
+    }
+    job *j = &k->jobs[k->used % k->njobs];
+    while (j->state != JOB_DONE)
+        pthread_cond_wait(&k->cond, &k->lock);
+    k->used++;
+    pthread_mutex_unlock(&k->lock);
+    k->fifo = j->any ? (const float complex *)j->Y + k->V / 2 : k->zeros;
     k->fpos = 0;
 }
 
@@ -300,20 +457,31 @@ void fcbank_free(fcbank *k)
 {
     if (!k)
         return;
+    pthread_mutex_lock(&k->lock);
+    k->stop = 1;
+    pthread_cond_broadcast(&k->cond);
+    pthread_mutex_unlock(&k->lock);
+    for (int w = 0; w < k->nworkers; w++)
+        pthread_join(k->th[w], NULL);
     pthread_mutex_lock(&plan_lock);
-    for (int i = 0; i < k->nm; i++) {
+    for (int i = 0; i < k->nm; i++)
         fftwf_destroy_plan(k->m[i].fwd);
-        fftwf_free(k->m[i].x);
-    }
     fftwf_destroy_plan(k->inv);
     pthread_mutex_unlock(&plan_lock);
+    for (int q = 0; q < k->njobs; q++) {
+        for (int i = 0; i < k->nm; i++)
+            fftwf_free(k->jobs[q].x[i]);
+        fftwf_free(k->jobs[q].Y);
+    }
     for (int i = 0; i < k->nm; i++) {
         free(k->m[i].src);
         free(k->m[i].dst);
         free(k->m[i].w);
         free(k->m[i].win);
     }
-    fftwf_free(k->Y);
-    free(k->fifo);
+    pthread_mutex_destroy(&k->lock);
+    pthread_cond_destroy(&k->cond);
+    free(k->jobs);
+    free(k->zeros);
     free(k);
 }

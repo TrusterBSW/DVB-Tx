@@ -6,7 +6,10 @@
  *   N-point spectrum of the radio, and one IFFT gives N samples of which the N - V central ones
  *   are kept (V = overlap, about 256 symbols of the slowest member: no truncation of the RRC).
  * Requires Rs / Fs rational with a small denominator (the planner chooses Fs accordingly);
- * other offsets: the nearest bin, the rest (< Fs / 2N, ~500 Hz) as a rotation of the symbols. */
+ * other offsets: the nearest bin, the rest (< Fs / 2N, ~500 Hz) as a rotation of the symbols.
+ * The blocks are independent once their symbols are known: with fcbank_threads(), the caller's
+ * thread only pulls the symbols and worker threads run the FFTs of several blocks at once (the
+ * same operations in the same order: the output is bit-identical to the single-thread one). */
 #ifndef DVBTX_FCBANK_H
 #define DVBTX_FCBANK_H
 
@@ -26,6 +29,15 @@ enum { FC_RRC, FC_FLAT };
  * +-rolloff * symbol_rate / 2 (unit gain in that band, cosine taper up to symbol_rate / 2) */
 int fcbank_add(fcbank *b, double symbol_rate, int pulse, double rolloff, double offset_hz, float gain, sym_fn get,
                void *ctx);
+/* the same with a source giving n symbols at a time */
+typedef void (*symblk_fn)(void *ctx, float complex *sym, int n);
+int fcbank_add_blk(fcbank *b, double symbol_rate, int pulse, double rolloff, double offset_hz, float gain,
+                   symblk_fn get, void *ctx);
+/* n worker threads (0: everything in the caller's thread, the default), before the first block;
+ * they start with the first block, from the caller's thread (whose scheduling they inherit) */
+void fcbank_threads(fcbank *b, int n);
+/* CPU time of the worker threads so far (s), for the statistics (any thread) */
+double fcbank_workers_cpu(const fcbank *b);
 /* n samples of the sum of the members */
 void fcbank_block(fcbank *b, float complex *out, int n);
 void fcbank_free(fcbank *b);

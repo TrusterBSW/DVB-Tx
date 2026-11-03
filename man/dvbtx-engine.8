@@ -229,6 +229,13 @@ Default 50.
 Level of the synthesised signal below full scale, in dB: the samples are scaled
 by 10^(\-backoff_db/20) before the plugin converts them.
 Default 13.
+.TP
+.B synth_threads
+Worker threads of each filter bank of this radio, which compute several blocks
+at once (the bank's own thread only gathers the symbols; the output is
+bit-identical).
+Default \-1: none below 30 MS/s, otherwise the number of processors minus one,
+at most 3.
 .SS [carrier N]
 One multiplex.
 Keys common to every standard:
@@ -776,8 +783,8 @@ priorities:
 .IP \(bu 2
 radio threads (synthesis and writing to the plugin): 50;
 .IP \(bu
-carrier coding threads, filter-bank threads, DVB\-T2 group threads and their
-workers: 40;
+carrier coding threads, filter-bank threads and their workers, DVB\-T2 group
+threads and their workers: 40;
 .IP \(bu
 HackRF: the libusb event thread of libhackrf, 60 (plugin argument
 .BR rt= );

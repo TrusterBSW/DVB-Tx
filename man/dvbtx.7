@@ -318,6 +318,10 @@ radio rate by frequency-domain filter banks (overlap-save): each block of
 symbols goes through an FFT, is weighted by the exact root-raised-cosine
 response (flat for the DVB\-T2 resampling), placed at the carrier frequency,
 and one IFFT per bank gives the radio samples.
+From 30 MS/s, worker threads compute several blocks at once
+.RB ( synth_threads
+in
+.BR dvbtx\-engine (8)).
 This needs symbol rates that are simple fractions of the radio rate; otherwise,
 or with
 .BR "synth = \(dqfir\(dq" ,
