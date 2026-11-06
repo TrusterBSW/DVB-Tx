@@ -126,4 +126,10 @@ far = s2(3_000_000, 1_400_000_000)
 e = fails([s2(3_000_000), far.replace("symbol_rate", "enabled = false\nsymbol_rate")])
 assert e and "1 of them stopped: M1" in e, e
 
+# a single carrier too wide: the rate of its least demanding placement (LO in the middle), not of the LO
+# outside the channel tried first (it said 126 MS/s for DVB-S 41 Msym/s on a B210)
+e = fails(['standard = "dvbs"\nfrequency = 1_200_000_000\nsymbol_rate = 41_000_000\nrolloff = 0.35\n'
+           'code_rate = "3/4"'], driver="uhd")
+assert e and "needs 61.500 MS/s" in e and "lower its symbol rate" in e, e
+
 print(f"planner_test: OK ({time.time() - t0:.2f} s)")

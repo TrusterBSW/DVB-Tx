@@ -780,7 +780,8 @@ def _plan_radio(r):
                 r.center, r.rate, r.bandwidth, r.nfft = saved
                 try:
                     _plan_radio_at(r, k * 100e3)
-                except _RateError:
+                except _RateError as e:
+                    first = e               # the LO closer to the middle needs less: its rate is the one to tell
                     continue
                 fits.append((k * 100e3, r.rate))
                 if not practical or r.rate <= practical:
@@ -892,6 +893,10 @@ def _plan_radio_at(r, lo):
         raise _RateError(f"radio {r.name}: rate {r.rate / 1e6:.3f} MS/s too low for the carriers (needs {need / 1e6:.3f})"
                          + _stopped_note(cars))
     if r.rate > hi_rate * 1.0001:
+        if len(cars) == 1:
+            raise _RateError(f"radio {r.name}: {cars[0].name} needs {r.rate / 1e6:.3f} MS/s, more than {r.driver} can "
+                             f"do ({hi_rate / 1e6:.2f}); lower its symbol rate, roll-off or bandwidth"
+                             + _stopped_note(cars))
         raise _RateError(f"radio {r.name}: {len(cars)} carriers need {r.rate / 1e6:.3f} MS/s, more than "
                           f"{r.driver} can do ({hi_rate / 1e6:.2f}); split them over several radios" + _stopped_note(cars))
 
