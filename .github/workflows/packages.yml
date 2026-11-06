@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Debian packages: one .deb per release, built in a container of that release (the radio plugins
-# link its UHD / SoapySDR libraries), then installed and checked in a fresh container of the same
-# release, then published on the Releases page when the run comes from a tag v*.
+# The Debian package: ONE .deb for Debian 12 / 13, Proxmox VE 8 / 9 and Ubuntu 24.04. The UHD plugin is
+# built against each release's libuhd (its soname changes: 4.3, 4.6, 4.8), the rest on Debian 12, the
+# oldest; the package is then installed and checked in a fresh container of each release, and
+# published on the Releases page when the run comes from a tag v*.
 # Same steps as packaging/build-all-debs.sh, which does it locally with docker or podman.
 name: packages
 
@@ -14,8 +15,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: build ${{ matrix.image }}
+  uhd:
+    name: UHD plugin ${{ matrix.image }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -23,11 +24,48 @@ jobs:
         include:
           - image: debian:12
             suffix: deb12
-          - image: debian:13
-            suffix: deb13
           - image: ubuntu:24.04
             suffix: ubuntu24.04
+          - image: debian:13
+            suffix: deb13
     container: ${{ matrix.image }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Build dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential pkg-config libuhd-dev dpkg-dev \
+              git ca-certificates >/dev/null
+
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Build the plugin
+        run: |
+          mkdir -p plugins
+          make -C engine build/dvbtx-sdr-uhd.so CFLAGS="-O3 -g -march=x86-64-v2 -mtune=generic"
+          v=$(pkg-config --modversion uhd | cut -d. -f1-2)
+          f=plugins/dvbtx-sdr-uhd-$v.so
+          install -m 644 engine/build/dvbtx-sdr-uhd.so "$f"
+          strip --strip-unneeded "$f"
+          mkdir -p /tmp/d/debian && printf 'Source: x\n\nPackage: x\nArchitecture: any\n' > /tmp/d/debian/control
+          (cd /tmp/d && dpkg-shlibdeps -O "$GITHUB_WORKSPACE/$f") | sed -n 's/^shlibs:Depends=//p' | tr ',' '\n' |
+              sed 's/^ *//' | grep '^libuhd' > plugins/recommends-${{ matrix.suffix }}
+          echo "$f: $(cat plugins/recommends-${{ matrix.suffix }})"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uhd-${{ matrix.suffix }}
+          path: plugins/
+          if-no-files-found: error
+
+  build:
+    name: package
+    needs: uhd
+    runs-on: ubuntu-latest
+    container: debian:12
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
@@ -50,18 +88,24 @@ jobs:
           v=$(cat VERSION)
           [ "$GITHUB_REF_NAME" = "v$v" ] || { echo "tag $GITHUB_REF_NAME but VERSION is $v" >&2; exit 1; }
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: uhd-*
+          path: uhd-plugins
+          merge-multiple: true
+
       - name: Build the package
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          deb=$(./packaging/build-deb.sh dist)
+          cat uhd-plugins/recommends-* > uhd-plugins/recommends
+          deb=$(DEB_SUFFIX= UHD_VARIANTS="$PWD/uhd-plugins" ./packaging/build-deb.sh dist)
           echo "$deb"
-          case "$deb" in *"+${{ matrix.suffix }}_"*) ;; *) echo "unexpected name $deb" >&2; exit 1 ;; esac
           dpkg-deb --info "$deb"
-          echo "radio plugins: $(dpkg-deb --contents "$deb" | grep -o 'dvbtx-sdr-[a-z]*\.so' | tr '\n' ' ')"
+          echo "radio plugins: $(dpkg-deb --contents "$deb" | grep -o 'dvbtx-sdr-[a-z0-9.-]*\.so' | tr '\n' ' ')"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: deb-${{ matrix.suffix }}
+          name: deb
           path: dist/*.deb
           if-no-files-found: error
 
@@ -72,20 +116,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: debian:12
-            suffix: deb12
-          - image: debian:13
-            suffix: deb13
-          - image: ubuntu:24.04
-            suffix: ubuntu24.04
+        image: ["debian:12", "debian:13", "ubuntu:24.04"]
     container: ${{ matrix.image }}
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: deb-${{ matrix.suffix }}
+          name: deb
           path: dist
 
       - name: Install the package
@@ -103,12 +141,17 @@ jobs:
           dvbtx -h >/dev/null
           dvbtx check -c /usr/share/dvbtx/configs/hackrf-1mux.toml
           dvbtx calc dvbt | head -1
-          bad=0
-          for f in /usr/lib/dvbtx/dvbtx-engine /usr/lib/dvbtx/dvbtx-sdr-*.so; do
-              if ldd "$f" | grep "not found"; then echo "$f: library missing"; bad=1; fi
+          if ldd /usr/lib/dvbtx/dvbtx-engine | grep "not found"; then echo "dvbtx-engine: library missing"; exit 1; fi
+          # each radio plugin loads (no device here: the error must come from the device, not from loading)
+          printf '[engine]\n[radio 0]\ndriver = null\nfreq = 1200000000\nrate = 10000000\n' > /tmp/t.ini
+          for drv in null hackrf soapy uhd; do
+              sed -i "s/^driver = .*/driver = $drv/" /tmp/t.ini
+              msg=$(/usr/lib/dvbtx/dvbtx-engine --probe /tmp/t.ini 0 2>&1 | grep -v '^\[INFO\]') || true
+              if printf '%s\n' "$msg" | grep -q '^radio driver'; then
+                  echo "plugin $drv: NOT LOADED: $msg"; exit 1
+              fi
+              echo "plugin $drv: loads ($(printf '%s\n' "$msg" | grep -m1 . || echo 'device answers'))"
           done
-          echo "radio plugins: $(cd /usr/lib/dvbtx && ls dvbtx-sdr-*.so | tr '\n' ' ')"
-          exit $bad
 
       - name: Manual pages
         run: |
@@ -139,9 +182,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: deb-*
+          name: deb
           path: dist
-          merge-multiple: true
 
       - name: Checksums
         working-directory: dist

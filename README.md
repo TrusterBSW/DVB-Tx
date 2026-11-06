@@ -61,27 +61,41 @@ on the coax finds them with their names, numbers and programme guide, as on regu
 
 ## Install
 
-Download the package for your system (folder [`releases/`](releases/), checksums in
-[`SHA256SUMS`](releases/SHA256SUMS)) and install it with apt (it pulls the dependencies):
-
-| System | Package |
-|---|---|
-| Debian 13 (trixie), Proxmox VE 9 | [`dvbtx_0.1.0+deb13_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb13_amd64.deb) |
-| Debian 12 (bookworm), Proxmox VE 8 | [`dvbtx_0.1.0+deb12_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb12_amd64.deb) |
-| Ubuntu 24.04 (noble) | [`dvbtx_0.1.0+ubuntu24.04_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bubuntu24.04_amd64.deb) |
+One package for Debian 12 and 13, Proxmox VE 8 and 9, and Ubuntu 24.04 or later (amd64). In one line:
 
 ```bash
-wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb13_amd64.deb -O dvbtx_0.1.0+deb13_amd64.deb
-sudo apt install ./dvbtx_0.1.0+deb13_amd64.deb
+curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh -s -- --extras
+```
+
+[`install.sh`](install.sh) does the following:
+- checks the system;
+- downloads the latest package from [`releases/`](releases/) and checks its
+  [`SHA256SUMS`](releases/SHA256SUMS);
+- installs it with apt, which pulls ffmpeg, python3 and the radio libraries;
+- lists the radios it finds.
+
+It never starts transmitting. Its options:
+- `--extras` also installs streamlink, yt-dlp and tsduck: HLS without stalls, YouTube and Twitch,
+  analysis;
+- `--power` turns on the power profiles;
+- `--deb FILE` installs a package built locally.
+
+Or by hand:
+
+```bash
+wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.2.0_amd64.deb
+sudo apt install ./dvbtx_0.2.0_amd64.deb
 sudo apt install streamlink yt-dlp tsduck     # optional: HLS without stalls, YouTube, analysis
 ```
 
-One package per release because the radio plugins link that release's UHD and SoapySDR
-libraries. Each plugin is only *recommended*: a missing library disables that radio, nothing else.
+The UHD library changes version from one release to the next (4.3, 4.6, 4.8). The package therefore
+carries the USRP plugin built against each version, and the engine loads the one whose library is
+installed. Each radio library is only *recommended*: a missing one disables that radio, nothing else.
 
-The packages are also on the [Releases](https://github.com/TrusterBSW/DVB-Tx/releases) page, with their
-`SHA256SUMS`: GitHub Actions builds them on each tag, in a container of each release, and installs
-and checks each one in a fresh container before publishing it.
+`packaging/build-all-debs.sh` builds the package in containers and installs and checks it in a fresh
+container of each release. GitHub Actions does the same on each tag and publishes it on the
+[Releases](https://github.com/TrusterBSW/DVB-Tx/releases) page.
 
 ## Quick start
 
@@ -303,7 +317,7 @@ make -C engine
 python3 -m dvbtx check -c configs/hackrf-1mux.toml
 sudo packaging/install-service.sh -c /path/to/dvbtx.toml       # as a service, from here
 ./packaging/build-deb.sh                                         # .deb for this system
-./packaging/build-all-debs.sh                                    # .deb for every release (docker)
+./packaging/build-all-debs.sh                                    # the .deb for every release (docker)
 ```
 
 Python ≥ 3.11, standard library only. TSDuck is optional (analysis).

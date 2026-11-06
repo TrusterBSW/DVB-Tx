@@ -1,10 +1,13 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds the Debian package (on the Debian/Ubuntu release it targets: the engine is compiled here)
+# Builds the Debian package (the engine is compiled here)
 #   ./packaging/build-deb.sh [out dir]   ->  dvbtx_<VERSION>+<release>_<arch>.deb
 # <release>: deb12, deb13, ubuntu24.04... from /etc/os-release (DEB_SUFFIX= to choose; empty: none),
 # since the radio plugins link the UHD / SoapySDR library of that release.
-# packaging/build-all-debs.sh builds them all in containers.
+# UHD_VARIANTS=DIR: one package for every release instead (DEB_SUFFIX= empty): DIR holds the UHD plugin
+# built against each UHD version, dvbtx-sdr-uhd-<version>.so, and DIR/recommends its library packages,
+# one per line; the engine loads the one whose library is installed. Build it on the oldest release.
+# packaging/build-all-debs.sh does it all in containers.
 # Needs: build-essential pkg-config libfftw3-dev, and for the radio plugins libhackrf-dev libuhd-dev
 # libsoapysdr-dev (each one optional: a missing one is just not built).
 set -eu
@@ -27,6 +30,10 @@ install -d "$lib/python/dvbtx/web" "$ROOT/usr/bin" "$ROOT/etc/dvbtx" "$ROOT/etc/
            "$ROOT/usr/share/dvbtx/configs" "$ROOT/usr/share/doc/dvbtx" "$ROOT/DEBIAN"
 install -m 755 engine/build/dvbtx-engine "$lib/"
 install -m 644 engine/build/dvbtx-sdr-*.so "$lib/"
+if [ -n "${UHD_VARIANTS:-}" ]; then
+    rm -f "$lib/dvbtx-sdr-uhd.so"
+    install -m 644 "$UHD_VARIANTS"/dvbtx-sdr-uhd-*.so "$lib/"
+fi
 install -m 644 dvbtx/*.py "$lib/python/dvbtx/"
 install -m 644 dvbtx/web/index.html "$lib/python/dvbtx/web/"
 install -m 755 packaging/dvbtx "$ROOT/usr/bin/"
@@ -65,11 +72,15 @@ if command -v dpkg-shlibdeps >/dev/null; then
     printf 'Source: dvbtx\n\nPackage: dvbtx\nArchitecture: any\n' > "$tmp/debian/control"
     DEP=$(cd "$tmp" && dpkg-shlibdeps -O "$lib/dvbtx-engine" 2>/dev/null | sed -n 's/^shlibs:Depends=//p')
     for p in "$lib"/dvbtx-sdr-*.so; do
+        case "$p" in */dvbtx-sdr-uhd-*.so) continue ;; esac     # built elsewhere: UHD_VARIANTS/recommends
         d=$(cd "$tmp" && dpkg-shlibdeps -O "$p" 2>/dev/null | sed -n 's/^shlibs:Depends=//p' |
             tr ',' '\n' | sed 's/^ *//' | grep -v -E '^libc6|^libgcc|^libstdc' || true)
         [ -n "$d" ] && REC="$REC${REC:+, }$(echo "$d" | paste -sd, - | sed 's/,/, /g')"
     done
     rm -rf "$tmp"
+fi
+if [ -n "${UHD_VARIANTS:-}" ] && [ -s "$UHD_VARIANTS/recommends" ]; then   # one of them: apt takes the one it has
+    REC="$REC${REC:+, }$(sort -u "$UHD_VARIANTS/recommends" | paste -sd'|' - | sed 's/|/ | /g')"
 fi
 [ -n "$REC" ] || REC="libhackrf0"
 REC="$REC, streamlink"      # HLS sources: rides the discontinuities that stall ffmpeg (see the hls option)

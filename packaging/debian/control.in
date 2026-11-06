@@ -9,17 +9,18 @@ Recommends: @RECOMMENDS@
 Suggests: tsduck, hackrf, uhd-host, streamlink, yt-dlp, dvb-tools
 Installed-Size: @SIZE@
 Homepage: https://github.com/TrusterBSW/DVB-Tx
-Description: home DVB-T transmitter for a closed coax network (HackRF, USRP, SoapySDR)
- dvbtx builds complete DVB multiplexes from live streams (HLS, RTMP, SRT, Twitch,
- M3U, tvheadend), capture devices (webcam, HDMI capture, screen), files and pipes,
- and modulates them on a software radio: any number of DVB-T carriers per radio,
- any number of radios and services, configured in one TOML file or on the command
- line.
+Description: DVB head-end on software radios (HackRF, USRP, SoapySDR), closed coax
+ dvbtx builds complete DVB multiplexes from live streams (HLS, RTMP, SRT,
+ YouTube, Twitch, M3U, tvheadend), capture devices (webcam, HDMI capture,
+ screen), files and pipes, and modulates them on software radios: DVB-T,
+ DVB-T2, DVB-C, DVB-S and DVB-S2/S2X, mixed on one radio, any number of
+ multiplexes per radio and of radios, each bound to its device by serial
+ number, configured in one TOML file, on the command line or on a web page.
  .
  The C engine multiplexes on the modulator clock (exact rate, PCR restamped,
  automatic switch to a backup clip), builds PSI/SI (NIT with logical channel
- numbers, SDT, EIT from XMLTV, TOT) and synthesises all the OFDM carriers of a
- radio in one FFT. A web page shows the bit rates, the decoding margin of every
+ numbers, SDT, EIT from XMLTV, TOT) and synthesises all the carriers of a
+ radio together. A web page shows the bit rates, the decoding margin of every
  service and the alerts; the TSDuck analysis can be exported as JSON.
  .
  Radiating on broadcast frequencies is forbidden: closed coax only.

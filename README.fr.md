@@ -62,28 +62,43 @@ programmes, comme sur la TNT.
 
 ## Installation
 
-Téléchargez le paquet de votre système (dossier [`releases/`](releases/), sommes de contrôle dans
-[`SHA256SUMS`](releases/SHA256SUMS)) et installez-le avec apt (qui installe les dépendances) :
-
-| Système | Paquet |
-|---|---|
-| Debian 13 (trixie), Proxmox VE 9 | [`dvbtx_0.1.0+deb13_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb13_amd64.deb) |
-| Debian 12 (bookworm), Proxmox VE 8 | [`dvbtx_0.1.0+deb12_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb12_amd64.deb) |
-| Ubuntu 24.04 (noble) | [`dvbtx_0.1.0+ubuntu24.04_amd64.deb`](https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bubuntu24.04_amd64.deb) |
+Un seul paquet pour Debian 12 et 13, Proxmox VE 8 et 9, et Ubuntu 24.04 ou plus récent (amd64). En
+une ligne :
 
 ```bash
-wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.1.0%2Bdeb13_amd64.deb -O dvbtx_0.1.0+deb13_amd64.deb
-sudo apt install ./dvbtx_0.1.0+deb13_amd64.deb
+curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh -s -- --extras
+```
+
+[`install.sh`](install.sh) fait ceci :
+- il vérifie le système ;
+- il télécharge le dernier paquet de [`releases/`](releases/) et contrôle sa somme dans
+  [`SHA256SUMS`](releases/SHA256SUMS) ;
+- il l'installe avec apt, qui apporte ffmpeg, python3 et les bibliothèques des radios ;
+- il liste les radios qu'il trouve.
+
+Il ne lance jamais l'émission. Ses options :
+- `--extras` installe aussi streamlink, yt-dlp et tsduck : HLS sans blocage, YouTube et Twitch,
+  analyse ;
+- `--power` active les profils d'énergie ;
+- `--deb FICHIER` installe un paquet construit localement.
+
+Ou à la main :
+
+```bash
+wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.2.0_amd64.deb
+sudo apt install ./dvbtx_0.2.0_amd64.deb
 sudo apt install streamlink yt-dlp tsduck     # facultatif : HLS sans blocage, YouTube, analyse
 ```
 
-Un paquet par version parce que les modules radio sont liés aux bibliothèques UHD et SoapySDR de
-cette version. Chaque module n'est que *recommandé* : s'il manque une bibliothèque, seule cette
-radio est indisponible.
+La bibliothèque UHD change de version d'une distribution à l'autre (4.3, 4.6, 4.8). Le paquet
+contient donc le module USRP compilé pour chacune, et le moteur charge celui dont la bibliothèque est
+installée. Chaque bibliothèque radio n'est que *recommandée* : s'il en manque une, seule cette radio
+est indisponible.
 
-Les paquets sont aussi sur la page [Releases](https://github.com/TrusterBSW/DVB-Tx/releases), avec
-leur `SHA256SUMS` : GitHub Actions les construit à chaque étiquette (tag), dans un conteneur de chaque
-version, puis installe et vérifie chacun dans un conteneur neuf avant de le publier.
+`packaging/build-all-debs.sh` construit le paquet dans des conteneurs, puis l'installe et le vérifie
+dans un conteneur neuf de chaque version. GitHub Actions fait de même à chaque étiquette (tag) et le
+publie sur la page [Releases](https://github.com/TrusterBSW/DVB-Tx/releases).
 
 ## Démarrage rapide
 
@@ -311,7 +326,7 @@ make -C engine
 python3 -m dvbtx check -c configs/hackrf-1mux.toml
 sudo packaging/install-service.sh -c /chemin/vers/dvbtx.toml   # en service, depuis ce dossier
 ./packaging/build-deb.sh                                         # .deb pour ce système
-./packaging/build-all-debs.sh                                    # .deb pour chaque version (docker)
+./packaging/build-all-debs.sh                                    # le .deb de toutes les versions (docker)
 ```
 
 Python ≥ 3.11, bibliothèque standard seulement. TSDuck est facultatif (analyse).
