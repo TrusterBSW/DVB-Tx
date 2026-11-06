@@ -713,7 +713,15 @@ sequence errors);
 (all its carriers off));
 .B error
 (the plugin's message when not
-.BR on ).
+.BR on );
+.B serial
+(of the device opened, as its tools print it, empty when the driver gives none).
+The radios are numbered 0 to n\-1 in the order of
+.BR engine.ini ,
+whatever their number in
+.BR dvbtx.toml (5):
+.B dvbtx
+leaves out the radios without carrier and translates the numbers back.
 .TP
 .B carriers[]
 .BR carrier " (index), " ts_rate " (channel capacity), " rate ,

@@ -758,10 +758,33 @@ Name the carriers refer to.
 .B null
 (no radio: samples consumed at the nominal rate, for tests).
 .TP
+\fBserial\fR (string; default "")
+The device the radio is bound to: the serial number printed by
+.BR "dvbtx devices" ,
+given to the driver as
+.BI serial= S
+in its arguments.
+Without it the driver opens the first device it finds, so two HackRF or two USRP may swap after a
+restart or a replug.
+A HackRF is also found by the last digits of its serial.
+Two radios of the same driver cannot have the same serial, and a different
+.B serial=
+in
+.B args
+is refused.
+.B "dvbtx devices \-\-save"
+.I RADIO
+and the web page
+.RB ( dvbtx\-web (7))
+fill it with the serial of a free device.
+.TP
 \fBargs\fR (string; default "")
 Device arguments.
 hackrf:
-.BI serial= S ,
+.BI serial= S
+(as the
+.B serial
+key),
 .BI rt= N
 (SCHED_FIFO priority of its USB thread, default 60, 0: none),
 .BI m0_poll= S
@@ -781,7 +804,7 @@ null:
 .BI absent= PATH
 (the radio is missing while that file exists).
 .B dvbtx devices
-prints the arguments of the radios plugged in.
+prints the radios plugged in and their serial numbers.
 .TP
 \fBgain\fR (number; default 30)
 TX gain in dB: hackrf TX VGA 0\(en47, uhd 0\(en89.75.
@@ -912,6 +935,8 @@ or a file path (or
 false: the multiplex is stopped: off the air, its sources paused; a radio whose multiplexes are
 all stopped is switched off.
 Written (and removed) by the Stop / Start buttons of the web page, so it survives restarts.
+A stopped multiplex keeps its place in its radio's band, so that Start puts it back on the air
+without restarting the others: to free the band, delete it or move it to another radio.
 .SS standard = \(dqdvbt\(dq
 DVB\-T carriers sharing a radio must have the same
 .BR mode ,
@@ -1444,7 +1469,7 @@ DVB\-T2 and DVB\-C on a USRP, one stopped:
 [[radio]]
 name = "b210"
 driver = "uhd"
-args = "serial=30AD2F1"
+serial = "30AD2F1"
 gain = 50
 
 [[carrier]]

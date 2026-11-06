@@ -560,7 +560,14 @@ An emptied field removes the key from the file (its default then applies).
 .B Radios
 a table (name, driver, gain, sample rate, arguments) with \(lqModifier\(rq on each
 row and \(lq+ Ajouter une radio\(rq.
-The dialog has \(lqNom\(rq, \(lqPilote\(rq (driver), \(lqArguments\(rq,
+The dialog has \(lqNom\(rq, \(lqPilote\(rq (driver), \(lqNuméro de série\(rq
+.RB ( serial :
+the device the radio is bound to, empty: the first one of its driver),
+\(lqenregistrer automatiquement le numéro de série d'une carte libre de ce pilote\(rq
+(the devices of the driver are listed with
+.BR /api/devices ;
+the one no other radio is bound to fills the serial, a list offers them when there are several),
+\(lqArguments\(rq,
 \(lqGain (dB)\(rq, \(lqRecul (dB)\(rq
 .RB ( backoff_db ),
 \(lqÉchantillonnage (MS/s)\(rq
@@ -617,6 +624,10 @@ tables), they are applied one by one and the other channels are not cut
 Any other change (radios, multiplexes, network or other settings) restarts the
 transmission, a few seconds without signal; the page asks for a confirmation
 first, the unchanged sources keep running, and TVs may need a new scan.
+If the engine refuses the new configuration (it stops before its first statistics), the
+previous one is put back on the air, the page shows the engine's error, and the changes stay
+pending in the file, to correct or cancel.
+A radio left without multiplex is not given to the engine.
 .TP
 .B Annuler les modifications
 .RB ( "POST /api/config/revert" ,
@@ -738,6 +749,28 @@ JSON report of multiplex
 .BI "GET /api/epg/" sid
 the EPG events of a service (at most 200):
 \fB[{"event_id", "start", "duration", "title", "subtitle"}]\fP.
+.TP
+.BI "GET /api/devices?driver=" d "\fR[\fP&radio=" i \fR]\fP
+the devices of a driver plugged in, as
+.BR hackrf_info ,
+.B uhd_find_devices
+or
+.B SoapySDRUtil
+see them (a few seconds), plus those the engine has open:
+\fB{"driver", "devices": [{"serial", "label", "open", "radio"}], "free": [serial...], "error"}\fP.
+.B radio
+is the radio of the configuration file bound to the device (its
+.BR serial ),
+or the one holding it (a radio without serial opens the first device of its driver);
+.B free
+the devices with none.
+.BI radio= i
+leaves out radio
+.I i
+of the file (the one being edited: its own device is free for it).
+.B error
+says why nothing could be listed (tool missing, no answer).
+The radio cards of the status show the serial of each radio as its driver reports it.
 .TP
 .BI "GET /api/calc?standard=" std & key = value ...
 the useful bit rate of a channel:

@@ -14,6 +14,7 @@
 
 struct sdr_dev {
     SoapySDRDevice *dev;
+    char serial[64];               /* from the module's hardware info, when it gives one */
     SoapySDRStream *st;
     float complex *conv;
     size_t conv_len;
@@ -54,6 +55,10 @@ static sdr_dev *sp_open(const sdr_params *p, char *err, int errlen)
         free(d);
         return NULL;
     }
+    SoapySDRKwargs hw = SoapySDRDevice_getHardwareInfo(d->dev);
+    const char *sn = SoapySDRKwargs_get(&hw, "serial");
+    snprintf(d->serial, sizeof d->serial, "%s", sn ? sn : "");
+    SoapySDRKwargs_clear(&hw);
     double corr = 1.0 / (1.0 + p->ppm * 1e-6);   /* crystal error moves rate and LO alike */
     double rate = p->rate * corr;
     if (SoapySDRDevice_setSampleRate(d->dev, SOAPY_SDR_TX, 0, rate) ||
@@ -133,6 +138,7 @@ static void sp_stats(sdr_dev *d, sdr_stats *s)
     s->underruns = d->underruns;
     s->late = 0;
     s->fill = 0;
+    snprintf(s->serial, sizeof s->serial, "%s", d->serial);
 }
 
 const sdr_driver dvbtx_sdr_driver = {

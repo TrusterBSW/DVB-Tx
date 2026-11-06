@@ -12,7 +12,7 @@ import tomllib
 from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
-from . import capacity
+from . import capacity, devices
 
 DEFAULTS = {
     "network": {
@@ -53,7 +53,7 @@ DEFAULTS = {
     "work_dir": "/run/dvbtx",
 }
 
-RADIO_DEFAULTS = {"driver": "hackrf", "args": "", "gain": 30, "amp": False, "ppm": 0.0, "center": 0, "rate": 0,
+RADIO_DEFAULTS = {"driver": "hackrf", "args": "", "serial": "", "gain": 30, "amp": False, "ppm": 0.0, "center": 0, "rate": 0,
                   "bandwidth": 0, "backoff_db": 13.0, "buffer_ms": 50, "clock": "internal", "lo_offset": "auto"}
 CARRIER_DEFAULTS = {"standard": "dvbt", "bandwidth": 8_000_000, "mode": "8k", "constellation": "64qam",
                     "code_rate": "7/8", "guard": "1/32", "cell_id": 0, "gain_db": 0.0, "monitor": [],
@@ -276,6 +276,7 @@ class Radio:
     clock: str
     carriers: list = field(default_factory=list)
     nfft: int = 0
+    serial: str = ""                            # the device it is bound to ("": the first one its driver finds)
     notes: list = field(default_factory=list)   # remarks and warnings of the plan, printed by describe()
 
 
@@ -418,6 +419,19 @@ def _t2_rate(sc, lo, hi):
     return None
 
 
+def _bind_serial(r, serial):
+    """the serial key (or a serial=... already in args) binds the radio to one device: given to the driver in args"""
+    serial = str(serial or "").strip()
+    in_args = devices.serial_of(r.args)
+    if serial and not devices.SERIAL_RE.fullmatch(serial):
+        raise ConfigError(f"radio {r.name}: serial {serial!r}: letters, digits, - and _ only")
+    if serial and in_args and in_args != serial:
+        raise ConfigError(f"radio {r.name}: serial {serial} and serial={in_args} in args differ: keep one")
+    r.serial = serial or in_args or ""
+    if serial and not in_args:
+        r.args = devices.with_serial(r.args, serial)
+
+
 def _smooth_size(n, multiple):
     """smallest m >= n, multiple of `multiple`, whose other factors are 2, 3, 5, 7 (fast FFT)."""
     m = max(multiple, int(math.ceil(n / multiple)) * multiple)
@@ -450,6 +464,12 @@ def build(cfg):
                             float(_num(rr["bandwidth"], "bandwidth")), float(rr["backoff_db"]),
                             int(rr["buffer_ms"]), str(rr["clock"])))
         radios[-1].lo_offset = rr["lo_offset"]
+        _bind_serial(radios[-1], rr["serial"])
+    for k, r in enumerate(radios):
+        other = next((o for o in radios[:k] if r.serial and o.driver == r.driver != "null"
+                      and devices.same(r.driver, o.serial, r.serial)), None)
+        if other is not None:
+            raise ConfigError(f"radios {other.name} and {r.name}: the same {r.driver} device (serial {r.serial})")
     by_name = {r.name: r for r in radios}
 
     carriers, services, inputs = [], [], []
@@ -869,10 +889,27 @@ def _plan_radio_at(r, lo):
             if fr:
                 r.rate = fr
     if r.rate < need:
-        raise _RateError(f"radio {r.name}: rate {r.rate / 1e6:.3f} MS/s too low for the carriers (needs {need / 1e6:.3f})")
+        raise _RateError(f"radio {r.name}: rate {r.rate / 1e6:.3f} MS/s too low for the carriers (needs {need / 1e6:.3f})"
+                         + _stopped_note(cars))
     if r.rate > hi_rate * 1.0001:
         raise _RateError(f"radio {r.name}: {len(cars)} carriers need {r.rate / 1e6:.3f} MS/s, more than "
-                          f"{r.driver} can do ({hi_rate / 1e6:.2f}); split them over several radios")
+                          f"{r.driver} can do ({hi_rate / 1e6:.2f}); split them over several radios" + _stopped_note(cars))
+
+
+def _stopped_note(cars):
+    """why stopped multiplexes count in a radio's band, for its errors"""
+    off = [c.name for c in cars if not c.enabled]
+    if not off:
+        return ""
+    return (f" ({len(off)} of them stopped: {', '.join(off)}; a stopped multiplex keeps its place in the band so "
+            "that Start puts it back on the air without a restart: delete it or move it to another radio to free it)")
+
+
+def engine_radios(plan):
+    """the radios given to the engine, in its order: [radio k] of engine.ini is engine_radios(plan)[k].
+    A radio without multiplex is left out and the engine needs 0..n-1 without gaps, so its numbers may differ
+    from the configuration's (Radio.index): the supervisor translates them back in the engine's statistics."""
+    return [r for r in plan.radios if r.carriers]
 
 
 def write_engine_ini(plan, path, si_dir):
@@ -896,10 +933,10 @@ def write_engine_ini(plan, path, si_dir):
         L += [f"[input {inp.index}]", f"name = {inp.name[:60]}", f"addr = {inp.addr}",
               f"program = {int(o.get('program', 0))}", f"buffer_ms = {int(o['buffer_ms'])}",
               f"ring_pkts = {int(o['ring_pkts'])}", ""]
-    for r in plan.radios:
-        if not r.carriers:
-            continue
-        L += [f"[radio {r.index}]", f"driver = {r.driver}", f"args = {r.args}", f"freq = {r.center:.3f}",
+    eidx = {}
+    for k, r in enumerate(engine_radios(plan)):
+        eidx[r.index] = k
+        L += [f"[radio {k}]", f"driver = {r.driver}", f"args = {r.args}", f"freq = {r.center:.3f}",
               f"rate = {r.rate:.6f}", f"bandwidth = {r.bandwidth:.0f}", f"gain = {r.gain}", f"amp = {int(r.amp)}",
               f"ppm = {r.ppm}", f"buffer_ms = {r.buffer_ms}", f"backoff_db = {r.backoff_db}", f"clock = {r.clock}", ""]
     mon_base = int(ing["monitor_base_port"])
@@ -911,24 +948,24 @@ def write_engine_ini(plan, path, si_dir):
         if not car.enabled:
             L.append("on = 0")
         if car.standard == "dvbt2":
-            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"frequency = {car.frequency:.0f}",
+            L += [f"radio = {eidx[car.radio.index]}", f"offset = {car.offset:.3f}", f"frequency = {car.frequency:.0f}",
                   f"gain_db = {car.gain_db}"]
             for k, v in car.params.items():
                 L.append(f"{k} = {int(v) if isinstance(v, bool) else v}")
         elif car.standard == "dvbs2":
-            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
+            L += [f"radio = {eidx[car.radio.index]}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
                   f"modulation = {p['modulation']}", f"code_rate = {p['code_rate']}", f"frame = {p['frame']}",
                   f"pilots = {int(bool(p['pilots']))}", f"rolloff = {p['rolloff']}",
                   f"gold_code = {int(car.params.get('gold_code', 0))}", f"gain_db = {car.gain_db}"]
         elif car.standard == "dvbs":
-            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
+            L += [f"radio = {eidx[car.radio.index]}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
                   f"code_rate = {p['code_rate']}", f"rolloff = {p.get('rolloff', 0.35)}", f"gain_db = {car.gain_db}"]
         elif car.standard == "dvbc":
-            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
+            L += [f"radio = {eidx[car.radio.index]}", f"offset = {car.offset:.3f}", f"symbol_rate = {p['symbol_rate']:.1f}",
                   f"constellation = {p['constellation']}", f"rolloff = {p.get('rolloff', 0.15)}",
                   f"gain_db = {car.gain_db}"]
         elif car.standard == "dvbt":
-            L += [f"radio = {car.radio.index}", f"offset = {car.offset:.3f}", f"mode = {p.get('mode', '8k')}",
+            L += [f"radio = {eidx[car.radio.index]}", f"offset = {car.offset:.3f}", f"mode = {p.get('mode', '8k')}",
                   f"constellation = {p.get('constellation', '64qam')}", f"code_rate = {p.get('code_rate', '7/8')}",
                   f"guard = {p.get('guard', '1/32').split('/')[1]}", f"bandwidth = {p.get('bandwidth', 8000000)}",
                   f"cell_id = {car.cell_id}", f"gain_db = {car.gain_db}"]

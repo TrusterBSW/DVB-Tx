@@ -22,6 +22,7 @@
 
 struct sdr_dev {
     uhd_usrp_handle usrp;
+    char serial[64];               /* of the motherboard, as uhd_find_devices prints it */
     uhd_tx_streamer_handle tx;
     uhd_tx_metadata_handle md;
     size_t max_samps;
@@ -201,6 +202,11 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
         return NULL;
     }
     size_t ch = 0;
+    uhd_usrp_tx_info_t info;
+    if (!uhd_usrp_get_tx_info(d->usrp, ch, &info)) {
+        snprintf(d->serial, sizeof d->serial, "%s", info.mboard_serial ? info.mboard_serial : "");
+        uhd_usrp_tx_info_free(&info);
+    }
     if (p->clock && *p->clock && strcmp(p->clock, "internal"))
         uhd_usrp_set_clock_source(d->usrp, p->clock, 0);
     if (uhd_usrp_set_tx_rate(d->usrp, rate, ch)) {
@@ -339,6 +345,7 @@ static void ud_stats(sdr_dev *d, sdr_stats *s)
     pthread_mutex_unlock(&d->lock);
     s->underruns = d->underruns;
     s->late = d->late;
+    snprintf(s->serial, sizeof s->serial, "%s", d->serial);
 }
 
 const sdr_driver dvbtx_sdr_driver = {

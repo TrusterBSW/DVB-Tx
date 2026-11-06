@@ -3,6 +3,7 @@
 #include "rf.h"
 
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -198,6 +199,7 @@ static int64_t ts_clock(void *ctx, uint64_t slot)
 static void radio_track(radio *r)
 {
     sdr_stats st;
+    memset(&st, 0, sizeof st);
     r->drv->get_stats(r->dev, &st);
     r->last = st;
     if (!st.samples || !st.at_ns)
@@ -1234,6 +1236,7 @@ int rf_stalled(int64_t now, int64_t timeout_ns)
         if (!r->dev || atomic_load(&r->state) != RADIO_ON)
             continue;
         sdr_stats st;
+        memset(&st, 0, sizeof st);
         r->drv->get_stats(r->dev, &st);
         if (st.samples != last[ri] || !since[ri]) {
             last[ri] = st.samples;
@@ -1279,6 +1282,12 @@ int rf_stats_json(char *buf, int len, double dt)
         for (const char *q = st == RADIO_ON ? "" : r->err; *q && e < (int)sizeof esc - 1; q++)
             esc[e++] = *q == '"' || *q == '\\' || (unsigned char)*q < 0x20 ? ' ' : *q;
         esc[e] = 0;
+        char ser[sizeof r->last.serial];       /* letters, digits, - and _ only */
+        int k = 0;
+        for (const char *q = r->last.serial; *q && q < r->last.serial + sizeof r->last.serial && k < (int)sizeof ser - 1; q++)
+            if (isalnum((unsigned char)*q) || *q == '-' || *q == '_')
+                ser[k++] = *q;
+        ser[k] = 0;
         prev_cpu[ri] = cpu;
         double bload = 0;                  /* filter-bank threads of this radio */
         int nb = 0;
@@ -1295,10 +1304,10 @@ int rf_stats_json(char *buf, int len, double dt)
         n += snprintf(buf + n, len - n,
                       "%s{\"index\":%d,\"driver\":\"%s\",\"freq\":%.0f,\"rate\":%.3f,\"carriers\":%d,"
                       "\"underruns\":%llu,\"late\":%llu,\"fill\":%.3f,\"cpu\":%.1f,\"samples\":%llu,"
-                      "\"banks\":%d,\"bank_cpu\":%.1f,\"state\":\"%s\",\"error\":\"%s\"}",
+                      "\"banks\":%d,\"bank_cpu\":%.1f,\"state\":\"%s\",\"error\":\"%s\",\"serial\":\"%s\"}",
                       ri ? "," : "", ri, r->driver, r->p.freq_hz, r->p.rate, r->ncarriers,
                       (unsigned long long)r->last.underruns, (unsigned long long)r->last.late, r->last.fill, load,
-                      (unsigned long long)r->last.samples, nb, bload, state_name[st], esc);
+                      (unsigned long long)r->last.samples, nb, bload, state_name[st], esc, ser);
     }
     n += snprintf(buf + n, len - n, "],\"carriers\":[");
     for (int i = 0; i < g_ncarriers && n < len - 4096; i++) {

@@ -206,32 +206,77 @@ def cmd_gpu(a):
 
 
 def cmd_devices(a):
-    """radios seen by their own tools (serial numbers to put in args)"""
-    import re as _re
-    import shutil
-    import subprocess
-    found = False
-    tools = [("hackrf", ["hackrf_info"], r"Serial number: (\w+)", "serial={}"),
-             ("uhd", ["uhd_find_devices"], r"serial: (\w+)", "serial={}"),
-             ("soapy", ["SoapySDRUtil", "--find"], r"driver = (\w+)", "driver={}")]
-    for driver, cmd, rx, fmt in tools:
-        if not shutil.which(cmd[0]):
-            continue
-        try:
-            out = subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout
-        except (OSError, subprocess.SubprocessError):
-            continue
-        seen = set()
-        for m in _re.finditer(rx, out):
-            v = m.group(1)
-            if driver == "soapy" and (v in ("audio", "rtlsdr", "airspy", "airspyhf", "sdrplay", "remote", "hackrf", "uhd")
-                                      or v in seen):
-                continue              # receive-only, or better driven by the native plugins
-            seen.add(v)
-            found = True
-            print(f"driver = \"{driver}\"   args = \"{fmt.format(v)}\"")
-    if not found:
-        print("no radio found (hackrf_info, uhd_find_devices, SoapySDRUtil not installed or nothing plugged)")
+    """radios seen by their own tools; --save NAME: the serial of the one of its driver not bound to another
+    radio written in the configuration file"""
+    import tomllib
+    from . import channels as chmod
+    from . import confedit
+    from . import devices as devmod
+    path = config_path(a)
+    doc = None
+    if path and os.path.exists(path):
+        with open(path, "rb") as f:
+            doc = tomllib.load(f)
+    radios = (doc or {}).get("radio", [])
+    if a.save:
+        if doc is None:
+            sys.exit(f"dvbtx devices --save: no configuration file ({path or 'give one with -c'})")
+        i = next((k for k, r in enumerate(radios) if str(r.get("name", f"radio{k}")) == a.save), None)
+        if i is None:
+            sys.exit(f"dvbtx devices --save: no radio named {a.save!r} in {path}")
+        drivers = [str(radios[i].get("driver", "hackrf"))]
+    else:
+        drivers = [d for d in devmod.TOOLS]
+    bound = {}
+    for k, r in enumerate(radios):
+        sn = str(r.get("serial") or "") or devmod.serial_of(str(r.get("args", ""))) or ""
+        if sn and (not a.save or k != i):
+            bound.setdefault(str(r.get("driver", "hackrf")), {})[sn] = str(r.get("name", f"radio{k}"))
+    listed = []
+    for driver in drivers:
+        found, err = devmod.find(driver)
+        if err and a.save:
+            sys.exit(f"dvbtx devices --save: {err}")
+        for d in found:
+            who = devmod.owner(driver, d["serial"], bound.get(driver, {}))
+            listed.append((driver, d, who))
+            if not a.save:
+                print(f'driver = "{driver}"   serial = "{d["serial"]}"   # {d["label"]}'
+                      + (f", radio {who}" if who else ""))
+    if not a.save:
+        if not listed:
+            print("no radio found (hackrf_info, uhd_find_devices, SoapySDRUtil not installed or nothing plugged)")
+        return
+    free = [d for _, d, who in listed if who is None]
+    if a.serial:
+        free = [d for d in free if d["serial"] == a.serial]
+        if not free:
+            sys.exit(f"dvbtx devices --save: no free {drivers[0]} device with serial {a.serial} "
+                     f"(free: {', '.join(d['serial'] for _, d, who in listed if who is None) or 'none'})")
+    if not free:
+        taken = ", ".join(f"{d['serial']} ({who})" for _, d, who in listed) or "none plugged in"
+        sys.exit(f"dvbtx devices --save: no {drivers[0]} device free for {a.save} ({taken})")
+    if len(free) > 1:
+        sys.exit(f"dvbtx devices --save: several {drivers[0]} devices free, choose one with --serial: "
+                 + ", ".join(f"{d['serial']} ({d['label']})" for d in free))
+    sn = free[0]["serial"]
+    cur = str(radios[i].get("serial") or "") or devmod.serial_of(str(radios[i].get("args", ""))) or ""
+    if devmod.same(drivers[0], cur, sn):
+        print(f"radio {a.save}: already bound to {cur} ({free[0]['label']})")
+        return
+
+    def validate(text):
+        return None, cfgmod.build(cfgmod.load(path, text=text))
+    changes = {"serial": sn}
+    if devmod.serial_of(str(radios[i].get("args", ""))):
+        rest = devmod.with_serial(str(radios[i]["args"]), None)
+        changes["args"] = rest or None
+    try:
+        confedit.Draft(path, validate).update("radio", i, changes)
+    except chmod.ChannelError as e:
+        sys.exit(f"dvbtx devices --save: {e}")
+    print(f"radio {a.save}: serial = \"{sn}\" ({free[0]['label']}) saved in {path}; applied at the next start "
+          "or with Apply on the web page")
 
 
 # ------------------------------------------------------------------ dvbtx channel
@@ -573,9 +618,14 @@ def main(argv=None):
                        description="Load the EPG (epg.dir: XMLTV or TSDuck EIT XML files; epg.urls) and "
                        "show, for each service, the number of events and what is on now and next.")
     _add_config_args(g)
-    sub.add_parser("devices", help="list the radios that are plugged in",
-                   description="Ask hackrf_info, uhd_find_devices and SoapySDRUtil for the radios plugged "
-                   "in and print the driver and args to put in a [[radio]] of the configuration.")
+    g = sub.add_parser("devices", help="list the radios that are plugged in; --save binds one to its device",
+                       description="Ask hackrf_info, uhd_find_devices and SoapySDRUtil for the radios plugged "
+                       "in and print their driver and serial number, and the radio of the configuration bound "
+                       "to each. --save NAME writes in the file the serial of the device of that radio's driver "
+                       "that no other radio is bound to (--serial picks one when there are several).")
+    g.add_argument("-c", "--config", help="TOML configuration file (default /etc/dvbtx/dvbtx.toml if present)")
+    g.add_argument("--save", metavar="RADIO", help="radio of the configuration to bind to a free device")
+    g.add_argument("--serial", help="with --save: the device to bind it to, among the free ones")
     gp = sub.add_parser("gpu", help="graphics adapters used for the transcodes; 'gpu learn' tests them again",
                         description="List the graphics adapters and, for each one and each codec (H.264, "
                         "HEVC, MPEG-2), the fastest way it transcodes as learnt (VAAPI, QSV, NVENC...). "

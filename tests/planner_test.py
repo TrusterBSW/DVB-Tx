@@ -102,4 +102,28 @@ p, r = plan(['standard = "dvbs2"\nfrequency = 1_200_000_000\nsymbol_rate = 45_00
 print(f"uhd 45 Msym/s: {r.rate / 1e6:.6f} MS/s: {notes(r)}")
 assert r.rate <= 56e6 or "warning" in notes(r)
 
+# a radio without multiplex is left out of engine.ini: the others numbered 0..n-1, the carriers follow
+# (it used to keep its number: [radio 1] alone, refused by the engine, which restarted in a loop)
+text = (HEAD.format(driver="null", radio="") + '[[radio]]\nname = "b"\ndriver = "null"\n'
+        + CARRIER.format(name="M0", body=s2(3_000_000)).replace('radio = "r"', 'radio = "b"'))
+p = cfgmod.build(cfgmod.load(text=text))
+assert [r.index for r in cfgmod.engine_radios(p)] == [1], [r.index for r in p.radios]
+os.makedirs("/tmp/dvbtx-test", exist_ok=True)
+ini = "/tmp/dvbtx-test/planner_engine.ini"
+cfgmod.write_engine_ini(p, ini, "/tmp/dvbtx-test")
+lines = open(ini).read().splitlines()
+assert [x for x in lines if x.startswith("[radio")] == ["[radio 0]"], lines
+assert "radio = 0" in lines, lines
+
+# the statistics of the engine back to the configuration's numbers
+from dvbtx.supervisor import Supervisor     # noqa: E402
+st = {"radios": [{"index": 0}], "carriers": [{"carrier": 0, "radio": 0}, {"carrier": 1, "radio": -1}]}
+Supervisor._radio_numbers(st, [1])
+assert st["radios"][0]["index"] == 1 and st["carriers"][0]["radio"] == 1 and st["carriers"][1]["radio"] == -1, st
+
+# a stopped multiplex still counts in its radio's band: the error says so and names it
+far = s2(3_000_000, 1_400_000_000)
+e = fails([s2(3_000_000), far.replace("symbol_rate", "enabled = false\nsymbol_rate")])
+assert e and "1 of them stopped: M1" in e, e
+
 print(f"planner_test: OK ({time.time() - t0:.2f} s)")

@@ -734,7 +734,16 @@ erreurs de temps ou de séquence UHD) ;
 (toutes ses porteuses arrêtées)) ;
 .B error
 (le message du module quand l'état n'est pas
-.BR on ).
+.BR on ) ;
+.B serial
+(numéro de série de la carte ouverte, tel que ses outils l'affichent, vide quand le pilote n'en
+donne pas).
+Les radios sont numérotées de 0 à n\-1 dans l'ordre de
+.BR engine.ini ,
+quel que soit leur numéro dans
+.BR dvbtx.toml (5)\ :
+.B dvbtx
+laisse de côté les radios sans porteuse et retraduit les numéros.
 .TP
 .B carriers[]
 .BR carrier " (indice), " ts_rate " (capacité du canal), " rate ,

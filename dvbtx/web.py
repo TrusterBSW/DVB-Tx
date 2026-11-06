@@ -158,6 +158,11 @@ class Handler(BaseHTTPRequestHandler):
                 evs = sup.store.events(sid) if sup.store else []
                 return self._send(200, [{"event_id": e["event_id"], "start": e["start"], "duration": e["duration"],
                                          "title": e.get("title"), "subtitle": e.get("subtitle")} for e in evs[:200]])
+            if path == "/api/devices":
+                from urllib.parse import unquote_plus
+                skip = q.get("radio")
+                return self._send(200, sup.devices(unquote_plus(q.get("driver", "")),
+                                                   int(skip) if skip not in (None, "") else None))
             if path == "/api/calc":
                 from urllib.parse import unquote_plus
                 from . import capacity

@@ -15,6 +15,7 @@
 
 struct sdr_dev {
     hackrf_device *dev;
+    char serial[64];                /* as hackrf_info prints it */
     int8_t *ring;
     size_t size, rd, wr, used;      /* bytes */
     int started, stopping;
@@ -161,6 +162,10 @@ static sdr_dev *hk_open(const sdr_params *p, char *err, int errlen)
         hk_close(d);
         return NULL;
     }
+    read_partid_serialno_t ps;
+    if (hackrf_board_partid_serialno_read(d->dev, &ps) == HACKRF_SUCCESS)
+        snprintf(d->serial, sizeof d->serial, "%08x%08x%08x%08x", ps.serial_no[0], ps.serial_no[1],
+                 ps.serial_no[2], ps.serial_no[3]);
     double corr = 1.0 / (1.0 + p->ppm * 1e-6);   /* crystal error moves rate and LO alike */
     double bw = p->bandwidth > 0 ? p->bandwidth : p->rate;   /* the supervisor computes it from the band edges */
     if ((r = hackrf_set_sample_rate(d->dev, p->rate * corr)) != HACKRF_SUCCESS ||
@@ -286,6 +291,7 @@ static void hk_stats(sdr_dev *d, sdr_stats *s)
     s->late = d->shortfalls;
     s->fill = (double)d->used / (double)d->size;
     pthread_mutex_unlock(&d->lock);
+    snprintf(s->serial, sizeof s->serial, "%s", d->serial);
 }
 
 const sdr_driver dvbtx_sdr_driver = {

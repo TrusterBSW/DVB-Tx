@@ -762,10 +762,32 @@ Nom auquel se réfèrent les porteuses.
 .B null
 (pas de radio\~: échantillons consommés à la cadence nominale, pour les tests).
 .TP
+\fBserial\fR (chaîne\~; défaut "")
+La carte à laquelle la radio est liée\~: le numéro de série affiché par
+.BR "dvbtx devices" ,
+passé au pilote sous la forme
+.BI serial= S
+dans ses arguments.
+Sans lui, le pilote ouvre la première carte qu'il trouve\~: deux HackRF ou deux USRP peuvent
+s'échanger après un redémarrage ou un rebranchement.
+Un HackRF est aussi trouvé par les derniers chiffres de son numéro.
+Deux radios du même pilote ne peuvent pas avoir le même numéro, et un
+.B serial=
+différent dans
+.B args
+est refusé.
+.B "dvbtx devices \-\-save"
+.I RADIO
+et la page web
+.RB ( dvbtx\-web (7))
+le remplissent avec le numéro d'une carte libre.
+.TP
 \fBargs\fR (chaîne\~; défaut "")
 Arguments du périphérique.
 hackrf\~:
-.BI serial= S ,
+.BI serial= S
+(comme la clé
+.BR serial ),
 .BI rt= N
 (priorité SCHED_FIFO de son thread USB, 60 par défaut, 0\~: aucune),
 .BI m0_poll= S
@@ -785,7 +807,7 @@ null\~:
 .BI absent= CHEMIN
 (la radio est absente tant que ce fichier existe).
 .B dvbtx devices
-affiche les arguments des radios branchées.
+affiche les radios branchées et leurs numéros de série.
 .TP
 \fBgain\fR (nombre\~; défaut 30)
 Gain d'émission en dB\~: hackrf TX VGA 0\(en47, uhd 0\(en89,75.
@@ -923,6 +945,8 @@ false\~: le multiplex est arrêté\~: hors antenne, ses sources en pause\~; une 
 sont arrêtés est éteinte.
 Écrit (et retiré) par les boutons «\~\%Arrêter\~» / «\~\%Démarrer\~» de la page web, si bien que l'état survit
 aux redémarrages.
+Un multiplex arrêté garde sa place dans la bande de sa radio, pour que «\~\%Démarrer\~» le remette à
+l'antenne sans redémarrer les autres\~: pour libérer la bande, supprimez-le ou mettez-le sur une autre radio.
 .SS standard = \(dqdvbt\(dq
 Les porteuses DVB\-T qui partagent une radio doivent avoir les mêmes
 .BR mode ,
@@ -1463,7 +1487,7 @@ DVB\-T2 et DVB\-C sur un USRP, l'un des deux arrêté\~:
 [[radio]]
 name = "b210"
 driver = "uhd"
-args = "serial=30AD2F1"
+serial = "30AD2F1"
 gain = 50
 
 [[carrier]]

@@ -20,6 +20,7 @@ import urllib.request
 
 from . import channels as chmod
 from . import confedit
+from . import devices as devmod
 from . import config as cfgmod
 from . import epg as epgmod
 from . import gpu
@@ -526,6 +527,9 @@ class Supervisor:
         self.engine = None
         self.engine_lines = collections.deque(maxlen=200)
         self.engine_restarts = 0
+        self.engine_radio_ids = []  # configuration index of the engine's radio 0, 1...
+        self.engine_fatal = None    # the error the engine last stopped on, for the alert and the web page
+        self.stats_proc = None      # the engine process whose statistics came last
         self.engine_next = 0
         self.started = time.time()
         self._stop = False          # set from signal handlers: a plain flag, no lock (an Event can deadlock)
@@ -579,16 +583,33 @@ class Supervisor:
         self.engine = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        preexec_fn=_die_with_parent)
         self.engine_started = time.monotonic()
-        threading.Thread(target=self._read_engine_out, args=(self.engine,), daemon=True).start()
+        # the engine numbers the radios it is given 0..n-1: its statistics are translated back (engine_radios)
+        self.engine_radio_ids = [r.index for r in cfgmod.engine_radios(self.plan)]
+        threading.Thread(target=self._read_engine_out, args=(self.engine, list(self.engine_radio_ids)),
+                         daemon=True).start()
         threading.Thread(target=self._read_engine_err, args=(self.engine,), daemon=True).start()
 
-    def _read_engine_out(self, proc):
+    @staticmethod
+    def _radio_numbers(st, ids):
+        """the engine's radio numbers (0..n-1, radios with multiplexes only) to the configuration's"""
+        def cfg(i):
+            return ids[i] if isinstance(i, int) and 0 <= i < len(ids) else i
+        for r in st.get("radios", []):
+            r["index"] = cfg(r.get("index"))
+        for c in st.get("carriers", []):
+            if "radio" in c:
+                c["radio"] = cfg(c["radio"])
+
+    def _read_engine_out(self, proc, ids):
         for raw in iter(proc.stdout.readline, b""):
             try:
                 st = json.loads(raw)
             except ValueError:
                 continue
             if st.get("type") == "stats":
+                self._radio_numbers(st, ids)
+                self.stats_proc = proc
+                self.engine_fatal = None
                 self._on_stats(st)
             elif st.get("type") == "reply":
                 with self.reply_cv:
@@ -601,6 +622,8 @@ class Supervisor:
             if not line:
                 continue
             self.engine_lines.append(line)
+            if line.startswith("fatal: "):
+                self.engine_fatal = line[7:]
             lvl = logging.WARNING if " WRN " in line else logging.ERROR if " ERR " in line else logging.INFO
             logging.getLogger("dvbtx.engine").log(lvl, "%s", line.split(" ", 2)[-1])
 
@@ -729,7 +752,7 @@ class Supervisor:
         conds = {}
         st = self.stats
         if self.engine is None or (st and time.time() - self.stats_at > 10):
-            conds["engine"] = ("critical", "engine not running")
+            conds["engine"] = ("critical", "engine not running" + (f": {self.engine_fatal}" if self.engine_fatal else ""))
         if st:
             ins = {i["index"]: i for i in st.get("inputs", [])}
             for c in st.get("carriers", []):
@@ -1028,6 +1051,41 @@ class Supervisor:
             cfgmod.load(self.plan.config_path, text=text)
         return cfg, cfgmod.build(cfg)
 
+    def devices(self, driver, radio=None):
+        """the devices of a driver plugged in, and which radio of the file each one is bound to (its serial), or
+        held by (opened by the engine for a radio without serial); radio: the one being edited, not counted.
+        Runs in the web thread: the tool takes a few seconds."""
+        found, err = devmod.find(driver) if driver in devmod.TOOLS else ([], None if driver == "null" else
+                                                                             f"no tool lists the {driver} radios")
+        try:
+            file_radios = self.draft().doc().get("radio", [])
+        except (chmod.ChannelError, OSError, tomllib.TOMLDecodeError):
+            file_radios = []
+        bound = {}
+        for i, r in enumerate(file_radios):
+            sn = str(r.get("serial") or "") or devmod.serial_of(str(r.get("args", ""))) or ""
+            if i != radio and sn and r.get("driver", "hackrf") == driver:
+                bound[sn] = str(r.get("name", f"radio{i}"))
+        st = self.stats if self.stats and time.time() - self.stats_at < 10 else {}
+        held = {}
+        for x in (st or {}).get("radios", []):
+            i, sn = x.get("index"), x.get("serial")
+            r = self.plan.radios[i] if isinstance(i, int) and 0 <= i < len(self.plan.radios) else None
+            if sn and r is not None and r.driver == driver:
+                held[sn] = r
+        def holder(sn):
+            return next((r for s, r in held.items() if devmod.same(driver, s, sn)), None)
+        out = [dict(d, open=holder(d["serial"]) is not None) for d in found]
+        for sn, r in held.items():                  # open by the engine: its tool may not see it
+            if not any(devmod.same(driver, d["serial"], sn) for d in out):
+                out.append({"serial": sn, "label": r.driver, "open": True})
+        for d in out:
+            r = holder(d["serial"])
+            d["radio"] = devmod.owner(driver, d["serial"], bound) or (r.name if r is not None and r.index != radio
+                                                                        else None)
+        return {"driver": driver, "devices": out, "error": err,
+                "free": [d["serial"] for d in out if d["radio"] is None]}
+
     def config_view(self):
         """the file (radios, multiplexes), whether it is valid, what differs from what runs, the profiles"""
         if not self.plan.config_path:
@@ -1084,13 +1142,35 @@ class Supervisor:
         doc = tomllib.loads(text)
         changes = confedit.diff(self.applied_doc, doc)
         if confedit.needs_restart(self.applied_doc, doc):
+            old_cfg, old_plan = self.cfg, self.plan
             self.restart_plan(new_cfg, new_plan)
+            err = self._engine_start_error()
+            if err:
+                # the previous configuration on the air again; the file keeps the edits, still pending
+                log.error("configuration refused by the engine (%s): the previous one runs again", err)
+                self.restart_plan(old_cfg, old_plan)
+                raise chmod.ChannelError(f"the transmitter refused this configuration ({err}); "
+                                         "the previous one is on the air again, the changes are still pending")
             res = {"restarted": True}
         else:
             res = dict(self._apply(new_cfg, new_plan, save=False), restarted=False)
         self.applied_doc = doc
         log.info("configuration applied: %d change(s)%s", len(changes), ", transmission restarted" if res["restarted"] else "")
         return dict(res, detail=changes)
+
+    ENGINE_START_S = 20     # an engine that neither exits nor reports within that time is taken as started
+
+    def _engine_start_error(self):
+        """None once the engine just started reports its first statistics, its error if it exits first"""
+        proc, end = self.engine, time.monotonic() + self.ENGINE_START_S
+        while proc is not None and time.monotonic() < end:
+            if self.stats_proc is proc:
+                return None
+            if proc.poll() is not None:
+                time.sleep(0.3)                 # its last lines of stderr read
+                return self.engine_fatal or f"engine exited with status {proc.returncode}"
+            time.sleep(0.1)
+        return None
 
     def revert_config(self):
         """pending changes dropped: the file back to what runs (its text as last applied is not kept: the
@@ -1616,8 +1696,9 @@ class Supervisor:
 
     def _probe_radio(self, idx, o):
         try:
-            r = subprocess.run([self.engine_bin, "--probe", self.ini, str(idx)], capture_output=True, timeout=60)
-            if r.returncode == 0:
+            r = subprocess.run([self.engine_bin, "--probe", self.ini, str(self.engine_radio_ids.index(idx))],
+                               capture_output=True, timeout=60) if idx in self.engine_radio_ids else None
+            if r is not None and r.returncode == 0:
                 self.radio_back = idx
         except (OSError, subprocess.TimeoutExpired):
             pass
@@ -1768,7 +1849,7 @@ class Supervisor:
         rst = {r["index"]: r for r in (st or {}).get("radios", [])}
         for r in plan.radios:
             if r.carriers:
-                out["radios"].append({"index": r.index, "name": r.name, "driver": r.driver, "center": r.center,
+                out["radios"].append({"index": r.index, "name": r.name, "driver": r.driver, "serial": r.serial, "center": r.center,
                                       "rate": r.rate, "gain": r.gain, "amp": r.amp, "live": rst.get(r.index)})
         cst = {c["carrier"]: c for c in (st or {}).get("carriers", [])}
         ist = {i["index"]: i for i in (st or {}).get("inputs", [])}

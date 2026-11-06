@@ -562,7 +562,15 @@ Un champ vidé retire la clé du fichier (sa valeur par défaut s'applique alors
 .B Radios
 un tableau (nom, pilote, gain, cadence d'échantillonnage, arguments) avec «\ Modifier\ » sur chaque
 ligne et «\ + Ajouter une radio\ ».
-La boîte de dialogue comporte «\ Nom\ », «\ Pilote\ », «\ Arguments\ »,
+La boîte de dialogue comporte «\ Nom\ », «\ Pilote\ », «\ Numéro de série\ »
+.RB ( serial \ :
+la carte à laquelle la radio est liée, vide\ : la première de son pilote),
+«\ enregistrer automatiquement le numéro de série d'une carte libre de ce pilote\ »
+(les cartes du pilote sont listées par
+.BR /api/devices \ ;
+celle à laquelle aucune autre radio n'est liée remplit le numéro, une liste les propose quand il
+y en a plusieurs),
+«\ Arguments\ »,
 «\ Gain (dB)\ », «\ Recul (dB)\ »
 .RB ( backoff_db ),
 «\ Échantillonnage (MS/s)\ »
@@ -619,6 +627,10 @@ elles sont appliquées une à une et les autres chaînes ne sont pas coupées
 Toute autre modification (radios, multiplex, réseau ou autres réglages) redémarre
 l'émission, soit quelques secondes sans signal\ ; la page demande d'abord une confirmation,
 les sources inchangées continuent de tourner, et les téléviseurs peuvent avoir besoin d'une nouvelle recherche des chaînes.
+Si le moteur refuse la nouvelle configuration (il s'arrête avant ses premières statistiques),
+la précédente est remise à l'antenne, la page affiche l'erreur du moteur, et les modifications
+restent en attente dans le fichier, à corriger ou à annuler.
+Une radio laissée sans multiplex n'est pas donnée au moteur.
 .TP
 .B Annuler les modifications
 .RB ( "POST /api/config/revert" ,
@@ -740,6 +752,28 @@ du multiplex
 .BI "GET /api/epg/" sid
 les événements EPG d'un service (200 au plus)\ :
 \fB[{"event_id", "start", "duration", "title", "subtitle"}]\fP.
+.TP
+.BI "GET /api/devices?driver=" d "\fR[\fP&radio=" i \fR]\fP
+les cartes d'un pilote branchées, telles que
+.BR hackrf_info ,
+.B uhd_find_devices
+ou
+.B SoapySDRUtil
+les voient (quelques secondes), plus celles que le moteur a ouvertes\ :
+\fB{"driver", "devices": [{"serial", "label", "open", "radio"}], "free": [numéro...], "error"}\fP.
+.B radio
+est la radio du fichier de configuration liée à la carte (son
+.BR serial ),
+ou celle qui l'occupe (une radio sans numéro ouvre la première carte de son pilote)\ ;
+.B free
+les cartes sans radio.
+.BI radio= i
+ne compte pas la radio
+.I i
+du fichier (celle qu'on modifie\ : sa propre carte est libre pour elle).
+.B error
+dit pourquoi rien n'a pu être listé (outil absent, pas de réponse).
+Les cartes radio de l'état affichent le numéro de série de chaque radio tel que son pilote le donne.
 .TP
 .BI "GET /api/calc?standard=" std & clé = valeur ...
 le débit utile d'un canal\ :

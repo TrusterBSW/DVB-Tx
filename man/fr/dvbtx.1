@@ -118,18 +118,29 @@ Débit utile MPEG-TS d'une porteuse (voir
 .B OPTIONS DE CALC
 ci-dessous).
 .TP
-.B devices
+\fBdevices\fR [\fB\-\-save\fR \fIRADIO\fR [\fB\-\-serial\fR \fIS\fR]]
 Interroger
 .BR hackrf_info ,
 .B uhd_find_devices
 et
 .B SoapySDRUtil
-sur les radios branchées et afficher les valeurs de
+sur les radios branchées et afficher leur
 .B driver
-et
-.B args
-à mettre dans une table
-.BR [[radio]] .
+et leur
+.BR serial ,
+avec la radio de la configuration liée à chacune.
+.B \-\-save
+.I RADIO
+écrit dans le fichier le
+.B serial
+de la carte du pilote de cette radio à laquelle aucune autre radio n'est liée (une radio sans
+numéro de série prend la première carte de son pilote)\~: deux cartes du même pilote ne
+s'échangent plus après un redémarrage ou un rebranchement.
+.B \-\-serial
+en choisit une quand plusieurs sont libres.
+L'émetteur en marche le prend au prochain
+.B Appliquer
+de la page web ou au prochain démarrage.
 .TP
 .BR gpu " [" list | learn ]
 Lister les cartes graphiques et, pour chacune et pour chaque codec (H.264, HEVC, MPEG-2), la méthode

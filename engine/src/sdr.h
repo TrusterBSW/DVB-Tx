@@ -28,6 +28,8 @@ typedef struct sdr_stats {
     uint64_t underruns;   /* gaps filled with zeros (host too slow) */
     uint64_t late;        /* late packets reported by the device */
     double fill;          /* host buffer fill 0..1 */
+    char serial[64];      /* serial number of the device opened, "" if unknown (zeroed by the caller: a
+                             plugin built before this field leaves it empty) */
 } sdr_stats;
 
 typedef struct sdr_dev sdr_dev;

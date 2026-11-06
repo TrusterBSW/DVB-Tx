@@ -160,7 +160,11 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
     <h3 id="rd_title">Radio</h3>
     <label for="rd_name">Nom</label><input id="rd_name" type="text" maxlength="40" required>
     <label for="rd_driver">Pilote</label><select id="rd_driver"></select>
-    <label for="rd_args">Arguments</label><input id="rd_args" type="text" placeholder="serial=..., rt=60">
+    <label for="rd_serial">Numéro de série</label><input id="rd_serial" type="text" maxlength="63" placeholder="aucun : la première carte de ce pilote" title="lie la radio à une carte précise : deux cartes du même pilote ne s'échangent plus au redémarrage">
+    <label style="display:flex;gap:6px;align-items:center;color:inherit"><input id="rd_autoserial" type="checkbox"> enregistrer automatiquement le numéro de série d'une carte libre de ce pilote</label>
+    <select id="rd_serial_pick" style="display:none"></select>
+    <div class="muted" id="rd_serial_msg"></div>
+    <label for="rd_args">Arguments</label><input id="rd_args" type="text" placeholder="rt=60, num_send_frames=256">
     <div class="row" style="gap:6px 14px">
       <span><label for="rd_gain">Gain (dB)</label><input id="rd_gain" type="number" step="0.5" style="width:7em"></span>
       <span><label for="rd_backoff">Recul (dB)</label><input id="rd_backoff" type="number" step="0.5" style="width:7em" placeholder="13"></span>
@@ -333,6 +337,7 @@ function render(s) {
       <div class="kv" style="margin-top:8px"><span>LO</span><span>${(r.center / 1e6).toFixed(4)} MHz</span>
       <span>Échantillonnage</span><span>${(r.rate / 1e6).toFixed(4)} MS/s</span>
       <span>Gain</span><span>${r.gain} dB${r.amp ? " + ampli" : ""}</span>
+      <span>Numéro de série</span><span>${esc(l.serial || r.serial || "–")}${!r.serial && l.serial ? ' <span class="muted" title="la première carte de ce pilote : enregistrez son numéro pour l\'y lier">(non liée)</span>' : ""}</span>
       <span>Tampon</span><span>${l.fill != null ? Math.round(l.fill * 100) + " %" : "–"}</span>
       <span>CPU (synthèse + USB)</span><span>${l.cpu != null ? l.cpu.toFixed(1) + " % d'un cœur" : "–"}</span></div>
       ${spark(hist.series[`r${r.index}.cpu`], { min: 0, color: "var(--s3)" })}</div>`;
@@ -1026,6 +1031,10 @@ function radioOpen(i) {
   $("#rd_driver").innerHTML = conf.drivers.map((d) => `<option${d === (r.driver || "hackrf") ? " selected" : ""}>${d}</option>`).join("");
   $("#rd_name").value = r.name || "";
   $("#rd_args").value = r.args || "";
+  $("#rd_serial").value = r.serial || "";
+  $("#rd_autoserial").checked = false;
+  $("#rd_serial_pick").style.display = "none";
+  $("#rd_serial_msg").textContent = "";
   $("#rd_gain").value = r.gain ?? "";
   $("#rd_backoff").value = r.backoff_db ?? "";
   $("#rd_rate").value = r.rate ? r.rate / 1e6 : "";
@@ -1036,11 +1045,43 @@ function radioOpen(i) {
   $("#rd_err").textContent = "";
   radiodlg.showModal();
 }
+// the serial of a free device of the driver chosen (one: taken at once, several: to pick from the list)
+async function radioSerialFind() {
+  const pick = $("#rd_serial_pick"), msg = $("#rd_serial_msg");
+  pick.style.display = "none";
+  if (!$("#rd_autoserial").checked) { msg.textContent = ""; return; }
+  const drv = $("#rd_driver").value;
+  msg.textContent = `recherche des cartes ${drv}…`;
+  const r = await api("GET", `/api/devices?driver=${encodeURIComponent(drv)}${radioIdx == null ? "" : "&radio=" + radioIdx}`);
+  if (drv !== $("#rd_driver").value || !$("#rd_autoserial").checked) return;   // changed meanwhile
+  if (r.error) { msg.textContent = r.error; return; }
+  const free = (r.devices || []).filter((d) => !d.radio);
+  const taken = (r.devices || []).filter((d) => d.radio).map((d) => `${d.serial} (${d.radio})`);
+  if (!free.length) {
+    msg.textContent = `aucune carte ${drv} libre` + (taken.length ? ` : déjà prises ${taken.join(", ")}` : " n'est branchée");
+    return;
+  }
+  const label = (d) => `${d.serial}${d.label ? " · " + d.label : ""}${d.open ? " · en service" : ""}`;
+  if (free.length === 1) {
+    $("#rd_serial").value = free[0].serial;
+    msg.textContent = `carte trouvée : ${label(free[0])}`;
+    return;
+  }
+  pick.innerHTML = '<option value="">choisir une carte…</option>' + free.map((d) => `<option value="${esc(d.serial)}">${esc(label(d))}</option>`).join("");
+  pick.style.display = "";
+  msg.textContent = `${free.length} cartes ${drv} libres : choisissez-en une`;
+}
+$("#rd_autoserial").addEventListener("change", radioSerialFind);
+$("#rd_driver").addEventListener("change", radioSerialFind);
+$("#rd_serial_pick").addEventListener("change", () => { if ($("#rd_serial_pick").value) $("#rd_serial").value = $("#rd_serial_pick").value; });
 $("#radioform").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const num = (v, k = 1) => v.trim() === "" ? null : Number(v) * k;
   const lo = $("#rd_lo").value.trim();
-  const body = { name: $("#rd_name").value.trim(), driver: $("#rd_driver").value, args: $("#rd_args").value.trim() || null,
+  const serial = $("#rd_serial").value.trim();
+  let args = $("#rd_args").value.trim();
+  if (serial) args = args.split(",").filter((a) => a.trim() && !/^\s*serial\s*=/.test(a)).join(",");   // the key holds it
+  const body = { name: $("#rd_name").value.trim(), driver: $("#rd_driver").value, args: args || null, serial: serial || null,
     gain: num($("#rd_gain").value), backoff_db: num($("#rd_backoff").value), rate: num($("#rd_rate").value, 1e6),
     center: num($("#rd_center").value, 1e6), lo_offset: lo === "" ? null : (isNaN(Number(lo)) ? lo : Number(lo)), amp: $("#rd_amp").checked || null };
   for (const k of ["rate", "center"]) if (body[k] != null) body[k] = Math.round(body[k]);

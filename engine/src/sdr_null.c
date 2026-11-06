@@ -23,6 +23,7 @@ struct sdr_dev {
     void *conv;
     size_t conv_len;
     char absent[512], gaps[512];
+    char serial[64];           /* serial=...: reported as the device's (tests) */
     uint64_t late;
     int calls;
 };
@@ -56,6 +57,7 @@ static sdr_dev *nl_open(const sdr_params *p, char *err, int errlen)
     d->rate = p->rate;
     arg(p->args, "absent", d->absent, sizeof d->absent);
     arg(p->args, "gaps", d->gaps, sizeof d->gaps);
+    arg(p->args, "serial", d->serial, sizeof d->serial);
     if (d->absent[0] && !access(d->absent, F_OK)) {
         snprintf(err, errlen, "no null radio (%s exists)", d->absent);
         free(d);
@@ -122,6 +124,7 @@ static int nl_write(sdr_dev *d, const float complex *const *bufs, int n, float s
 static void nl_stats(sdr_dev *d, sdr_stats *s)
 {
     memset(s, 0, sizeof *s);
+    snprintf(s->serial, sizeof s->serial, "%s", d->serial);
     if (!d->t0)
         return;
     int64_t now = now_ns();

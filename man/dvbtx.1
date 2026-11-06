@@ -115,19 +115,29 @@ Useful MPEG-TS bit rate of a carrier (see
 .B CALC OPTIONS
 below).
 .TP
-.B devices
+\fBdevices\fR [\fB\-\-save\fR \fIRADIO\fR [\fB\-\-serial\fR \fIS\fR]]
 Ask
 .BR hackrf_info ,
 .B uhd_find_devices
 and
 .B SoapySDRUtil
-for the radios plugged in and print the
+for the radios plugged in and print their
 .B driver
 and
-.B args
-to put in a
-.B [[radio]]
-table.
+.BR serial ,
+with the radio of the configuration bound to each.
+.B \-\-save
+.I RADIO
+writes in the file the
+.B serial
+of the device of that radio's driver that no other radio is bound to (a radio without serial
+holds the first device of its driver), so that two devices of the same driver no longer swap
+after a restart or a replug;
+.B \-\-serial
+picks one when several are free.
+The running transmitter takes it at the next
+.B Apply
+of the web page or the next start.
 .TP
 .BR gpu " [" list | learn ]
 List the graphics adapters and, for each one and each codec (H.264, HEVC, MPEG-2), the fastest
