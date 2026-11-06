@@ -582,6 +582,7 @@ int inputs_start(input **in, int n)
             return -1;
     if (pthread_create(&g_thread, NULL, rx_thread, NULL))
         return -1;
+    pthread_setname_np(g_thread, "inputs");
     g_started = 1;
     return 0;
 }

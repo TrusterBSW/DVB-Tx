@@ -13,6 +13,7 @@
  * Pipeline: the cells of each FEC block are written straight to their final place in the
  * T2 frame (cell interleaver + time interleaver + frame mapping in one scatter), into the
  * second of two frame buffers while the first one is being transmitted symbol by symbol. */
+#define _GNU_SOURCE   /* pthread_setname_np */
 #include "dvbt2.h"
 
 #include <fftw3.h>
@@ -1561,6 +1562,9 @@ dvbt2_group *dvbt2_group_new(int k, int threads)
                 free(arg);
                 break;
             }
+            char nm[16];
+            snprintf(nm, sizeof nm, "t2-w%d", w);
+            pthread_setname_np(g->tid[w], nm);
             g->nthreads = w + 1;
         }
     }

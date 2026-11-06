@@ -316,21 +316,23 @@ static void demux_symbols(dvbs2 *s)
         }
         return;
     }
+    /* 8 symbols at a time, all their bits in one pass: one byte of each column spread over the
+     * 8 symbol bytes at the bit of that column */
     int ngrp = (nsym + 7) / 8;
+    const uint8_t *col[8];
+    int sh[8], ls[8];
     for (int b = 0; b < bits; b++) {
-        int a = s->rowaddr[b], sh = a & 7, ls = bits - 1 - b;
-        const uint8_t *p = cw + (a >> 3);
-        for (int g = 0; g < ngrp; g++) {
-            unsigned x = (unsigned)((p[g] << 8 | p[g + 1]) >> (8 - sh)) & 0xff;
-            uint64_t v = spread[x] << ls, o;
-            if (b == 0)
-                o = v;
-            else {
-                memcpy(&o, sv + 8 * g, 8);
-                o |= v;
-            }
-            memcpy(sv + 8 * g, &o, 8);
+        col[b] = cw + (s->rowaddr[b] >> 3);
+        sh[b] = 8 - (s->rowaddr[b] & 7);
+        ls[b] = bits - 1 - b;
+    }
+    for (int g = 0; g < ngrp; g++) {
+        uint64_t o = 0;
+        for (int b = 0; b < bits; b++) {
+            const uint8_t *p = col[b] + g;
+            o |= spread[((unsigned)(p[0] << 8 | p[1]) >> sh[b]) & 0xff] << ls[b];
         }
+        memcpy(sv + 8 * g, &o, 8);
     }
     for (int j = nsym; j < 90 * s->slots; j++)   /* 128APSK: 12 dummy symbols ending the frame, as gr-dtv */
         sv[j] = 0x7f;

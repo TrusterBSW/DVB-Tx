@@ -4,6 +4,7 @@
  * thread does not underflow the radio. The master clock rate is an integer multiple of the
  * sample rate (args may force master_clock_rate=...). Underflows come from async messages.
  * The ring holds sc16 (the wire format): write() scales and converts, UHD only copies. */
+#define _GNU_SOURCE   /* pthread_setname_np */
 #include <dirent.h>
 #include <math.h>
 #include <pthread.h>
@@ -173,6 +174,62 @@ static void raise_new_threads(const int *old, int nold, int prio)
     fprintf(stderr, "uhd: %d UHD thread(s) SCHED_FIFO %d\n", raised, prio);
 }
 
+/* 1 when the device these args open is a B2xx on USB 3 (sysfs: Ettus or NI vendor, speed >= 5000):
+ * the one of serial=... when given, else every one plugged in (UHD takes the first). Its TX then
+ * takes 16360-byte USB frames instead of UHD's 8176: half the packets, and about a third less CPU
+ * in UHD at 61 MS/s (i3-8100T, B210: 58 % of a core down to 39 %); larger ones break the stream. */
+static int b2xx_usb3(const char *args)
+{
+    char want[64] = "";
+    const char *k = strstr(args, "serial=");
+    if (k) {
+        k += 7;
+        size_t n = strcspn(k, ", ");
+        if (n >= sizeof want)
+            return 0;
+        memcpy(want, k, n);
+        want[n] = 0;
+    }
+    const char *t = strstr(args, "type=");
+    if (t && strncmp(t + 5, "b200", 4))
+        return 0;
+    DIR *dir = opendir("/sys/bus/usb/devices");
+    if (!dir)
+        return 0;
+    int found = 0, slow = 0;
+    struct dirent *e;
+    while ((e = readdir(dir))) {
+        char path[512], v[64];
+        FILE *f;
+        snprintf(path, sizeof path, "/sys/bus/usb/devices/%s/idVendor", e->d_name);
+        if (!(f = fopen(path, "r")))
+            continue;
+        int ok = fgets(v, sizeof v, f) && (!strncmp(v, "2500", 4) || !strncmp(v, "3923", 4));
+        fclose(f);
+        if (!ok)
+            continue;
+        if (want[0]) {
+            snprintf(path, sizeof path, "/sys/bus/usb/devices/%s/serial", e->d_name);
+            if (!(f = fopen(path, "r")))
+                continue;
+            ok = fgets(v, sizeof v, f) && !strncmp(v, want, strlen(want)) &&
+                 (v[strlen(want)] == '\n' || !v[strlen(want)]);
+            fclose(f);
+            if (!ok)
+                continue;
+        }
+        snprintf(path, sizeof path, "/sys/bus/usb/devices/%s/speed", e->d_name);
+        if (!(f = fopen(path, "r")))
+            continue;
+        int speed = fgets(v, sizeof v, f) ? atoi(v) : 0;
+        fclose(f);
+        found++;
+        slow += speed < 5000;
+    }
+    closedir(dir);
+    return found > 0 && !slow;
+}
+
 static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
 {
     sdr_dev *d = calloc(1, sizeof *d);
@@ -194,7 +251,9 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
         n += snprintf(args + n, sizeof args - n, "%smaster_clock_rate=%.6f", n ? "," : "", rate * k);
     }
     if (!strstr(ua, "num_send_frames"))
-        snprintf(args + n, sizeof args - n, "%snum_send_frames=64", n ? "," : "");
+        n += snprintf(args + n, sizeof args - n, "%snum_send_frames=64", n ? "," : "");
+    if (!strstr(ua, "send_frame_size") && b2xx_usb3(ua))
+        snprintf(args + n, sizeof args - n, "%ssend_frame_size=16360", n ? "," : "");
     if (uhd_usrp_make(&d->usrp, args)) {
         last_error(err, errlen, "uhd_usrp_make");
         d->usrp = NULL;
@@ -250,6 +309,7 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
         return NULL;
     }
     uhd_tx_streamer_max_num_samps(d->tx, &d->max_samps);
+    fprintf(stderr, "uhd: %zu samples per packet (%zu bytes)\n", d->max_samps, d->max_samps * 4);
     uhd_tx_metadata_make(&d->md, false, 0, 0.0, false, false);
     raise_new_threads(old, nold, 55);
 
@@ -263,10 +323,14 @@ static sdr_dev *ud_open(const sdr_params *p, char *err, int errlen)
         ud_close(d);
         return NULL;
     }
-    if (!pthread_create(&d->async_th, NULL, async_thread, d))
+    if (!pthread_create(&d->async_th, NULL, async_thread, d)) {
         d->async_started = 1;
-    if (!pthread_create(&d->send_th, NULL, send_thread, d))
+        pthread_setname_np(d->async_th, "uhd-async");
+    }
+    if (!pthread_create(&d->send_th, NULL, send_thread, d)) {
         d->send_started = 1;
+        pthread_setname_np(d->send_th, "uhd-send");
+    }
     return d;
 }
 

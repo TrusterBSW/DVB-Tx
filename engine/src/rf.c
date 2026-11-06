@@ -1136,6 +1136,9 @@ int rf_start(void)
         void *(*fn)(void *) = c->radio ? dvbt_thread : ts_thread;
         if (pthread_create(&c->th, NULL, fn, c))
             return -1;
+        char nm[16];
+        snprintf(nm, sizeof nm, "carrier%d", c->idx);   /* names for top -H, perf */
+        pthread_setname_np(c->th, nm);
         c->started = 1;
     }
     for (int i = 0; i < g_nbanks; i++) {
@@ -1143,6 +1146,9 @@ int rf_start(void)
             continue;
         if (pthread_create(&g_banks[i]->th, NULL, dvbt_thread, g_banks[i]))
             return -1;
+        char nm[16];
+        snprintf(nm, sizeof nm, "bank%d", i);
+        pthread_setname_np(g_banks[i]->th, nm);
         g_banks[i]->started = 1;
     }
     for (int ri = 0; ri < g_nradios; ri++) {
@@ -1151,6 +1157,9 @@ int rf_start(void)
             continue;
         if (pthread_create(&r->th, NULL, radio_thread, r))
             return -1;
+        char nm[16];
+        snprintf(nm, sizeof nm, "radio%d", ri);
+        pthread_setname_np(r->th, nm);
         r->started = 1;
     }
     return 0;

@@ -275,6 +275,30 @@ void dvb_bch_init(dvb_bch *b, int short_frame, int nparity)
             int bit = 192 - nparity + i;
             g[2 - bit / 64] |= 1ULL << (bit % 64);
         }
+    b->g[0] = g[0];
+    b->g[1] = g[1];
+    b->g[2] = g[2];
+    /* mu: quotient of x^256 by G = x^192 + g, minus its x^64 term (long division over 5 words,
+     * d[0] holding x^256..x^319) */
+    uint64_t d[5] = { 1, 0, 0, 0, 0 }, mu = 0;
+    for (int k = 256; k >= 192; k--) {
+        int w = 4 - k / 64, bit = k % 64;
+        if (!((d[w] >> bit) & 1))
+            continue;
+        int sh = k - 192;                 /* G * x^sh: x^192 at bit k, g shifted by sh */
+        d[w] ^= 1ULL << bit;
+        if (sh < 64)
+            mu |= 1ULL << sh;
+        uint64_t gs[4] = { 0, g[0], g[1], g[2] };   /* g in words of x^256.. down to x^0 */
+        for (int i = 0; i < sh; i++) {               /* shift left by sh, bit by bit (init only) */
+            for (int j = 0; j < 3; j++)
+                gs[j] = (gs[j] << 1) | (gs[j + 1] >> 63);
+            gs[3] <<= 1;
+        }
+        for (int j = 0; j < 4; j++)
+            d[j + 1] ^= gs[j];
+    }
+    b->mu = mu;
     for (int v = 0; v < 256; v++) {
         uint64_t r[3] = { (uint64_t)v << 56, 0, 0 };
         for (int k = 0; k < 8; k++) {
@@ -300,10 +324,64 @@ void dvb_bch_init(dvb_bch *b, int short_frame, int nparity)
         }
 }
 
+#if defined(__x86_64__)
+#include <immintrin.h>
+
+/* 8 bytes at a time with carry-less multiplications (Barrett reduction):
+ * R = (R + w x^128) x^64 mod G; with t the top word of R + w x^128, t x^192 mod G is the low
+ * 192 bits of q g, q = t + floor(t mu / x^64) */
+__attribute__((target("pclmul,sse4.1"))) static void bch_clmul(const dvb_bch *b, const uint8_t *in, int nw,
+                                                               uint64_t *r)
+{
+    uint64_t r0 = r[0], r1 = r[1], r2 = r[2];
+    const __m128i mu = _mm_set_epi64x(0, (long long)b->mu);
+    const __m128i g01 = _mm_set_epi64x((long long)b->g[1], (long long)b->g[2]);   /* g low, g mid */
+    const __m128i g2 = _mm_set_epi64x(0, (long long)b->g[0]);
+    for (int i = 0; i < nw; i++) {
+        uint64_t w;
+        memcpy(&w, in + 8 * i, 8);
+        uint64_t t = r0 ^ __builtin_bswap64(w);
+        __m128i tv = _mm_set_epi64x(0, (long long)t);
+        uint64_t q = t ^ (uint64_t)_mm_extract_epi64(_mm_clmulepi64_si128(tv, mu, 0x00), 1);
+        __m128i qv = _mm_set_epi64x(0, (long long)q);
+        __m128i p0 = _mm_clmulepi64_si128(qv, g01, 0x00);   /* q g_low: bits 0..127 */
+        __m128i p1 = _mm_clmulepi64_si128(qv, g01, 0x10);   /* q g_mid: bits 64..191 */
+        __m128i p2 = _mm_clmulepi64_si128(qv, g2, 0x00);    /* q g_high: bits 128..255 */
+        uint64_t lo = (uint64_t)_mm_cvtsi128_si64(p0);
+        uint64_t mid = (uint64_t)_mm_extract_epi64(p0, 1) ^ (uint64_t)_mm_cvtsi128_si64(p1);
+        uint64_t hi = (uint64_t)_mm_extract_epi64(p1, 1) ^ (uint64_t)_mm_cvtsi128_si64(p2);
+        r0 = r1 ^ hi;
+        r1 = r2 ^ mid;
+        r2 = lo;
+    }
+    r[0] = r0;
+    r[1] = r1;
+    r[2] = r2;
+}
+
+static int have_clmul(void)
+{
+    static int v = -1;
+    if (v < 0)   /* DVBTX_NO_CLMUL: the table version, for comparisons */
+        v = __builtin_cpu_supports("pclmul") && __builtin_cpu_supports("sse4.1") && !getenv("DVBTX_NO_CLMUL");
+    return v;
+}
+#endif
+
 void dvb_bch_encode(const dvb_bch *b, const uint8_t *in, int kbch, uint8_t *parity)
 {
     uint64_t r0 = 0, r1 = 0, r2 = 0;
     int n = kbch / 8, i = 0;
+#if defined(__x86_64__)
+    if (have_clmul()) {
+        uint64_t r[3] = { 0, 0, 0 };
+        bch_clmul(b, in, n / 8, r);
+        r0 = r[0];
+        r1 = r[1];
+        r2 = r[2];
+        i = n / 8 * 8;
+    }
+#endif
     for (; i + 4 <= n; i += 4) {   /* 4 bytes at a time (the remainder is linear) */
         const uint64_t *t3 = b->tab[3][(r0 >> 56) ^ in[i]];
         const uint64_t *t2 = b->tab[2][((r0 >> 48) & 0xff) ^ in[i + 1]];
@@ -422,6 +500,56 @@ static inline void store360(const uint64_t *w, uint8_t *p)
 
 #define MASK40 ((1ULL << 40) - 1)
 
+/* 8 x 8 bit transpose: bit k of byte i <-> bit i of byte k */
+static inline uint64_t transpose8(uint64_t x)
+{
+    uint64_t t;
+    t = (x ^ (x >> 7)) & 0x00AA00AA00AA00AAULL;
+    x ^= t ^ (t << 7);
+    t = (x ^ (x >> 14)) & 0x0000CCCC0000CCCCULL;
+    x ^= t ^ (t << 14);
+    t = (x ^ (x >> 28)) & 0x00000000F0F0F0F0ULL;
+    x ^= t ^ (t << 28);
+    return x;
+}
+
+/* the parity in natural order, MSB first: bit j = r + Q c is bit c of row r (P[r], LSB first).
+ * 8 columns x 8 rows at a time: one transpose gives, for each of the 8 columns, the bits of the
+ * 8 rows as one byte (row r0 in its MSB); each column is then q bits appended to the output. */
+static void parity_natural(const uint64_t (*P)[W6], int q, uint8_t *out)
+{
+    int ng = (q + 7) / 8;
+    uint8_t col[8][24];           /* per column of the block: its q bits, MSB first, by bytes */
+    uint64_t acc = 0;
+    int n = 0;
+    const uint8_t *row0 = (const uint8_t *)P[0];
+    for (int cb = 0; cb < 45; cb++) {
+        for (int g = 0; g < ng; g++) {
+            int r0 = 8 * g, m = q - r0 < 8 ? q - r0 : 8;
+            uint64_t x = 0;
+            for (int i = 0; i < m; i++)   /* row r0 + i at byte 7 - i: it ends in the MSB */
+                x |= (uint64_t)row0[(size_t)(r0 + i) * W6 * 8 + cb] << (8 * (7 - i));
+            x = transpose8(x);
+            for (int k = 0; k < 8; k++)
+                col[k][g] = (uint8_t)(x >> (8 * k));
+        }
+        for (int k = 0; k < 8; k++) {
+            int left = q;
+            for (int g = 0; g < ng; g++, left -= 8) {
+                int nb = left < 8 ? left : 8;
+                acc = acc << nb | (uint64_t)(col[k][g] >> (8 - nb));
+                n += nb;
+                if (n >= 32) {
+                    for (; n >= 8; n -= 8)
+                        *out++ = (uint8_t)(acc >> (n - 8));
+                }
+            }
+        }
+    }
+    for (; n >= 8; n -= 8)
+        *out++ = (uint8_t)(acc >> (n - 8));
+}
+
 void dvb_ldpc_encode(const dvb_ldpc *l, const uint8_t *in, uint8_t *parity, int parity_interleaved)
 {
     int q = l->q;
@@ -491,17 +619,7 @@ void dvb_ldpc_encode(const dvb_ldpc *l, const uint8_t *in, uint8_t *parity, int 
         for (int r = 0; r < q; r++)
             store360(P[r], parity + 45 * r);
     } else {
-        /* natural order: parity bit j = r + Q c */
-        int j = 0;
-        uint8_t acc = 0;
-        for (int c = 0; c < 360; c++) {
-            int wi = c >> 6, bi = c & 63;
-            for (int r = 0; r < q; r++) {
-                acc = (uint8_t)(acc << 1 | ((P[r][wi] >> bi) & 1));
-                if ((++j & 7) == 0)
-                    parity[(j >> 3) - 1] = acc;
-            }
-        }
+        parity_natural(P, q, parity);
     }
 }
 

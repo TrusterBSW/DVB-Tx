@@ -65,6 +65,8 @@ void dvb_bbscramble(uint8_t *buf, int nbytes);
 typedef struct dvb_bch {
     int nparity;              /* parity bits */
     uint64_t tab[4][256][3];  /* remainder of byte * x^(n + 8 k), left aligned in 192 bits */
+    uint64_t g[3];            /* G = x^192 + g (g left aligned like the remainder, g[0] high) */
+    uint64_t mu;              /* x^256 / G = x^64 + mu (Barrett), for the carry-less version */
 } dvb_bch;
 
 void dvb_bch_init(dvb_bch *b, int short_frame, int nparity);

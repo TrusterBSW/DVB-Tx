@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+#define _GNU_SOURCE   /* pthread_setname_np */
 #include "fcbank.h"
 
 #include <fftw3.h>
@@ -381,6 +382,9 @@ static void start_workers(fcbank *k)
             k->nworkers = w;
             break;
         }
+        char nm[16];
+        snprintf(nm, sizeof nm, "bank-w%d", w);
+        pthread_setname_np(k->th[w], nm);
         __atomic_store_n(&k->running, w + 1, __ATOMIC_RELEASE);
     }
 }

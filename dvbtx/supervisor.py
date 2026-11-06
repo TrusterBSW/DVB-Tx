@@ -625,7 +625,9 @@ class Supervisor:
             if line.startswith("fatal: "):
                 self.engine_fatal = line[7:]
             lvl = logging.WARNING if " WRN " in line else logging.ERROR if " ERR " in line else logging.INFO
-            logging.getLogger("dvbtx.engine").log(lvl, "%s", line.split(" ", 2)[-1])
+            # the engine's own lines start with its time and level, the plugins' (fprintf) do not
+            m = re.match(r"\d\d:\d\d:\d\d(\.\d+)? [A-Z]+ ", line)
+            logging.getLogger("dvbtx.engine").log(lvl, "%s", line[m.end():] if m else line)
 
     def _on_stats(self, st):
         with self.lock:
