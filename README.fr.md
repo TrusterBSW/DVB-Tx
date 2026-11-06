@@ -55,6 +55,7 @@ programmes, comme sur la TNT.
 - [Changer les chaînes pendant l'émission](#changer-les-chaînes-pendant-lémission)
 - [Page web](#page-web)
 - [Service et profils d'énergie](#service-et-profils-dénergie)
+- [Sur Proxmox VE : hôte, conteneur ou VM](#sur-proxmox-ve--hôte-conteneur-ou-vm)
 - [Normes et radios](#normes-et-radios)
 - [Mesures](#mesures)
 - [Documentation](#documentation)
@@ -280,6 +281,38 @@ Mesuré sur un Intel i3-8100T avec quatre multiplex sur deux radios : au repos 1
 l'antenne 22,1 W → 13,9 W (processeur), sans sous-débit. `man 8 dvbtx-power`.
 
 Depuis les sources (sans paquet) : `sudo packaging/install-service.sh -c FICHIER [--power]`.
+
+## Sur Proxmox VE : hôte, conteneur ou VM
+
+- **Sur l'hôte** : le plus simple, et tout fonctionne, profils d'énergie compris. ffmpeg, Python et
+  les bibliothèques radio s'installent alors sur l'hyperviseur.
+- **Dans un conteneur LXC (CT)** : les mêmes performances que l'hôte (noyau partagé), à condition de
+  lui donner ceci dans `/etc/pve/lxc/<ID>.conf` :
+
+  ```
+  lxc.cgroup2.devices.allow: c 189:* rwm
+  lxc.mount.entry: /dev/bus/usb dev/bus/usb none bind,optional,create=dir
+  lxc.cgroup2.devices.allow: c 10:* rwm
+  lxc.mount.entry: /dev/cpu_dma_latency dev/cpu_dma_latency none bind,optional,create=file
+  lxc.prlimit.rtprio: 99
+  lxc.prlimit.memlock: unlimited
+  ```
+
+  - Tout le bus USB, pas un seul périphérique : un B210 est ré-énuméré quand UHD charge son
+    firmware, et toute radio quand on la rebranche.
+  - La priorité temps réel des threads radio : sans elle, des sous-débits dès que la machine est
+    chargée.
+  - `/dev/cpu_dma_latency` pour `cpu_latency_us`.
+  - `/dev/dri` aussi pour le transcodage sur GPU, et `~/.config/uhd.conf` pour l'image FPGA d'un
+    clone de B210.
+  - Les profils d'énergie (`dvbtx-power`) écrivent dans `/sys` : ils restent sur l'hôte.
+  - Donnez-lui 3 ou 4 cœurs pour les plus hauts débits.
+- **Dans une VM avec passthrough USB** : à éviter pour un USRP à haut débit, car l'USB émulé ajoute
+  de la latence et de la gigue, donc des sous-débits. Passez plutôt tout le contrôleur USB
+  (passthrough PCIe).
+
+Le réglage du conteneur découle de ce que le moteur utilise ; il n'a pas encore été mesuré face à
+l'hôte.
 
 ## Normes et radios
 

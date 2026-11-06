@@ -54,6 +54,7 @@ on the coax finds them with their names, numbers and programme guide, as on regu
 - [Changing channels on air](#changing-channels-on-air)
 - [Web page](#web-page)
 - [Service and power profiles](#service-and-power-profiles)
+- [On Proxmox VE: host, container or VM](#on-proxmox-ve-host-container-or-vm)
 - [Standards and radios](#standards-and-radios)
 - [Measurements](#measurements)
 - [Documentation](#documentation)
@@ -274,6 +275,34 @@ Measured on an Intel i3-8100T with four multiplexes on two radios: idle 1.37 W â
 22.1 W â†’ 13.9 W (processor package), no underrun. `man 8 dvbtx-power`.
 
 From a source checkout (no package): `sudo packaging/install-service.sh -c FILE [--power]`.
+
+## On Proxmox VE: host, container or VM
+
+- **On the host**: the simplest, and everything works, power profiles included. ffmpeg, Python and
+  the radio libraries are then installed on the hypervisor.
+- **In an LXC container (CT)**: the same performance as the host (shared kernel), provided the
+  container gets the following in `/etc/pve/lxc/<ID>.conf`:
+
+  ```
+  lxc.cgroup2.devices.allow: c 189:* rwm
+  lxc.mount.entry: /dev/bus/usb dev/bus/usb none bind,optional,create=dir
+  lxc.cgroup2.devices.allow: c 10:* rwm
+  lxc.mount.entry: /dev/cpu_dma_latency dev/cpu_dma_latency none bind,optional,create=file
+  lxc.prlimit.rtprio: 99
+  lxc.prlimit.memlock: unlimited
+  ```
+
+  - The whole USB bus, not one device: a B210 is enumerated again when UHD loads its firmware, and
+    any radio when it is replugged.
+  - The real-time priority of the radio threads: without it, underruns under load.
+  - `/dev/cpu_dma_latency` for `cpu_latency_us`.
+  - `/dev/dri` too for GPU transcoding, and `~/.config/uhd.conf` for a B210 clone's FPGA image.
+  - The power profiles (`dvbtx-power`) write to `/sys`: they stay on the host.
+  - Give it 3 or 4 cores for the highest rates.
+- **In a VM with USB passthrough**: to avoid for a USRP at high rate, because emulated USB adds
+  latency and jitter, hence underruns. Pass the whole USB controller (PCIe passthrough) instead.
+
+The container setup is derived from what the engine uses, not yet measured against the host.
 
 ## Standards and radios
 
