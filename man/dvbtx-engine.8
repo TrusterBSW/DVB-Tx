@@ -806,6 +806,31 @@ Without the right to do so, the engine warns once
 and runs at normal priority; underruns are then likely under load.
 The packaged systemd units set
 .BR LimitRTPRIO=99 .
+.PP
+The threads are named, as
+.B top \-H
+or
+.B ps \-L
+show them:
+.BR carrier N
+(coding of carrier N),
+.BR bank N
+and its workers
+.BR bank\-w N
+(filter banks),
+.BR t2\-w N
+(DVB\-T2 group workers),
+.BR radio N
+(radio thread N in
+.BR engine.ini ),
+.B uhd\-send
+and
+.BR uhd\-async ,
+.B inputs
+(UDP reception).
+A thread a library creates takes the name of the thread that started it: the
+USB transport thread of UHD shows as
+.BR radio N.
 .SH CPU AFFINITY
 .B cpus = auto
 (default) reads

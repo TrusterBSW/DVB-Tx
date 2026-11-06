@@ -2,7 +2,7 @@
 .nr HY 0
 .TH DVBTX 1 2026-11-02 "dvbtx 0.1.0" "manuel dvbtx"
 .SH NOM
-dvbtx \- émetteur DVB sur radios logicielles\~: flux en direct, captures et fichiers vers DVB-T, DVB-T2, DVB-C, DVB-S, DVB-S2
+dvbtx \- émetteur DVB sur radios logicielles\~: flux en direct, captures et fichiers vers DVB-T, DVB-T2, DVB-C, DVB-S, DVB-S2/S2X
 .SH SYNOPSIS
 .SY dvbtx
 .RI [ COMMANDE ]
@@ -62,7 +62,7 @@ YouTube, listes de lecture M3U, tvheadend), de périphériques de capture (webca
 HDMI, écran), de fichiers et de tubes, et les module sur des radios logicielles\~: HackRF One,
 USRP B200/B210 (UHD) et tout émetteur SoapySDR.
 Une radio porte un nombre quelconque de porteuses (multiplex) en DVB-T, DVB-T2, DVB-C, DVB-S ou
-DVB-S2\~; le nombre de radios, et de chaînes par multiplex, est libre.
+DVB-S2/S2X\~; le nombre de radios, et de chaînes par multiplex, est libre.
 Il génère les tables PSI/SI (PAT, PMT, NIT avec les numéros logiques de chaîne, SDT, EIT à partir de
 XMLTV, TDT/TOT), cadence chaque multiplex sur sa radio, bascule une chaîne sur un flux de secours
 quand sa source tombe en panne, et sert une page web de supervision et de pilotage.

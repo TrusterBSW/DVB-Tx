@@ -168,10 +168,13 @@ deinterlace = false
 [[radio]]
 name = "hackrf"
 driver = "hackrf"                       # hackrf, uhd (USRP B200/B210...), soapy (LimeSDR, Pluto...), null (no radio)
-args = ""                               # hackrf: "serial=...", "rt=60" (SCHED_FIFO priority of its USB thread,
+# serial = ""                           # the device it is bound to ("dvbtx devices" lists them, "dvbtx devices
+                                        # --save hackrf" writes the free one); none: the first device of the driver
+args = ""                               # hackrf: "rt=60" (SCHED_FIFO priority of its USB thread,
                                         # default 60, 0: none), "m0_poll=1" (s between reads of its gap counter),
                                         # "cb_log_ms=12" (diagnosis: log USB callbacks later than that, and each gap);
-                                        # uhd: "serial=...,type=b200"; soapy: "driver=lime"
+                                        # uhd: "type=b200", "send_frame_size=..." (16360 by default on
+                                        # USB 3); soapy: "driver=lime"
 gain = 30                               # hackrf: TX VGA 0-47 dB; uhd: 0-89.75 dB
 amp = false                             # hackrf +14 dB amplifier
 ppm = 0.0                               # oscillator correction

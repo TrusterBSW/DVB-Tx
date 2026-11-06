@@ -793,7 +793,11 @@ key),
 (log USB callbacks later than that).
 uhd:
 .BR serial=...,type=b200 ,
-.BR master_clock_rate=... .
+.BR master_clock_rate=... ,
+.BR num_send_frames=... ,
+.B send_frame_size=...
+(a B2xx on USB 3 gets 16360-byte frames unless given: half the packets of UHD's default, about a
+third less CPU in UHD at 61 MS/s; larger ones break the stream).
 soapy:
 .BR driver=lime .
 null:

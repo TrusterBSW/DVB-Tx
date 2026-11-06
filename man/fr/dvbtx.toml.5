@@ -796,7 +796,12 @@ hackrf\~:
 (journaliser les rappels USB plus tardifs que cette valeur).
 uhd\~:
 .BR serial=...,type=b200 ,
-.BR master_clock_rate=... .
+.BR master_clock_rate=... ,
+.BR num_send_frames=... ,
+.B send_frame_size=...
+(un B2xx en USB 3 reçoit des trames de 16360 octets sauf indication contraire\~: deux fois moins de
+paquets que le défaut d'UHD, environ un tiers de processeur en moins dans UHD à 61 MS/s\~; au-delà,
+le flux décroche).
 soapy\~:
 .BR driver=lime .
 null\~:

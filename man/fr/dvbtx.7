@@ -319,7 +319,11 @@ garde), DVB\-T2 (EN 302 755, PLP unique\~: 1K à 32K, porteuses normales et
 normales et courtes\~; un portage de gr\-dtv de GNU Radio), DVB\-C (J.83 annexe A,
 16 à 256\-QAM), DVB\-S
 (QPSK, 1/2 à 7/8) et DVB\-S2 (QPSK, 8PSK, 16APSK, 32APSK, trames normales et
-courtes, pilotes).
+courtes, pilotes) avec le DVB\-S2X (EN 302 307\-2\~: 8APSK à 256APSK, les rendements
+S2X, roll-offs 0,15, 0,10 et 0,05\~; sauf VL\-SNR).
+Le codeur DVB\-S2 travaille par mots (BCH par multiplication sans retenue quand le
+processeur a PCLMUL, parité LDPC par transpositions de 8 \(mu 8 bits)\~: environ
+24 cycles par symbole 256APSK.
 Une porteuse de norme
 .B ts
 est seulement multiplexée, et envoyée à son débit vers une adresse UDP ou un
@@ -589,12 +593,16 @@ DVB\-S2
 QPSK, 8PSK, 16APSK, 32APSK\~: identique au symbole près à gr\-dtv\~; 8PSK 9/10 à
 20 Msym/s décodé sans erreur par gr\-dvbs2rx.
 .TP
+DVB\-S2X
+Chaque MODCOD identique au symbole près à gr\-dtv\~; reçu sur l'air par le
+récepteur logiciel dvbrx (8APSK à 256APSK, roll-offs 0,15 à 0,05, sans erreur).
+.TP
 HackRF One
 Validé, jusqu'à 20 MS/s\~: 2 multiplex adjacents de 8 MHz.
 .TP
 USRP B200/B210 (UHD)
 Validé, 56 MHz\~: 6 multiplex adjacents de 8 MHz (190 Mbit/s de débit utile en
-DVB\-T).
+DVB\-T), ou une porteuse DVB\-S2X jusqu'à 52 Msym/s (roll-off 0,05, 54,6 MHz).
 .TP
 Émetteurs SoapySDR
 Compilé, non essayé.
@@ -614,6 +622,13 @@ erreur.
 .IP \(bu
 DVB\-C 256\-QAM 6,9 Msym/s (50,87 Mbit/s)\~: B210 C/N 41,5 dB, aucune erreur.
 .IP \(bu
+B210 vers un récepteur B210 (dvbrx, égaliseur appris sur les pilotes), 61,4 MS/s\~:
+DVB\-S2X 256APSK 135/180 à 52 Msym/s, roll-off 0,05, SNR 23,8 dB, 300,2 Mbit/s sans
+erreur\~; DVB\-S2 QPSK 3/4 à 46, 50 et 52 Msym/s (roll-offs 0,20, 0,10, 0,05), SNR
+16,6 à 17,8 dB, sans erreur une fois accroché.
+Au-delà d'environ 40 Msym/s, la chaîne analogique du B210 laisse un plancher de
+distorsion linéaire vers 18 dB, que l'égaliseur du récepteur supprime.
+.IP \(bu
 Flux reçu passé dans TSDuck\~: aucune erreur de continuité, PCR conformes, NIT,
 SDT, EIT et TOT correctes\~; un téléviseur trouve les chaînes avec noms, numéros,
 EPG, son AAC et E\-AC\-3 5.1.
@@ -629,6 +644,10 @@ porteuse DVB\-C à côté d'une porteuse DVB\-T2 mesure 59 dB de MER au lieu de 
 CPU du moteur, T2 32K 256\-QAM 5/6\~: 0,42 cœur à 18,29 MS/s en synthèse directe
 contre 1,16 avec le banc de filtres à 16,33 MS/s\~; deux porteuses T2 et une
 DVB\-C 256\-QAM\~: 1,06 cœur à 27,43 MS/s contre 2,68 à 24,18 MS/s.
+DVB\-S2X 256APSK 135/180 à 52 Msym/s sur un B210 (i3\-8100T)\~: 2,17 cœurs en tout,
+dont le banc de filtres 1,14 (quatre threads), la porteuse (multiplexeur et
+codeur) 0,57, UHD 0,40 avec des trames USB de 16360 octets (0,58 avec le défaut
+d'UHD).
 .PP
 Consommation, Intel i3\-8100T, quatre multiplex sur deux radios\~: 22,1 W avec les
 C-states profonds bloqués et le gouverneur performance, 13,9 W avec le profil

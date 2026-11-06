@@ -25,9 +25,10 @@ dvbtx turns a PC and a software radio into a small TV head-end. Give it a list o
 links, YouTube or Twitch lives, an HDMI capture, a webcam, a folder of films), and any TV plugged
 on the coax finds them with their names, numbers and programme guide, as on regular digital TV.
 
-- **Every DVB flavour**: DVB-T, DVB-T2, DVB-C, DVB-S and DVB-S2, mixed on the same radio.
+- **Every DVB flavour**: DVB-T, DVB-T2, DVB-C, DVB-S and DVB-S2/S2X (up to 256APSK), mixed on the
+  same radio.
 - **Many multiplexes per radio**: 2 on a HackRF One, 6 on a USRP B210, all synthesised together;
-  any number of radios.
+  any number of radios, each bound to its device by serial number.
 - **Sources of every kind**: HLS, RTMP (OBS), SRT, RTSP, UDP, tvheadend, YouTube, Twitch, M3U
   playlists, webcams and HDMI captures, screen, files, folders, pipes.
 - **Broadcast-grade multiplexing**: a C engine clocked by the radio, exact bit rate, PCRs
@@ -85,7 +86,7 @@ and checks each one in a fresh container before publishing it.
 ## Quick start
 
 ```bash
-dvbtx devices                                    # 1. the radios plugged in, with their args
+dvbtx devices                                    # 1. the radios plugged in, with their serial numbers
 sudo cp /usr/share/dvbtx/configs/hackrf-1mux.toml /etc/dvbtx/dvbtx.toml
 sudoedit /etc/dvbtx/dvbtx.toml                   # 2. your channels
 dvbtx check                                      # 3. validate, see the frequency plan
@@ -142,6 +143,7 @@ name = "Home TV"
 [[radio]]
 name = "hackrf"
 driver = "hackrf"              # hackrf, uhd, soapy, null
+serial = "457863c82b6a6a5f"    # optional: this device (dvbtx devices --save hackrf)
 gain = 30
 
 [[carrier]]
@@ -213,8 +215,9 @@ key frame. `man dvbtx-channel`.
 - **sources**: the process of each source (copy or transcode, CPU or which GPU, speed, restarts,
   log, restart button);
 - **configuration**: radios, multiplexes and channels edited with the useful bit rate computed as
-  you type; changes are saved at once and go on air with **Apply** (channels one by one, without
-  touching the others); profiles to switch between setups;
+  you type, a radio bound to a free device of its driver in one click; changes are saved at once
+  and go on air with **Apply** (channels one by one, without touching the others; a configuration
+  the engine refuses leaves the previous one on air); profiles to switch between setups;
 - **logs**; a JSON API (`/api/status`, `/api/channels`...), Prometheus `/metrics`, TSDuck analysis
   exported as JSON.
 
@@ -251,8 +254,9 @@ From a source checkout (no package): `sudo packaging/install-service.sh -c FILE 
 | DVB-C (16 to 256-QAM) | ✅ on air (256-QAM error-free on a B210, 128-QAM on a HackRF) |
 | DVB-S (QPSK 1/2–7/8) | ✅ demodulated by leandvb |
 | DVB-S2 (QPSK, 8PSK, 16APSK, 32APSK) | ✅ symbol-exact against gr-dtv, 8PSK 9/10 decoded error-free by gr-dvbs2rx |
+| DVB-S2X (8APSK to 256APSK, roll-off down to 0.05) | ✅ every MODCOD symbol-exact against gr-dtv; received error-free up to 256APSK at 52 Msym/s |
 | HackRF One | ✅ up to 20 MS/s: 2 adjacent 8 MHz multiplexes |
-| USRP B200/B210 (UHD) | ✅ 56 MHz: 6 adjacent 8 MHz multiplexes |
+| USRP B200/B210 (UHD) | ✅ 56 MHz: 6 adjacent 8 MHz multiplexes, or one DVB-S2X carrier up to 52 Msym/s |
 | SoapySDR transmitters | built, not tried |
 
 ## Measurements
@@ -265,6 +269,8 @@ Radio output cabled to a DVB-T/T2/C receiver:
 | B210, 6 DVB-T multiplexes (474–514 MHz) | all locked, C/N 26–34 dB, BER 0; radio 38 % of a core, ~25 % per multiplex |
 | DVB-T2 32K 256-QAM 5/6 (50.08 Mbit/s) | HackRF C/N 31.7 dB, B210 40 dB, no error |
 | DVB-C 256-QAM 6.9 Msym/s (50.87 Mbit/s) | B210 C/N 41.5 dB, no error |
+| DVB-S2X 256APSK 135/180, 52 Msym/s, roll-off 0.05 (300 Mbit/s) | B210 to B210 (dvbrx receiver): SNR 23.8 dB, no error; 2.2 cores of an i3-8100T |
+| DVB-S2 QPSK 3/4 at 46, 50, 52 Msym/s | B210 to B210: SNR 16.6–17.8 dB, no error once locked |
 | Received stream through TSDuck | no continuity error, PCRs in spec, NIT, SDT, EIT, TOT correct |
 | TV set | channels found with names, numbers, EPG, AAC and E-AC-3 5.1 sound |
 

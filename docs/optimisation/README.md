@@ -87,25 +87,51 @@ Le remplissage tourne dans le seul thread du banc. C'est donc lui qui limite le 
   de l'anneau à `drv->write`.
 - Gain estimé : 5 % d'un cœur environ (deux passes mémoire de 8 octets par échantillon en moins).
 
-### 5. Codage DVB-S2X, le prochain goulot
+### 5. Codage DVB-S2X — fait le 2026-11-06 (non commité)
 
 C'est un seul thread, à 71 % à 52 Msym/s. Au-delà, il saturerait avant le banc.
 
-- La sortie de parité LDPC en ordre naturel (`dvb_ldpc_encode`, `parity_interleaved = 0`) se
-  fait bit par bit sur 360 × q bits. Elle peut passer par mots (transposition de blocs de 64 × 64 bits).
-- L'encodage BCH + LDPC + mapping peut se paralléliser trame par trame, comme le fait dvbrx en
-  réception : le BBFRAME (avec le tirage des paquets TS) reste séquentiel, puis un pool de
-  workers code les trames, et une file ordonnée par numéro de séquence les remet dans l'ordre.
-- AVX2 en multiversion (`__attribute__((target_clones("avx2","default")))`) pour les boucles de
-  XOR du LDPC, sans changer la cible `x86-64-v2` du paquet.
-- Il faudrait d'abord profiler, multiplexeur compris (`mux_pull` à 200 000 paquets/s). `perf`
-  n'est pas installé sur l'i3 : c'est un changement système à demander d'abord.
+Par trame 256APSK 135/180 (kcycles, mesuré au `rdtsc` sur le PC) :
 
-### 6. Envoi UHD (~45 %)
+| Étape | Avant | Après | Comment |
+|---|---|---|---|
+| BBFRAME + CRC-8 | 32 | 32 | inchangé |
+| embrouillage + BCH | 48 | 26 | BCH 8 octets à la fois par multiplication sans retenue (PCLMUL, réduction de Barrett), choisi à l'exécution ; l'ancienne version reste pour les processeurs sans PCLMUL |
+| LDPC | 101 | 72 | parité en ordre naturel par transpositions de blocs de 8 × 8 bits au lieu de bit par bit |
+| entrelacement (demux) | 45 | 36 | une seule passe sur les symboles au lieu d'une par bit |
+| mapping + trame PL | 32 | 32 | inchangé |
+| total | 31 cycles/symbole | 23,5 cycles/symbole | −23 % |
 
-C'est le code interne d'UHD (copie dans les trames USB, libusb). On ne peut guère jouer que sur
-la taille des envois (`num_send_frames`, `send_frame_size`, morceaux de `max_samps × 8`). Le gain
-est incertain.
+Vérifications :
+- les 202 configurations DVB-S2/S2X (trames normales et courtes, pilotes ou non) sont identiques à l'octet près à l'ancien code ;
+- 53 codes LDPC et 76 codes BCH (S2, S2X, T2) ont été comparés sur des entrées aléatoires, sans aucune différence ;
+- en DVB-T2, l'écart avec l'ancien code est le bruit d'arrondi de FFTW (8·10⁻⁷ du RMS, le même que l'ancien code contre lui-même).
+
+Sur l'i3 à 52 Msym/s, le thread de la porteuse (multiplexeur compris) passe de 63 % à 57 %.
+
+Il reste :
+- le cœur du LDPC (≈ 45 kcycles) : AVX2 en multiversion (`target_clones`) ;
+- la sortie en ordre naturel (≈ 25 kcycles) ;
+- l'entrelacement (36 kcycles) ;
+- le multiplexeur, qui n'est pas mesuré à part.
+
+Paralléliser trame par trame ne réduit pas la charge totale : utile seulement au-delà de ce que permet la radio.
+
+### 6. Envoi UHD — fait le 2026-11-06 (non commité)
+
+À 61,4 MS/s, UHD prenait 58 % d'un cœur : 34 % dans notre thread `uhd-send` et 24 % dans son thread de transport USB.
+Les trames USB de 16 360 octets, au lieu des 8 176 par défaut, divisent le nombre de paquets par deux. UHD descend alors à
+40 % (26 + 14), sans aucun sous-débit sur 2 minutes à 52 Msym/s.
+À 32 760 octets, UHD accepte la taille, mais le B210 décroche dès l'émission.
+
+Le module UHD l'ajoute de lui-même (`send_frame_size=16360`) quand la carte visée est un B2xx en USB 3. Il le vérifie
+dans sysfs, d'après le fabricant et la vitesse, pour la carte de `serial=...` ou pour toutes celles qui sont branchées.
+Si `args` donne `send_frame_size`, sa valeur prime.
+
+Les threads du moteur ont maintenant des noms, visibles dans `top -H` : `carrier0`, `bank0`, `bank-w0`, `radio0`,
+`uhd-send`, `uhd-async`, `t2-w0`, `inputs`. Le thread de transport créé par UHD hérite du nom `radio0`.
+
+Bilan sur l'i3 (52 Msym/s, 256APSK 135/180, roll-off 0,05) : le moteur passe de 248 % à 217 % d'un cœur au total.
 
 Les pistes 1 à 4 ramèneraient l'i3 d'environ 2,4 à environ 1,7 cœur à 52 Msym/s. C'est de la
 consommation et de la chaleur en moins sur batterie, pas seulement de la charge par cœur.

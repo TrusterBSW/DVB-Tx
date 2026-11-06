@@ -832,6 +832,30 @@ et tourne en priorité normale ; les sous-débits sont alors probables sous
 charge.
 Les unités systemd fournies par les paquets fixent
 .BR LimitRTPRIO=99 .
+.PP
+Les threads portent un nom, visible dans
+.B top \-H
+ou
+.B ps \-L\~:
+.BR carrier N
+(codage de la porteuse N),
+.BR bank N
+et ses auxiliaires
+.BR bank\-w N
+(bancs de filtres),
+.BR t2\-w N
+(auxiliaires des groupes DVB\-T2),
+.BR radio N
+(thread de la radio N d'\c
+.BR engine.ini ),
+.B uhd\-send
+et
+.BR uhd\-async ,
+.B inputs
+(réception UDP).
+Un thread créé par une bibliothèque prend le nom du thread qui l'a lancé\~: le
+thread de transport USB d'UHD apparaît comme
+.BR radio N.
 .SH AFFINITÉ PROCESSEUR
 .B cpus = auto
 (par défaut) lit

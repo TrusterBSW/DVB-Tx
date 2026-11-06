@@ -1,6 +1,6 @@
 # Six adjacent DVB-T multiplexes (474-514 MHz, UHF 21-26) on one USRP B210: 6 x 31.67 = 190 Mbit/s.
 # One 49152-point OFDM synthesis at 54.857 MS/s (the B210 analog bandwidth is 56 MHz).
-# More carriers: add a second radio (args = "serial=...") and give it its own carriers.
+# More carriers: add a second radio (serial = "...", see dvbtx devices) and give it its own carriers.
 [network]
 name = "BsT"
 provider = "BillysTV"
@@ -8,7 +8,7 @@ provider = "BillysTV"
 [[radio]]
 name = "b210"
 driver = "uhd"
-args = ""                       # e.g. "serial=JN76WAJ"
+# serial = "JN76WAJ"            # this B210 (dvbtx devices --save b210)
 gain = 50
 
 [[carrier]]

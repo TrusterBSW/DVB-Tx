@@ -1,6 +1,6 @@
 .TH DVBTX 1 2026-11-02 "dvbtx 0.1.0" "dvbtx manual"
 .SH NAME
-dvbtx \- DVB transmitter on software radios: live streams, captures and files to DVB-T, DVB-T2, DVB-C, DVB-S, DVB-S2
+dvbtx \- DVB transmitter on software radios: live streams, captures and files to DVB-T, DVB-T2, DVB-C, DVB-S, DVB-S2/S2X
 .SH SYNOPSIS
 .SY dvbtx
 .RI [ COMMAND ]
@@ -58,7 +58,7 @@ dvbtx \- DVB transmitter on software radios: live streams, captures and files to
 builds complete DVB multiplexes from live streams (HLS, RTMP, SRT, RTSP, Twitch, YouTube, M3U
 playlists, tvheadend), capture devices (webcam, HDMI capture, screen), files and pipes, and
 modulates them on software radios: HackRF One, USRP B200/B210 (UHD) and any SoapySDR transmitter.
-A radio carries any number of carriers (multiplexes) in DVB-T, DVB-T2, DVB-C, DVB-S or DVB-S2;
+A radio carries any number of carriers (multiplexes) in DVB-T, DVB-T2, DVB-C, DVB-S or DVB-S2/S2X;
 there can be any number of radios and of services per multiplex.
 It generates the PSI/SI tables (PAT, PMT, NIT with logical channel numbers, SDT, EIT from XMLTV,
 TDT/TOT), clocks every multiplex on its radio, switches a service to a backup clip when its

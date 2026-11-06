@@ -543,7 +543,8 @@ def cmd_calc(a):
 
 MAIN_HELP = """DVB transmitter: live streams, capture devices, files and pipes made into complete DVB
 multiplexes (PSI/SI, EPG, logical channel numbers) and modulated on software radios (HackRF One,
-USRP B200/B210, SoapySDR): DVB-T, DVB-T2, DVB-C, DVB-S, DVB-S2, any number of carriers per radio.
+USRP B200/B210, SoapySDR): DVB-T, DVB-T2, DVB-C, DVB-S, DVB-S2/S2X, any number of carriers per
+radio.
 Closed coax only: radiating on broadcast frequencies is forbidden.
 
 Without a command, "run" is meant: dvbtx -c my.toml is dvbtx run -c my.toml."""

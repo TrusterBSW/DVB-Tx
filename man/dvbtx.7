@@ -302,7 +302,11 @@ interval), DVB\-T2 (EN 302 755, single PLP: 1K to 32K, normal and extended
 carriers, PP1 to PP8, QPSK to 256\-QAM rotated, normal and short FEC frames;
 a port of GNU Radio gr\-dtv), DVB\-C (J.83 annex A, 16 to 256\-QAM), DVB\-S
 (QPSK, 1/2 to 7/8) and DVB\-S2 (QPSK, 8PSK, 16APSK, 32APSK, normal and short
-frames, pilots).
+frames, pilots) with DVB\-S2X (EN 302 307\-2: 8APSK to 256APSK, the S2X code
+rates, roll-offs 0.15, 0.10 and 0.05; VL\-SNR excepted).
+The DVB\-S2 coder works on words (BCH by carry-less multiplication when the
+processor has PCLMUL, LDPC parity by 8 \(mu 8 bit transposes): about 24 cycles per
+256APSK symbol.
 A carrier of standard
 .B ts
 is only multiplexed, and sent to a UDP address or a file at its rate.
@@ -557,12 +561,16 @@ DVB\-S2
 QPSK, 8PSK, 16APSK, 32APSK: symbol-exact against gr\-dtv; 8PSK 9/10 at
 20 Msym/s decoded error-free by gr\-dvbs2rx.
 .TP
+DVB\-S2X
+Every MODCOD symbol-exact against gr\-dtv; received over the air by the dvbrx
+software receiver (8APSK to 256APSK, roll-offs 0.15 to 0.05, no error).
+.TP
 HackRF One
 Validated, up to 20 MS/s: 2 adjacent 8 MHz multiplexes.
 .TP
 USRP B200/B210 (UHD)
 Validated, 56 MHz: 6 adjacent 8 MHz multiplexes (190 Mbit/s of payload in
-DVB\-T).
+DVB\-T), or one DVB\-S2X carrier up to 52 Msym/s (roll-off 0.05, 54.6 MHz).
 .TP
 SoapySDR transmitters
 Built, not tried.
@@ -582,6 +590,13 @@ error.
 .IP \(bu
 DVB\-C 256\-QAM 6.9 Msym/s (50.87 Mbit/s): B210 C/N 41.5 dB, no error.
 .IP \(bu
+B210 to a B210 receiver (dvbrx, pilot-trained equaliser), 61.4 MS/s: DVB\-S2X
+256APSK 135/180 at 52 Msym/s, roll-off 0.05, SNR 23.8 dB, 300.2 Mbit/s with no
+error; DVB\-S2 QPSK 3/4 at 46, 50 and 52 Msym/s (roll-offs 0.20, 0.10, 0.05),
+SNR 16.6 to 17.8 dB, no error once locked.
+Beyond about 40 Msym/s the B210 analog chain leaves a linear distortion floor
+near 18 dB, which the receiver's equaliser removes.
+.IP \(bu
 Received stream through TSDuck: no continuity error, PCRs in spec, NIT, SDT,
 EIT and TOT correct; a TV set finds the channels with names, numbers, EPG, AAC
 and E\-AC\-3 5.1 sound.
@@ -596,6 +611,9 @@ carrier beside a DVB\-T2 one measures 59 dB of MER instead of 85.
 Engine CPU, T2 32K 256\-QAM 5/6: 0.42 core at 18.29 MS/s with direct synthesis
 against 1.16 with the filter bank at 16.33 MS/s; two T2 and one DVB\-C
 256\-QAM carriers: 1.06 cores at 27.43 MS/s against 2.68 at 24.18 MS/s.
+DVB\-S2X 256APSK 135/180 at 52 Msym/s on a B210 (i3\-8100T): 2.17 cores in all,
+of which the filter bank 1.14 (four threads), the carrier (multiplexer and
+coder) 0.57, UHD 0.40 with 16360-byte USB frames (0.58 with UHD's default).
 .PP
 Power, Intel i3\-8100T, four multiplexes on two radios: 22.1 W with the deep
 C-states blocked and the performance governor, 13.9 W with the transmit profile

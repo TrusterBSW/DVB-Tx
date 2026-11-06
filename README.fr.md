@@ -26,9 +26,10 @@ de chaînes (liens IPTV, directs YouTube ou Twitch, capture HDMI, webcam, dossie
 téléviseur branché sur le câble les trouve, avec leurs noms, leurs numéros et le guide des
 programmes, comme sur la TNT.
 
-- **Toutes les normes DVB** : DVB-T, DVB-T2, DVB-C, DVB-S et DVB-S2, mélangées sur la même radio.
+- **Toutes les normes DVB** : DVB-T, DVB-T2, DVB-C, DVB-S et DVB-S2/S2X (jusqu'au 256APSK),
+  mélangées sur la même radio.
 - **Plusieurs multiplex par radio** : 2 sur un HackRF One, 6 sur un USRP B210, synthétisés
-  ensemble ; autant de radios que voulu.
+  ensemble ; autant de radios que voulu, chacune liée à sa carte par son numéro de série.
 - **Toutes sortes de sources** : HLS, RTMP (OBS), SRT, RTSP, UDP, tvheadend, YouTube, Twitch, listes
   M3U, webcams et cartes de capture HDMI, écran, fichiers, dossiers, tubes.
 - **Un multiplexage de qualité broadcast** : un moteur en C cadencé par la radio, débit exact, PCR
@@ -87,7 +88,7 @@ version, puis installe et vérifie chacun dans un conteneur neuf avant de le pub
 ## Démarrage rapide
 
 ```bash
-dvbtx devices                                    # 1. les radios branchées, avec leurs args
+dvbtx devices                                    # 1. les radios branchées, avec leurs numéros de série
 sudo cp /usr/share/dvbtx/configs/hackrf-1mux.toml /etc/dvbtx/dvbtx.toml
 sudoedit /etc/dvbtx/dvbtx.toml                   # 2. vos chaînes
 dvbtx check                                      # 3. vérifier, voir le plan de fréquences
@@ -144,6 +145,7 @@ name = "Ma TV"
 [[radio]]
 name = "hackrf"
 driver = "hackrf"              # hackrf, uhd, soapy, null
+serial = "457863c82b6a6a5f"    # facultatif : cette carte (dvbtx devices --save hackrf)
 gain = 30
 
 [[carrier]]
@@ -217,8 +219,10 @@ sans coupure : la nouvelle prend le relais sur une image clé. `man dvbtx-channe
 - **sources** : le processus de chaque source (copie ou transcodage, CPU ou quel GPU, vitesse,
   redémarrages, journal, bouton de relance) ;
 - **configuration** : radios, multiplex et chaînes modifiés avec le débit utile calculé pendant la
-  saisie ; les changements sont enregistrés tout de suite et passent à l'antenne avec **Appliquer**
-  (les chaînes une par une, sans toucher aux autres) ; des profils pour passer d'un montage à l'autre ;
+  saisie, une radio liée en un clic à une carte libre de son pilote ; les changements sont
+  enregistrés tout de suite et passent à l'antenne avec **Appliquer** (les chaînes une par une, sans
+  toucher aux autres ; une configuration refusée par le moteur laisse la précédente à l'antenne) ;
+  des profils pour passer d'un montage à l'autre ;
 - **journal** ; une API JSON (`/api/status`, `/api/channels`...), `/metrics` pour Prometheus,
   l'analyse TSDuck exportée en JSON.
 
@@ -255,8 +259,9 @@ Depuis les sources (sans paquet) : `sudo packaging/install-service.sh -c FICHIER
 | DVB-C (16 à 256-QAM) | ✅ à l'antenne (256-QAM sans erreur sur B210, 128-QAM sur HackRF) |
 | DVB-S (QPSK 1/2 à 7/8) | ✅ démodulé par leandvb |
 | DVB-S2 (QPSK, 8PSK, 16APSK, 32APSK) | ✅ symboles identiques à gr-dtv, 8PSK 9/10 décodé sans erreur par gr-dvbs2rx |
+| DVB-S2X (8APSK à 256APSK, roll-off jusqu'à 0,05) | ✅ chaque MODCOD identique à gr-dtv au symbole près ; reçu sans erreur jusqu'au 256APSK à 52 Msym/s |
 | HackRF One | ✅ jusqu'à 20 MS/s : 2 multiplex adjacents de 8 MHz |
-| USRP B200/B210 (UHD) | ✅ 56 MHz : 6 multiplex adjacents de 8 MHz |
+| USRP B200/B210 (UHD) | ✅ 56 MHz : 6 multiplex adjacents de 8 MHz, ou une porteuse DVB-S2X jusqu'à 52 Msym/s |
 | émetteurs SoapySDR | compilé, pas essayé |
 
 ## Mesures
@@ -269,6 +274,8 @@ Sortie radio câblée vers un récepteur DVB-T/T2/C :
 | B210, 6 multiplex DVB-T (474 à 514 MHz) | tous verrouillés, C/N 26 à 34 dB, BER 0 ; radio 38 % d'un cœur, ~25 % par multiplex |
 | DVB-T2 32K 256-QAM 5/6 (50,08 Mbit/s) | HackRF C/N 31,7 dB, B210 40 dB, aucune erreur |
 | DVB-C 256-QAM 6,9 Msym/s (50,87 Mbit/s) | B210 C/N 41,5 dB, aucune erreur |
+| DVB-S2X 256APSK 135/180, 52 Msym/s, roll-off 0,05 (300 Mbit/s) | B210 vers B210 (récepteur dvbrx) : SNR 23,8 dB, aucune erreur ; 2,2 cœurs d'un i3-8100T |
+| DVB-S2 QPSK 3/4 à 46, 50, 52 Msym/s | B210 vers B210 : SNR 16,6 à 17,8 dB, aucune erreur une fois accroché |
 | flux reçu passé dans TSDuck | aucune erreur de continuité, PCR conformes, NIT, SDT, EIT, TOT corrects |
 | téléviseur | chaînes trouvées avec noms, numéros, EPG, son AAC et E-AC-3 5.1 |
 
