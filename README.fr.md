@@ -51,6 +51,7 @@ programmes, comme sur la TNT.
 - [Fonctionnement](#fonctionnement)
 - [Configuration](#configuration)
 - [Sources](#sources)
+- [Guide des programmes (EPG)](#guide-des-programmes-epg)
 - [Changer les chaînes pendant l'émission](#changer-les-chaînes-pendant-lémission)
 - [Page web](#page-web)
 - [Service et profils d'énergie](#service-et-profils-dénergie)
@@ -67,29 +68,20 @@ une ligne :
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh
+# --extras : aussi streamlink et yt-dlp (HLS sans blocage, sources YouTube et Twitch)
 curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh -s -- --extras
 ```
-
-[`install.sh`](install.sh) fait ceci :
-- il vérifie le système ;
-- il télécharge le dernier paquet de [`releases/`](releases/) et contrôle sa somme dans
-  [`SHA256SUMS`](releases/SHA256SUMS) ;
-- il l'installe avec apt, qui apporte ffmpeg, python3 et les bibliothèques des radios ;
-- il liste les radios qu'il trouve.
-
-Il ne lance jamais l'émission. Ses options :
-- `--extras` installe aussi streamlink, yt-dlp et tsduck : HLS sans blocage, YouTube et Twitch,
-  analyse ;
-- `--power` active les profils d'énergie ;
-- `--deb FICHIER` installe un paquet construit localement.
 
 Ou à la main :
 
 ```bash
 wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.2.0_amd64.deb
 sudo apt install ./dvbtx_0.2.0_amd64.deb
-sudo apt install streamlink yt-dlp tsduck     # facultatif : HLS sans blocage, YouTube, analyse
+sudo apt install streamlink yt-dlp      # facultatif : HLS sans blocage, sources YouTube et Twitch
 ```
+
+TSDuck (facultatif, analyse des multiplex) n'est pas dans les dépôts Debian et Ubuntu : ses paquets
+sont sur sa [page de versions](https://github.com/tsduck/tsduck/releases).
 
 La bibliothèque UHD change de version d'une distribution à l'autre (4.3, 4.6, 4.8). Le paquet
 contient donc le module USRP compilé pour chacune, et le moteur charge celui dont la bibliothèque est
@@ -205,6 +197,30 @@ est jouée par ordre de préférence : la suivante quand celle qui joue tombe, r
 quand elle remarche, le flux de secours quand aucune ne marche. Le HLS passe par streamlink quand il
 est installé : il encaisse les discontinuités (pubs, épisode suivant) qui bloquent ffmpeg. Tout :
 `man 7 dvbtx-sources`.
+
+## Guide des programmes (EPG)
+
+Le téléviseur affiche le programme en cours et le suivant, et celui des jours à venir (EIT
+présent/suivant et programme), à partir de guides XMLTV :
+
+```toml
+[epg]
+dir = "/var/lib/dvbtx/epg"                  # tout *.xml / *.xml.gz déposé ici
+urls = ["http://tunarr:8000/api/xmltv.xml"] # XMLTV téléchargé toutes les heures (url_refresh_s)
+days = 7
+
+[[carrier]]
+  [[carrier.service]]
+  name = "France 24"
+  epg_id = "France24.fr"                    # l'identifiant de la chaîne dans le XMLTV ; sans lui, par le nom
+```
+
+Le paquet règle `dir` sur `/var/lib/dvbtx/epg` : un guide copié là (ou écrit par un autre service,
+un grabber ou Tunarr) est pris en compte dans les 10 minutes, ou tout de suite avec `sudo systemctl
+reload dvbtx`, sans redémarrage. Les fichiers
+EIT XML de TSDuck marchent aussi (associés par service_id).
+`dvbtx epg` montre, pour chaque chaîne, combien d'événements elle a reçus et ce qui passe maintenant
+et ensuite. Toutes les clés : `man 5 dvbtx.toml`, section `[epg]`.
 
 ## Changer les chaînes pendant l'émission
 

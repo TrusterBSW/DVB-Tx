@@ -50,6 +50,7 @@ on the coax finds them with their names, numbers and programme guide, as on regu
 - [How it works](#how-it-works)
 - [Configuration](#configuration)
 - [Sources](#sources)
+- [Programme guide (EPG)](#programme-guide-epg)
 - [Changing channels on air](#changing-channels-on-air)
 - [Web page](#web-page)
 - [Service and power profiles](#service-and-power-profiles)
@@ -65,29 +66,20 @@ One package for Debian 12 and 13, Proxmox VE 8 and 9, and Ubuntu 24.04 or later 
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh
+# --extras: also streamlink and yt-dlp (HLS without stalls, YouTube and Twitch sources)
 curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh -s -- --extras
 ```
-
-[`install.sh`](install.sh) does the following:
-- checks the system;
-- downloads the latest package from [`releases/`](releases/) and checks its
-  [`SHA256SUMS`](releases/SHA256SUMS);
-- installs it with apt, which pulls ffmpeg, python3 and the radio libraries;
-- lists the radios it finds.
-
-It never starts transmitting. Its options:
-- `--extras` also installs streamlink, yt-dlp and tsduck: HLS without stalls, YouTube and Twitch,
-  analysis;
-- `--power` turns on the power profiles;
-- `--deb FILE` installs a package built locally.
 
 Or by hand:
 
 ```bash
 wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.2.0_amd64.deb
 sudo apt install ./dvbtx_0.2.0_amd64.deb
-sudo apt install streamlink yt-dlp tsduck     # optional: HLS without stalls, YouTube, analysis
+sudo apt install streamlink yt-dlp      # optional: HLS without stalls, YouTube and Twitch sources
 ```
+
+TSDuck (optional, analysis of the multiplexes) is not in the Debian and Ubuntu repositories: its
+packages are on its [releases page](https://github.com/tsduck/tsduck/releases).
 
 The UHD library changes version from one release to the next (4.3, 4.6, 4.8). The package therefore
 carries the USRP plugin built against each version, and the engine loads the one whose library is
@@ -201,6 +193,30 @@ works: Intel, AMD, NVIDIA are detected and tested once). A list of sources is pl
 preference: the next one when the one playing fails, back to a preferred one when it works again,
 the backup clip when none does. HLS goes through streamlink when installed, which rides the
 discontinuities (ads, next episode) that stall ffmpeg. Everything: `man 7 dvbtx-sources`.
+
+## Programme guide (EPG)
+
+The TV shows what is on now and next, and the programme of the coming days (EIT present/following
+and schedule), from XMLTV guides:
+
+```toml
+[epg]
+dir = "/var/lib/dvbtx/epg"                  # every *.xml / *.xml.gz dropped here
+urls = ["http://tunarr:8000/api/xmltv.xml"] # XMLTV fetched every hour (url_refresh_s)
+days = 7
+
+[[carrier]]
+  [[carrier.service]]
+  name = "France 24"
+  epg_id = "France24.fr"                    # the XMLTV channel id; without it, matched by name
+```
+
+The package sets `dir` to `/var/lib/dvbtx/epg`: a guide copied there (or written by another
+service, a grabber or Tunarr) is taken within 10 minutes, or at once with `sudo systemctl reload
+dvbtx`, without a restart. TSDuck EIT XML
+files work too (matched by service_id).
+`dvbtx epg` shows, for each channel, how many events it got and what is on now and next.
+Every key: `man 5 dvbtx.toml`, section `[epg]`.
 
 ## Changing channels on air
 

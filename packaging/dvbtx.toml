@@ -23,7 +23,7 @@ sdt_period_ms = 1000
 
 [epg]
 dir = "/var/lib/dvbtx/epg"              # every XMLTV (*.xml, *.xml.gz) or TSDuck EIT XML file dropped here is loaded,
-                                        # re-read when it changes (an external service can write it)
+                                        # re-read when it changes (checked every 10 min, at once on reload)
 urls = []                               # XMLTV URLs fetched every url_refresh_s, e.g. ["http://tunarr:8000/api/xmltv.xml"]
 url_refresh_s = 3600
 days = 7                                # EIT schedule depth

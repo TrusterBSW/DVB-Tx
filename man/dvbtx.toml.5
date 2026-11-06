@@ -195,7 +195,8 @@ is set.
 Folder whose XMLTV files
 .RI ( *.xml ,
 .IR *.xml.gz )
-and TSDuck EIT XML files are loaded, and re\-read when they change.
+and TSDuck EIT XML files are loaded, and re\-read when they change (checked every 10 minutes, at once on
+.BR "systemctl reload dvbtx" ).
 XMLTV channels are matched to a service by its
 .BR epg_id ,
 else by name; TSDuck EIT by service_id.

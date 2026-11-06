@@ -8,9 +8,8 @@
 #
 # Options:
 #   --deb FILE   install this .deb instead of downloading the latest one
-#   --extras     also install streamlink, yt-dlp and tsduck when the release has them
-#                (HLS without stalls, YouTube and Twitch sources, stream analysis)
-#   --power      enable the power profiles (dvbtx-power: frugal while nothing is on air)
+#   --extras     also install streamlink and yt-dlp (HLS without stalls, YouTube and Twitch sources);
+#                TSDuck (analysis) is not in the Debian/Ubuntu repositories: https://github.com/tsduck/tsduck/releases
 #   --force      go on with a release that is not one of the above
 #
 # It does not start transmitting: edit /etc/dvbtx/dvbtx.toml first, then
@@ -18,14 +17,13 @@
 set -eu
 
 BASE=${DVBTX_BASE_URL:-https://github.com/TrusterBSW/DVB-Tx/raw/main/releases}
-DEB="" EXTRAS=0 POWER=0 FORCE=0
+DEB="" EXTRAS=0 FORCE=0
 while [ $# -gt 0 ]; do
     case "$1" in
     --deb) DEB=${2:?--deb needs a file}; shift ;;
     --extras) EXTRAS=1 ;;
-    --power) POWER=1 ;;
     --force) FORCE=1 ;;
-    -h | --help) sed -n '3,19s/^# \{0,1\}//p' "$0" 2>/dev/null || echo "see the head of install.sh"; exit 0 ;;
+    -h | --help) sed -n '3,18s/^# \{0,1\}//p' "$0" 2>/dev/null || echo "see the head of install.sh"; exit 0 ;;
     *) echo "install.sh: unknown option $1 (--help)" >&2; exit 2 ;;
     esac
     shift
@@ -88,17 +86,16 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y "$DEB"
 if [ "$EXTRAS" = 1 ]; then
-    for p in streamlink yt-dlp tsduck; do
+    for p in streamlink yt-dlp; do
         if apt-cache policy "$p" 2>/dev/null | grep -q 'Candidate: [0-9]'; then
             if apt-get install -y -qq "$p" >/dev/null 2>&1; then say "extra: $p installed"
             else say "extra: $p could not be installed (apt-get install $p to see why)"; fi
         else
-            say "extra: $p not in this release's repositories, skipped$([ "$p" = tsduck ] && echo ' (packages on https://tsduck.io)')"
+            say "extra: $p not in this release's repositories, skipped"
         fi
     done
-fi
-if [ "$POWER" = 1 ]; then
-    systemctl enable --now dvbtx-power && say "power profiles enabled (dvbtx power status)"
+    command -v tsp >/dev/null ||
+        say "TSDuck (analysis, optional) is not in the repositories: https://github.com/tsduck/tsduck/releases"
 fi
 
 # what is there

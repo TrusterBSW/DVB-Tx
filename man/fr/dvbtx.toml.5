@@ -199,7 +199,8 @@ est renseigné.
 Dossier dont les fichiers XMLTV
 .RI ( *.xml ,
 .IR *.xml.gz )
-et les fichiers XML d'EIT TSDuck sont chargés, puis relus lorsqu'ils changent.
+et les fichiers XML d'EIT TSDuck sont chargés, puis relus lorsqu'ils changent (vérifié toutes les 10 minutes, tout de suite avec
+.BR "systemctl reload dvbtx" ).
 Une chaîne XMLTV est associée à la chaîne de même
 .BR epg_id ,
 sinon de même nom\~; une EIT TSDuck, à celle de même service_id.
