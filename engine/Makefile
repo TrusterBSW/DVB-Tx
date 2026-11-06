@@ -3,6 +3,8 @@ CC ?= gcc
 PREFIX ?= /usr
 LIBDIR ?= $(PREFIX)/lib/dvbtx
 CFLAGS ?= -O3 -march=x86-64-v2 -mtune=generic -g
+VERSION := $(shell cat ../VERSION 2>/dev/null)
+CFLAGS += $(if $(VERSION),-DVERSION_STR=\"$(VERSION)\")
 CFLAGS += -std=gnu11 -fcx-limited-range -Wall -Wextra -Wno-unused-parameter -pthread -DPLUGIN_DIR=\"$(LIBDIR)\"
 LDLIBS = -lfftw3f -lm -ldl -pthread
 BUILD = build

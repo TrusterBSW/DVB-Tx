@@ -7,6 +7,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <glob.h>
 #include <limits.h>
 #include <math.h>
 #include <netinet/in.h>
@@ -145,15 +146,38 @@ static volatile int g_running;
 
 /* ---- plugins ---- */
 
-const sdr_driver *sdr_load(const char *name, char *err, int errlen)
+/* dvbtx-sdr-<name>.so in dir, else its builds for several library versions, dvbtx-sdr-<name>-*.so
+ * (one package for several releases: dvbtx-sdr-uhd-4.8.so, -4.6.so...), newest first: the first one
+ * whose libraries are there. why: the error of a file that exists but does not load. */
+static void *load_in(const char *dir, const char *name, char *why, int whylen)
 {
     char path[PATH_MAX];
-    const char *dir = getenv("DVBTX_PLUGIN_DIR");
-    void *h = NULL;
-    if (dir) {
-        snprintf(path, sizeof path, "%s/dvbtx-sdr-%s.so", dir, name);
-        h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    snprintf(path, sizeof path, "%.3900s/dvbtx-sdr-%.64s.so", dir, name);
+    if (!access(path, F_OK)) {
+        void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+        if (h)
+            return h;
+        snprintf(why, whylen, "%s", dlerror());
     }
+    snprintf(path, sizeof path, "%.3900s/dvbtx-sdr-%.64s-*.so", dir, name);
+    glob_t g;
+    if (glob(path, 0, NULL, &g))
+        return NULL;
+    void *h = NULL;
+    for (size_t i = g.gl_pathc; i-- > 0 && !h;) {
+        h = dlopen(g.gl_pathv[i], RTLD_NOW | RTLD_LOCAL);
+        if (!h)
+            snprintf(why, whylen, "%s", dlerror());
+    }
+    globfree(&g);
+    return h;
+}
+
+const sdr_driver *sdr_load(const char *name, char *err, int errlen)
+{
+    char why[512] = "";
+    const char *dir = getenv("DVBTX_PLUGIN_DIR");
+    void *h = dir ? load_in(dir, name, why, sizeof why) : NULL;
     if (!h) {
         char exe[PATH_MAX];
         ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
@@ -162,16 +186,17 @@ const sdr_driver *sdr_load(const char *name, char *err, int errlen)
             char *slash = strrchr(exe, '/');
             if (slash)
                 *slash = 0;
-            snprintf(path, sizeof path, "%.4000s/dvbtx-sdr-%.64s.so", exe, name);
-            h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+            h = load_in(exe, name, why, sizeof why);
         }
     }
+    if (!h)
+        h = load_in(PLUGIN_DIR, name, why, sizeof why);
     if (!h) {
-        snprintf(path, sizeof path, "%s/dvbtx-sdr-%s.so", PLUGIN_DIR, name);
-        h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-    }
-    if (!h) {
-        snprintf(err, errlen, "radio driver '%s': %s", name, dlerror());
+        if (why[0])
+            snprintf(err, errlen, "radio driver '%s': %s", name, why);
+        else
+            snprintf(err, errlen, "radio driver '%s': no dvbtx-sdr-%s.so (not built: its library missing at "
+                     "build time?)", name, name);
         return NULL;
     }
     const sdr_driver *d = dlsym(h, "dvbtx_sdr_driver");

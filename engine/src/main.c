@@ -31,7 +31,9 @@
 #include "rf.h"
 #include "util.h"
 
-#define VERSION_STR "0.1.0"
+#ifndef VERSION_STR
+#define VERSION_STR "0.2.0"   /* the Makefile passes ../VERSION */
+#endif
 #define MAX_INPUTS 1024
 
 static volatile sig_atomic_t g_quit, g_reload;
