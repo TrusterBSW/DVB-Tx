@@ -43,34 +43,47 @@ Le remplissage tourne dans le seul thread du banc. C'est donc lui qui limite le 
 
 ## Pistes, de la plus rentable à la moins sûre
 
-### 1. Remplissage et accumulation du banc (patch prêt : `fcbank-fill-runs.patch`)
+### 1 et 2. Banc de filtres : remplissage sans recopie, blocs d'environ 8k — faits le 2026-11-08
 
+**Piste 1, remplissage et accumulation sans recopie :**
 - Les nouveaux symboles s'écrivent directement dans le bloc. Seul le recouvrement (L − h
   symboles) est gardé, au lieu d'un `memmove` de la fenêtre suivi d'une copie de L symboles.
-- La fréquence résiduelle (décalage hors grille, inférieur à une raie) n'est plus appliquée
-  par une multiplication complexe en double à chaque symbole. Elle passe par la phase du
-  premier symbole (en double) et une table `e^{j2π·dfph·s}` en float, dans une boucle
-  vectorisable.
-- Les raies sont accumulées par segments contigus (`src` et `dst` consécutifs), dans une boucle
-  vectorisable, au lieu d'un accès indexé raie par raie.
-- Vérifié : précision inchangée (`fcbank_check` : −76,6 dB sur grille, −83,9 dB hors grille,
-  comme l'ancien code), et sortie identique pour 0 à 5 workers (`fcbank_threads_check`). La
-  sortie n'est plus identique au bit près à celle d'avant le patch : la rotation en float
-  diffère vers 1e-7.
-- Gain mesuré sur l'i3 : environ 22 % sur le banc.
-- À appliquer avec `git apply docs/optimisation/fcbank-fill-runs.patch`.
+- La fréquence résiduelle (décalage hors grille, inférieur à une raie) passe par la phase du premier
+  symbole (en double) et une table `e^{j2π·dfph·s}` en float, dans une boucle vectorisable, au lieu
+  d'une multiplication complexe en double à chaque symbole.
+- Les raies sont accumulées par segments contigus, dans une boucle vectorisable, au lieu d'un accès
+  indexé raie par raie.
 
-### 2. Blocs FFT d'environ 8k au lieu de 16k
+**Piste 2, blocs d'environ 8k :** `BLOCK_MIN` passe de 16 384 à 8 192 dans `fcbank_new`. À N ≈ 17k,
+deux tampons de 136 et 115 Ko dépassaient le cache L2 de 256 Ko de l'i3.
 
-- Aujourd'hui, `fcbank_new` vise N ≥ 16 384. À N = 17 010, deux tampons de 136 et 115 Ko
-  dépassent le cache L2 de 256 Ko de l'i3. La FFT inverse coûte alors 333 kcycles, contre
-  98 kcycles à N = 9 072 (pour un bloc deux fois plus petit).
-- Le recouvrement reste d'environ 256 symboles, soit 96 % d'échantillons utiles à N ≈ 9k.
-- Gain mesuré : environ 18 %. **Avec la piste 1, le banc passe de 106 % à 64 % d'un cœur (−40 %)
-  à 52 Msym/s, sur un seul thread.**
-- À vérifier avant : les petites porteuses (DVB-C à 6,9 Msym/s, groupes DVB-T2, banc à 16 MS/s).
-  Elles ont moins de raies par bloc, et la grille des fréquences exactes (`df`) devient plus
-  grossière.
+Charge du banc à 52 Msym/s (256APSK 135/180, 61,425 MS/s, radio null), sur le PC de développement
+(L2 de 1,25 Mo par cœur) :
+
+| Version | Banc de filtres |
+|---|---|
+| avant | 79 % d'un cœur |
+| piste 1 | 62 % (−21 %) |
+| pistes 1 et 2 | 57 % (−28 %) |
+
+Pas encore mesuré sur l'i3, injoignable le 2026-11-08. Avant ces changements, il y avait mesuré −22 % pour la
+piste 1 seule et −18 % pour des blocs de 8k. À refaire là-bas, radio null, avec
+`work/fb/v_old`, `v_16` et `v_8`.
+
+Qualité :
+- **MER vu par un récepteur idéal** (`tests/rx_sc_mer.py`, deux porteuses DVB-C 256-QAM adjacentes,
+  échantillons 16 bits) : inchangé, 85,7 dB en 16k comme en 8k au roll-off 0,15, et 85,5 / 85,4 dB
+  au roll-off 0,05.
+- **Erreur de synthèse totale** (`fcbank_check`) :
+  - sur grille : −76,6 dB en 16k, −64,8 dB en 8k ;
+  - hors grille : −73,4 dB en 16k, −65,9 dB en 8k.
+
+  Elle est uniforme dans le temps et se trouve presque toute dans les flancs du filtre et hors
+  bande (50 dB plus bas dans la bande). C'est donc une fuite hors bande à environ −65 dBc, due à
+  l'échantillonnage en fréquence plus grossier de la réponse RRC sur des blocs courts, et non du
+  bruit sur les symboles. Elle reste très loin sous ce que laisse la chaîne analogique (environ −40 dB).
+- Le recouvrement (256 à 512 symboles) n'y change rien : la troncature des queues n'est pas en cause.
+- Sortie identique au bit près avec 0 à 5 workers (`fcbank_threads_check`).
 
 ### 3. Cadences radio « FFT-friendly » dans le planificateur
 
@@ -87,7 +100,7 @@ Le remplissage tourne dans le seul thread du banc. C'est donc lui qui limite le 
   de l'anneau à `drv->write`.
 - Gain estimé : 5 % d'un cœur environ (deux passes mémoire de 8 octets par échantillon en moins).
 
-### 5. Codage DVB-S2X — fait le 2026-11-06 (non commité)
+### 5. Codage DVB-S2X — fait le 2026-11-06 (0.2.0)
 
 C'est un seul thread, à 71 % à 52 Msym/s. Au-delà, il saturerait avant le banc.
 
@@ -117,7 +130,7 @@ Il reste :
 
 Paralléliser trame par trame ne réduit pas la charge totale : utile seulement au-delà de ce que permet la radio.
 
-### 6. Envoi UHD — fait le 2026-11-06 (non commité)
+### 6. Envoi UHD — fait le 2026-11-06 (0.2.0)
 
 À 61,4 MS/s, UHD prenait 58 % d'un cœur : 34 % dans notre thread `uhd-send` et 24 % dans son thread de transport USB.
 Les trames USB de 16 360 octets, au lieu des 8 176 par défaut, divisent le nombre de paquets par deux. UHD descend alors à
@@ -133,7 +146,7 @@ Les threads du moteur ont maintenant des noms, visibles dans `top -H` : `carrier
 
 Bilan sur l'i3 (52 Msym/s, 256APSK 135/180, roll-off 0,05) : le moteur passe de 248 % à 217 % d'un cœur au total.
 
-Les pistes 1 à 4 ramèneraient l'i3 d'environ 2,4 à environ 1,7 cœur à 52 Msym/s. C'est de la
+Restent les pistes 3 et 4 ; avec 1 à 4, l'i3 passerait d'environ 2,2 à environ 1,5 cœur à 52 Msym/s. C'est de la
 consommation et de la chaleur en moins sur batterie, pas seulement de la charge par cœur.
 
 ## À envisager : le GPU pour alléger le processeur
