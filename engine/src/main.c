@@ -32,7 +32,7 @@
 #include "util.h"
 
 #ifndef VERSION_STR
-#define VERSION_STR "0.2.0"   /* the Makefile passes ../VERSION */
+#define VERSION_STR "0.3.0"   /* the Makefile passes ../VERSION */
 #endif
 #define MAX_INPUTS 1024
 
