@@ -26,6 +26,8 @@ typedef struct tsfill_sample {
  * restarted (its "uptime_s" went down) or stopped answering: settings it does not keep (the first
  * caller's is used) */
 tsfill *tsfill_get(const char *url, int period_ms, const char *tune);
+/* a multiplex of this board on the air (+1) or stopped (-1): with none, the board is neither polled nor set */
+void tsfill_use(tsfill *f, int delta);
 /* latest poll for multiplex mux (1..TSFILL_MUX) */
 void tsfill_read(tsfill *f, int mux, tsfill_sample *s);
 

@@ -1,4 +1,4 @@
-.TH DVBTX.TOML 5 2026-11-08 "dvbtx 0.3.0" "dvbtx manual"
+.TH DVBTX.TOML 5 2026-11-08 "dvbtx 0.3.1" "dvbtx manual"
 .SH NAME
 dvbtx.toml \- configuration file of the dvbtx DVB transmitter
 .SH SYNOPSIS
@@ -876,6 +876,10 @@ waits, then a trim of at most
 \(+-50 ppm moving by 0.02 ppm/s at most (0.54 Hz/s of the 27 MHz PCR clock), the PCRs stamped on
 that clock.
 When the board stops answering, the rate stays where it was (critical alert).
+With all its multiplexes stopped
+.RB ( "enabled = false" ,
+or Stop on the web page), the board is left alone: nothing sent, neither polled nor set (it may
+serve something else meanwhile); set again when one starts.
 .PP
 Its carriers are DVB\-T 2k, 64\-QAM, 7/8, GI 1/32, 8 MHz, the parameters of the FPGA (31.668 Mbit/s
 each): they need not be given, and other values are refused.
@@ -1012,7 +1016,8 @@ or a file path (or
 .TP
 \fBenabled\fR (boolean; default true)
 false: the multiplex is stopped: off the air, its sources paused; a radio whose multiplexes are
-all stopped is switched off.
+all stopped is switched off (not even opened when they are all stopped at the start: a radio
+unplugged then raises no alert and is not looked for until one of them starts).
 Written (and removed) by the Stop / Start buttons of the web page, so it survives restarts.
 A stopped multiplex keeps its place in its radio's band, so that Start puts it back on the air
 without restarting the others: to free the band, delete it or move it to another radio.

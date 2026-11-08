@@ -77,8 +77,8 @@ curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh |
 Ou à la main :
 
 ```bash
-wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.3.0_amd64.deb
-sudo apt install ./dvbtx_0.3.0_amd64.deb
+wget https://github.com/TrusterBSW/DVB-Tx/raw/main/releases/dvbtx_0.3.1_amd64.deb
+sudo apt install ./dvbtx_0.3.1_amd64.deb
 sudo apt install streamlink yt-dlp      # facultatif : HLS sans blocage, sources YouTube et Twitch
 ```
 

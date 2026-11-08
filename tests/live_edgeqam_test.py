@@ -7,6 +7,8 @@
    (the packet index on air) and within the 30 ppm of MPEG; the status and no alert.
    Its frequency changed by someone else: set again.
 2. The board restarted (buffers, counters and settings lost): set again, its buffers filled again.
+3. Both multiplexes stopped (web page): nothing sent to the board, nor GET /status or /set (it may serve
+   someone else meanwhile); started again: set, filled and tracked again.
 
 Ports 27001-27004, 27100-27999, 28181, 18191. The board's output of multiplex 1 is recorded (~45 s,
 ~170 MB) under work/ (on disk), removed at the end.
@@ -197,6 +199,31 @@ def main():
         check(wait_for(lambda: get(lambda s: all(m and m["state"] == "track" and abs(m["queued"] - TARGET) < 1000
                                                  for m in mods(s).values()))
                        and all(abs(board_mux(k)["queued"] - TARGET) < 1000 for k in (1, 3)), 30),
+              f"filled and tracked again: {[board_mux(k)['queued'] for k in (1, 3)]} queued")
+
+        # 3. both multiplexes stopped: the board left alone
+        for i in (0, 1):
+            api("POST", f"/api/carrier/{i}/stop")
+        time.sleep(2)
+        b0 = get(lambda s: s, base=BOARD, path="/status") or {}
+        time.sleep(5)
+        b1 = get(lambda s: s, base=BOARD, path="/status") or {}
+        rx = [b1["inputs"][k - 1]["rx_packets"] - b0["inputs"][k - 1]["rx_packets"] for k in (1, 3)] if b1 else None
+        check(rx == [0, 0], f"both stopped: nothing sent to the board in 5 s ({rx} packets)")
+        polls = b1.get("polls", 0) - b0.get("polls", 0) - 1       # the test's own GET
+        check(polls == 0 and b1.get("sets") == b0.get("sets"), f"and neither polled nor set ({polls} GET /status)")
+        check(not get(lambda s: s["alerts"], [1]), f"no alert: {get(lambda s: [a['message'] for a in s['alerts']])}")
+        st = api("GET", "/api/status")
+        check(next(x for x in st["radios"] if x["driver"] == "edgeqam")["live"]["state"] == "idle",
+              "the board radio shown idle (left alone)")
+        check(all(i["state"] == "paused" for i in st["inputs"] if i.get("role") == "primary"), "their sources paused")
+        api("GET", "/set?freq=498000000", BOARD)                  # someone else uses it meanwhile
+        for i in (0, 1):
+            api("POST", f"/api/carrier/{i}/start")
+        check(wait_for(lambda: get(lambda s: s["freq_mux1_hz"], base=BOARD, path="/status") == 474_000_000, 10),
+              "started again: the board set again")
+        check(wait_for(lambda: get(lambda s: all(m and m["state"] == "track" and abs(m["queued"] - TARGET) < 1000
+                                                 for m in mods(s).values()) and len(mods(s)) == 2), 30),
               f"filled and tracked again: {[board_mux(k)['queued'] for k in (1, 3)]} queued")
         time.sleep(3)
         check(get(lambda s: s["engine"]["restarts"]) == 0, "no engine restart")

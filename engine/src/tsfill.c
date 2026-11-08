@@ -31,6 +31,7 @@ struct tsfill {
     tsfill_sample s[TSFILL_MUX];
     uint64_t seq;
     int failing;
+    int users;                    /* its multiplexes on the air (atomic): none, the board is left alone */
 };
 
 static tsfill *g_pollers[MAX_POLLERS];
@@ -92,6 +93,16 @@ static void *poll_thread(void *arg)
     char *buf = malloc(16384);
     while (buf) {
         int64_t t = mono_ns();
+        if (__atomic_load_n(&f->users, __ATOMIC_ACQUIRE) <= 0) {
+            /* all its multiplexes stopped: not polled nor set (it may serve someone else meanwhile);
+             * set again at the first answer once one starts */
+            f->tuned = f->tune_failed = 0;
+            f->tune_next = 0;
+            f->uptime = -1;
+            struct timespec ts = { 0, 100000000 };
+            nanosleep(&ts, NULL);
+            continue;
+        }
         int n = http_get(f, f->path, buf, 16384);
         const char *body = n > 0 ? strstr(buf, "\r\n\r\n") : NULL;
         /* its settings (/set, not saved by the board), sent again whenever it restarted (uptime_s went
@@ -223,6 +234,11 @@ tsfill *tsfill_get(const char *url, int period_ms, const char *tune)
     }
     pthread_mutex_unlock(&g_lock);
     return f;
+}
+
+void tsfill_use(tsfill *f, int delta)
+{
+    __atomic_add_fetch(&f->users, delta, __ATOMIC_RELEASE);
 }
 
 void tsfill_read(tsfill *f, int mux, tsfill_sample *s)

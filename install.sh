@@ -4,7 +4,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh
 #   curl -fsSL https://raw.githubusercontent.com/TrusterBSW/DVB-Tx/main/install.sh | sudo sh -s -- --extras
-#   sudo ./install.sh --deb dist/dvbtx_0.3.0_amd64.deb        (a package built here, see packaging/)
+#   sudo ./install.sh --deb dist/dvbtx_0.3.1_amd64.deb        (a package built here, see packaging/)
 #
 # Options:
 #   --deb FILE   install this .deb instead of downloading the latest one

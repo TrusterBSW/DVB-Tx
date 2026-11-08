@@ -83,7 +83,7 @@ def main():
     pkt_s = RATE * (1 + a.ppm * 1e-6) / 1504
     muxes = [Mux(k + 1, a.port + k, a.host, *((a.record, int(a.record_s * pkt_s)) if k + 1 == a.record_mux and a.record
                                                else ())) for k in range(a.nmux)]
-    st = {"freq": a.freq, "disable": 0, "start": time.monotonic(), "sets": 0}
+    st = {"freq": a.freq, "disable": 0, "start": time.monotonic(), "sets": 0, "polls": 0}
 
     def consume():
         t0, done = time.monotonic(), 0
@@ -111,6 +111,7 @@ def main():
         def do_GET(self):
             u = urlparse(self.path)
             if u.path == "/status":
+                st["polls"] += 1
                 n = a.nmux
                 lo = st["freq"] + (n - 1) * 4_000_000
                 ins = []
@@ -123,6 +124,7 @@ def main():
                                 "disabled": (st["disable"] >> (m.k - 1)) & 1})
                 self.reply(200, {"multiplexes": n, "freq_mux1_hz": st["freq"], "lo_hz": lo,
                                  "uptime_s": int(time.monotonic() - st["start"]), "sets": st["sets"],
+                                 "polls": st["polls"],
                                  "disable_mask": st["disable"], "ts_mbit_per_mux": RATE / 1e6, "inputs": ins})
             elif u.path == "/set":
                 q = {k: v[0] for k, v in parse_qs(u.query).items()}

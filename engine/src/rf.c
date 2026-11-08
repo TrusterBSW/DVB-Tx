@@ -517,11 +517,13 @@ static int radio_needed(radio *r)
 static void radio_idle(radio *r)
 {
     char err[256];
-    r->drv->close(r->dev);
-    r->dev = NULL;
+    if (r->dev) {                     /* NULL: not opened at the start, its carriers all stopped */
+        r->drv->close(r->dev);
+        r->dev = NULL;
+        LOGI("radio %d (%s): all its carriers stopped, radio off", r->idx, r->driver);
+    }
     atomic_store(&r->state, RADIO_IDLE);
     memset(&r->last, 0, sizeof r->last);
-    LOGI("radio %d (%s): all its carriers stopped, radio off", r->idx, r->driver);
     while (g_running && !radio_needed(r)) {
         struct timespec ts = { 0, 100000000 };
         nanosleep(&ts, NULL);
@@ -974,6 +976,8 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
                     snprintf(err, errlen, "carrier %d: bad fill URL '%s' (http://host:port/path)", c->idx, fill);
                     return -1;
                 }
+                if (!c->muted)
+                    tsfill_use(c->fill, 1);
                 c->fill_mux = (int)conf_int(s, "fill_mux", 1);
                 c->fill_target = (int)conf_int(s, "fill_target", 1000);
                 int cap = (int)conf_int(s, "fill_capacity", 8192);     /* the board's buffer, packets */
@@ -1240,12 +1244,25 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
     return 0;
 }
 
+/* at the start: its threads run (opened, or idle until one of its carriers starts) */
+static int radio_runs(radio *r)
+{
+    int st = atomic_load(&r->state);
+    return st == RADIO_ON || st == RADIO_IDLE;
+}
+
 int rf_start(void)
 {
     char err[256];
     g_running = 1;
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
+        if (!radio_needed(r)) {       /* all its carriers stopped (on = 0): opened when one starts */
+            r->dev = NULL;
+            atomic_store(&r->state, RADIO_IDLE);
+            LOGI("radio %d (%s): all its carriers stopped, not opened", ri, r->driver);
+            continue;
+        }
         r->dev = r->drv->open(&r->p, err, sizeof err);
         if (!r->dev) {
             LOGE("radio %d (%s): %s: its carriers are off the air", ri, r->driver, err);
@@ -1264,7 +1281,7 @@ int rf_start(void)
             rf_carrier_on(i, 0);
     for (int i = 0; i < g_ncarriers; i++) {
         carrier *c = g_carriers[i];
-        if (c->in_group || (c->radio && atomic_load(&c->radio->state) != RADIO_ON))
+        if (c->in_group || (c->radio && !radio_runs(c->radio)))
             continue;
         void *(*fn)(void *) = c->radio ? dvbt_thread : ts_thread;
         if (pthread_create(&c->th, NULL, fn, c))
@@ -1275,7 +1292,7 @@ int rf_start(void)
         c->started = 1;
     }
     for (int i = 0; i < g_nbanks; i++) {
-        if (atomic_load(&g_banks[i]->radio->state) != RADIO_ON)
+        if (!radio_runs(g_banks[i]->radio))
             continue;
         if (pthread_create(&g_banks[i]->th, NULL, dvbt_thread, g_banks[i]))
             return -1;
@@ -1286,7 +1303,7 @@ int rf_start(void)
     }
     for (int ri = 0; ri < g_nradios; ri++) {
         radio *r = g_radios[ri];
-        if (atomic_load(&r->state) != RADIO_ON)
+        if (!radio_runs(r))
             continue;
         if (pthread_create(&r->th, NULL, radio_thread, r))
             return -1;
@@ -1304,6 +1321,8 @@ int rf_carrier_on(int ci, int on)
     if (ci < 0 || ci >= g_ncarriers)
         return -1;
     carrier *c = g_carriers[ci];
+    if (c->fill && c->muted == !!on)          /* a board's multiplex stopped or started: polled while one is on */
+        tsfill_use(c->fill, on ? 1 : -1);
     c->muted = !on;
     if (c->in_group && c->group && c->group->t2g)
         dvbt2_group_mute(c->group->t2g, c->member, !on);

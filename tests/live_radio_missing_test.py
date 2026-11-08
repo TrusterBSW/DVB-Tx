@@ -1,6 +1,8 @@
 """A radio missing at the start, unplugged while running, plugged again: its multiplex off the air and
 its sources paused, the other radio's multiplex going on; the engine started again once it is back.
 Then a configuration whose only radio is missing: dvbtx runs, its web page answers, nothing on air.
+Then a radio missing whose multiplexes are all stopped (enabled = false): not opened (idle), no alert,
+not looked for.
 
 The radios are "null" ones; absent=FILE makes one missing while FILE exists. Ports 25100-25999, 18189.
 
@@ -50,7 +52,7 @@ def input_state(st, name):
     return next((i["state"] for i in st["inputs"] if i["name"] == name and i.get("role") == "primary"), None)
 
 
-def config(tmp, absent, clips, both=True):
+def config(tmp, absent, clips, both=True, ghost_on=True):
     good = f"""[[radio]]
 name = "good"
 driver = "null"
@@ -89,6 +91,7 @@ name = "Mux B"
 radio = "ghost"
 standard = "dvbt"
 frequency = 498_000_000
+{"" if ghost_on else "enabled = false"}
   [[carrier.service]]
   name = "Bravo"
   source = "{clips[1]}"
@@ -174,6 +177,24 @@ def main():
         check(get(lambda s: s["engine"]["running"]) is True, "the engine runs without transmitting")
         check(not any("engine exited" in l for l in log), "and does not exit")
         check(get(lambda s: s["version"]) is not None, "the web page answers")
+    finally:
+        stop(sup)
+
+    # a missing radio whose multiplexes are all stopped: idle, not an alert
+    with open(cfgp, "w") as f:
+        f.write(config(tmp, absent, clips, ghost_on=False))
+    sup, log = run(cfgp)
+    try:
+        check(wait_for(lambda: get(lambda s: svc_on(s, "Alpha")) == "primary", 40), "the other radio's channel on air")
+        check(wait_for(lambda: get(lambda s: radio_state(s, 1)) == "idle", 10),
+              f"missing radio, its multiplexes stopped: idle ({get(lambda s: radio_state(s, 1))})")
+        time.sleep(20)
+        al = get(lambda s: [a["message"] for a in s["alerts"]], [])
+        check(not al, f"no alert: {al}")
+        check(not any("probe" in l.lower() or "looked for" in l for l in log), "not looked for")
+        check(get(lambda s: input_state(s, "Bravo")) == "paused", "its channel's source paused")
+        check(not any("input Bravo:" in l for l in log), "its source never started (paused from the start)")
+        check(get(lambda s: s["engine"]["restarts"]) == 0, "no engine restart")
     finally:
         stop(sup)
         out.stop = True

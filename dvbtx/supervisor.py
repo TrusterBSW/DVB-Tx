@@ -932,6 +932,7 @@ class Supervisor:
                 web = webmod.start(self, self.cfg["web"]["listen"])
             except OSError as e:
                 log.error("web page on %s: %s (running without it)", self.cfg["web"]["listen"], e)
+        self._pause_stopped()           # the sources of multiplexes stopped in the file: not started at all
         for p in self.ingest:
             p.start()
         tick = 0
@@ -1269,6 +1270,7 @@ class Supervisor:
         for p in old.values():
             p.stop()
         self.ingest = procs
+        self._pause_stopped()           # a new source of a stopped multiplex: not started
         self.plan, self.cfg = new_plan, new_cfg
         new_plan.cfg = new_cfg
         if self.store:
@@ -1663,16 +1665,7 @@ class Supervisor:
                 self.radios_off[idx] = {"state": state, "error": r.get("error", ""), "since": now,
                                         "next_probe": now + self.RADIO_PROBE_S, "probing": False}
             self.radios_off[idx]["state"] = state
-        # sources of the multiplexes off the air: paused, back when their radio is
-        off = {i for i, o in self.radios_off.items()}
-        for p in self.ingest:
-            svc = p.inp.service
-            car = svc.carrier if svc is not None and p.inp.role == "primary" else None
-            down = car is not None and (not car.enabled or (car.radio is not None and car.radio.index in off))
-            if down and not p.paused:
-                p.pause()
-            elif not down and p.paused:
-                p.resume()
+        self._pause_stopped()
         for sid in [sid for sid, sb in self.standby.items() if sb["old"].service is not None
                     and sb["old"].service.carrier.radio is not None and sb["old"].service.carrier.radio.index in off]:
             self._standby_drop(sid)
@@ -1691,6 +1684,19 @@ class Supervisor:
             if not o["probing"] and now >= o["next_probe"]:
                 o["probing"] = True
                 threading.Thread(target=self._probe_radio, args=(idx, o), daemon=True).start()
+
+    def _pause_stopped(self):
+        """the sources of the multiplexes off the air (stopped, or their radio missing): paused, back when
+        they are on again"""
+        off = set(self.radios_off)
+        for p in self.ingest:
+            svc = p.inp.service
+            car = svc.carrier if svc is not None and p.inp.role == "primary" else None
+            down = car is not None and (not car.enabled or (car.radio is not None and car.radio.index in off))
+            if down and not p.paused:
+                p.pause()
+            elif not down and p.paused:
+                p.resume()
 
     def carrier_power(self, index, on):
         """a multiplex stopped or started again from the web page: off the air at once (its radio switched
@@ -1878,10 +1884,12 @@ class Supervisor:
             if r.carriers:
                 live = rst.get(r.index)
                 if r.board:           # not a radio of the engine: its multiplexes' view of the board
-                    mods = {c.board_mux: (cst0.get(c.index) or {}).get("modulator") for c in r.carriers}
+                    on = [c for c in r.carriers if c.enabled and (cst0.get(c.index) or {}).get("on", 1)]
+                    mods = {c.board_mux: (cst0.get(c.index) or {}).get("modulator") for c in on}
                     states = {m["state"] for m in mods.values() if m}
                     live = st and {"index": r.index, "driver": "edgeqam", "carriers": len(r.carriers),
-                                   "state": "lost" if "lost" in states else "on" if states else "off",
+                                   # idle: its multiplexes all stopped, the board left alone
+                                   "state": "idle" if not on else "lost" if "lost" in states else "on" if states else "off",
                                    "modulator": {str(k): m for k, m in sorted(mods.items())}}
                 out["radios"].append({"index": r.index, "name": r.name, "driver": r.driver, "serial": r.serial, "center": r.center,
                                       "rate": r.rate, "gain": r.gain, "amp": r.amp, "live": live,

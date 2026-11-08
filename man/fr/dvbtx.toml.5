@@ -1,6 +1,6 @@
 .\" -*- coding: UTF-8 -*-
 .nr HY 0
-.TH DVBTX.TOML 5 2026-11-08 "dvbtx 0.3.0" "manuel dvbtx"
+.TH DVBTX.TOML 5 2026-11-08 "dvbtx 0.3.1" "manuel dvbtx"
 .SH NOM
 dvbtx.toml \- fichier de configuration de l'émetteur DVB dvbtx
 .SH SYNOPSIS
@@ -884,6 +884,11 @@ soit en attente,
 puis une correction d'au plus \(+-50 ppm qui varie d'au plus 0,02 ppm/s (0,54 Hz/s de l'horloge
 PCR à 27 MHz), les PCR datés sur cette horloge.
 Si la carte ne répond plus, le débit reste où il était (alerte critique).
+Avec tous ses multiplex arrêtés
+.RB ( "enabled = false" ,
+ou Arrêter sur la page web), la carte est laissée tranquille\~: rien n'est envoyé, elle n'est ni
+interrogée ni réglée (elle peut servir à autre chose entre-temps)\~; elle est réglée à nouveau quand
+l'un d'eux démarre.
 .PP
 Ses porteuses sont en DVB\-T 2k, 64\-QAM, 7/8, IG 1/32, 8 MHz, les paramètres du FPGA (31,668 Mbit/s
 chacune)\~: inutile de les donner, et d'autres valeurs sont refusées.
@@ -1023,7 +1028,8 @@ ou un chemin de fichier (ou
 .TP
 \fBenabled\fR (booléen\~; défaut true)
 false\~: le multiplex est arrêté\~: hors antenne, ses sources en pause\~; une radio dont tous les multiplex
-sont arrêtés est éteinte.
+sont arrêtés est éteinte (pas même ouverte s'ils sont tous arrêtés au démarrage\~: une radio
+débranchée ne déclenche alors aucune alerte et n'est pas recherchée tant qu'aucun ne démarre).
 Écrit (et retiré) par les boutons «\~\%Arrêter\~» / «\~\%Démarrer\~» de la page web, si bien que l'état survit
 aux redémarrages.
 Un multiplex arrêté garde sa place dans la bande de sa radio, pour que «\~\%Démarrer\~» le remette à

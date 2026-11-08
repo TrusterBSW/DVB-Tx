@@ -344,7 +344,8 @@ function render(s) {
       }).join("");
       return `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="pill">edgeqam</span></div>
         <div class="row" style="margin-top:4px">${l.state === "lost" ? '<span class="pill critical">la carte ne répond pas</span>'
-          : l.state === "on" ? '<span class="pill ok">en lien</span>' : '<span class="pill">–</span>'}</div>
+          : l.state === "on" ? '<span class="pill ok">en lien</span>'
+          : l.state === "idle" ? '<span class="pill">laissée libre · ses multiplex sont arrêtés</span>' : '<span class="pill">–</span>'}</div>
         <div class="kv" style="margin-top:8px"><span>Adresse</span><span>${esc(r.address === "auto" ? "mDNS" : r.address)}${r.serial ? " · " + esc(r.serial) : ""}</span>
         <span>Multiplex 1</span><span>${(r.center / 1e6).toFixed(3)} MHz${r.tune ? "" : " (réglage de la carte)"}</span>${rows}</div></div>`;
     }
