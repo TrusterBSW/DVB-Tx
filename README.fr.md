@@ -57,6 +57,7 @@ programmes, comme sur la TNT.
 - [Service et profils d'énergie](#service-et-profils-dénergie)
 - [Sur Proxmox VE : hôte, conteneur ou VM](#sur-proxmox-ve--hôte-conteneur-ou-vm)
 - [Normes et radios](#normes-et-radios)
+- [Une carte edgeQAM](#une-carte-edgeqam-modulateur-fpga-sur-le-réseau)
 - [Mesures](#mesures)
 - [Documentation](#documentation)
 - [Compiler depuis les sources](#compiler-depuis-les-sources)
@@ -327,6 +328,48 @@ l'hôte.
 | HackRF One | ✅ jusqu'à 20 MS/s : 2 multiplex adjacents de 8 MHz |
 | USRP B200/B210 (UHD) | ✅ 56 MHz : 6 multiplex adjacents de 8 MHz, ou une porteuse DVB-S2X jusqu'à 52 Msym/s |
 | émetteurs SoapySDR | compilé, pas essayé |
+| carte edgeQAM (DVB-T en FPGA, par le réseau) | ✅ sur câble (coax fermé) : 4 multiplex reçus à la fois, aucune erreur de transport, MER 22-23 dB (limite du récepteur HackRF) |
+
+## Une carte edgeQAM (modulateur FPGA sur le réseau)
+
+Une carte edgeQAM (Fishball 7010) module le DVB-T dans son FPGA : jusqu'à 4 multiplex sur des canaux
+de 8 MHz voisins. Son image microSD, ses sources et ses outils sont dans
+[DVB-Tx_edge-QAM](https://github.com/TrusterBSW/DVB-Tx_edge-QAM).
+dvbtx ne fait alors que multiplexer, et envoie chaque multiplex à la carte en UDP,
+au débit exact où elle le consomme :
+
+```toml
+[[radio]]
+name = "fishball"
+driver = "edgeqam"        # address = "auto" : trouvée par mDNS (avahi-browse _dvbmod._udp)
+
+[[carrier]]
+name = "Mux 1"
+radio = "fishball"
+channel = 21              # le multiplex 1 de la carte ; le canal 22 serait son multiplex 2...
+  [[carrier.service]]
+  name = "Infos"
+  source = "https://example.org/live.m3u8"
+```
+
+- **Paramètres** : DVB-T 2k, 64-QAM, 7/8, IG 1/32, 8 MHz, figés dans le FPGA (31,668 Mbit/s par
+  multiplex). Il n'y a rien à donner, et d'autres valeurs sont refusées.
+- **Horloge** : la carte tourne sur son propre quartz. dvbtx lit le remplissage de ses files
+  4 fois par seconde et règle son débit dessus, assez lentement pour garder des PCR propres. Contre
+  une carte simulée qui avance de 5 ppm : aucun paquet nul inséré, aucun perdu, PCR à 1,5 µs près.
+- **Réglages** : dvbtx règle la fréquence de la carte et coupe ses multiplex inutilisés, à nouveau
+  après chaque redémarrage de la carte. Le niveau d'émission reste un réglage de la carte.
+- **Validée sur câble** (coax fermé vers une HackRF One et gr-dtv) : aucune erreur de transport,
+  PCR à 1 ms près, débit verrouillé à 2 ppm près ; puis 4 multiplex à la fois, aucune erreur de
+  transport sur aucun, MER 22-23 dB (la limite de la HackRF en réception).
+- **Charge sur la carte** : le mDNS est une annonce fixe, et la lecture des files est une petite
+  requête HTTP par carte, 4 fois par seconde.
+- **Suivi** : la page web montre, par multiplex, sa file, la correction de débit, et les paquets
+  nuls insérés ou les paquets perdus par la carte. Une alerte se déclenche si la carte ne répond
+  plus.
+
+Avec plusieurs cartes, nommez-en une par l'id qu'elle annonce (son adresse MAC, listée par
+`dvbtx devices`) : `serial = "0060881fa308"`. Sans mDNS, donnez `address = "10.5.1.96"`. Le détail est dans `man 5 dvbtx.toml` (*Cartes edgeQAM*).
 
 ## Mesures
 

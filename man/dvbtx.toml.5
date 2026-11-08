@@ -1,4 +1,4 @@
-.TH DVBTX.TOML 5 2026-11-06 "dvbtx 0.2.0" "dvbtx manual"
+.TH DVBTX.TOML 5 2026-11-08 "dvbtx 0.2.0" "dvbtx manual"
 .SH NAME
 dvbtx.toml \- configuration file of the dvbtx DVB transmitter
 .SH SYNOPSIS
@@ -757,7 +757,10 @@ Name the carriers refer to.
 .B soapy
 (any SoapySDR transmitter),
 .B null
-(no radio: samples consumed at the nominal rate, for tests).
+(no radio: samples consumed at the nominal rate, for tests),
+.B edgeqam
+(an edgeQAM board on the network: see
+.BR "edgeQAM boards" ).
 .TP
 \fBserial\fR (string; default "")
 The device the radio is bound to: the serial number printed by
@@ -857,6 +860,77 @@ Reference clock source of a
 radio
 .RB ( external ,
 .BR gpsdo ...).
+.SS edgeQAM boards (driver = \(dqedgeqam\(dq)
+An edgeQAM board modulates DVB\-T in its FPGA (Fishball 7010 board, AD9363): up to 4 multiplexes on
+adjacent 8 MHz channels, each fed with its transport stream over UDP.
+dvbtx then multiplexes only: its carriers are not synthesised, each multiplex is sent as a CBR stream
+(7 packets per datagram, null packets included, PSI/SI complete) to the board's port of that
+multiplex.
+.PP
+The board modulates on its own clock and buffers 8192 packets per multiplex: it inserts a null packet
+when a buffer runs dry and drops packets when it is full.
+dvbtx reads the fill level of each buffer (GET /status, 4 times a second, one poll per board) and
+steers its rate on it: a ramp of +2\~% at the start until its
+.B buffer_ms
+waits, then a trim of at most
+\(+-50 ppm moving by 0.02 ppm/s at most (0.54 Hz/s of the 27 MHz PCR clock), the PCRs stamped on
+that clock.
+When the board stops answering, the rate stays where it was (critical alert).
+.PP
+Its carriers are DVB\-T 2k, 64\-QAM, 7/8, GI 1/32, 8 MHz, the parameters of the FPGA (31.668 Mbit/s
+each): they need not be given, and other values are refused.
+Multiplex
+.I k
+of the board is on channel
+.IR F " + (" k "\-1) \(mu 8 MHz,"
+.I F
+the lowest carrier of the radio (or its
+.BR center ).
+Keys of such a radio:
+.TP
+\fBaddress\fR (string; default "auto")
+Host name or IPv4 address of the board;
+.BR auto :
+found by mDNS (service
+.BR _dvbmod._udp ,
+.BR avahi\-browse ,
+package avahi\-utils), its UDP ports, API port and number of multiplexes read from its announcement;
+the last board found is kept when mDNS does not answer.
+.B "dvbtx devices"
+lists the boards announced.
+.TP
+\fBserial\fR (string; default "")
+With several boards: the one to use, by the
+.B id
+of its announcement (its Ethernet MAC, unique and stable:
+.BR 0060881fa308 ),
+its host name or its service name, as
+.B "dvbtx devices"
+lists them.
+Host names alone are not stable: two boards with the same one are told apart by avahi in the order
+they boot (\fBplutoplus\fR, \fBplutoplus\-2\fR).
+When several boards answer and none is named, dvbtx refuses and lists them, rather than picking one.
+.TP
+\fBtune\fR (boolean; default true)
+dvbtx sets the board: the frequency of its multiplex 1 and the multiplexes without a carrier
+disabled (GET /set, not saved on the board), again whenever the board restarts.
+false: its frequency and multiplexes are left as the board has them (its carriers' frequencies must
+then match them).
+The emission level (attenuation) is never touched: it is the board's setting.
+.TP
+\fBcenter\fR (Hz; default 0)
+Frequency of its multiplex 1; 0: the lowest of its carriers.
+.TP
+\fBbuffer_ms\fR (integer; default 100 for a board)
+Stream kept waiting in the board's buffers (100 ms: 2105 packets per multiplex), room for the jitter of
+the network: 200 ms or more over Wi\-Fi, up to 290 (3/4 of its 8192 packets).
+Above three times that (at most half way to 8192), the rate is lowered by 2\~% until it is back.
+.TP
+\fBmultiplexes\fR (integer; default 4)
+Multiplexes of the board.
+.TP
+\fBports\fR (list; default the board's, 1001...), \fBapi\fR (integer; default the board's, 8080)
+UDP port of each multiplex and port of its HTTP API, when they are not the board's defaults.
 .SH [[carrier]]
 One table per multiplex.
 .SS Common keys
@@ -1513,6 +1587,33 @@ output = "udp://239.1.1.1:1234"
   name = "Mire"
   source = "lavfi:smptehdbars=size=1920x1080:rate=25"
   encode = { video_bitrate = "5M" }
+.EE
+.RE
+.PP
+Two multiplexes on an edgeQAM board found by mDNS (channels 21 and 22: its multiplexes 1 and 2, the
+other two disabled):
+.PP
+.RS
+.EX
+[[radio]]
+name = "fishball"
+driver = "edgeqam"
+
+[[carrier]]
+name = "Mux 1"
+radio = "fishball"
+channel = 21
+  [[carrier.service]]
+  name = "News"
+  source = "https://example.org/live.m3u8"
+
+[[carrier]]
+name = "Mux 2"
+radio = "fishball"
+channel = 22
+  [[carrier.service]]
+  name = "Films"
+  source = "dir:/srv/films"
 .EE
 .RE
 .PP

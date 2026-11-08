@@ -823,6 +823,7 @@ class Supervisor:
                     conds[f"late.radio{r['index']}"] = ("critical", f"radio {r['index']}: {r['late'] - prev} gaps on air "
                                                          "reported by the radio (USB path too slow: hub, dock?)")
                 self.__dict__.setdefault("_late", {})[r["index"]] = r.get("late", 0)
+            self._board_alerts(conds, st)
             self._clock_lead(conds, st)
         for p in self.ingest:
             if p.state in ("backoff", "error") and p.restarts >= 2:
@@ -833,6 +834,29 @@ class Supervisor:
             if s and (s.get("transport_errors") or 0) > 0:
                 conds[f"tsduck.{an.car.index}"] = ("warning", f"{an.car.name}: tsduck sees {s['transport_errors']} transport errors")
         self.alerts.evaluate(conds)
+
+    def _board_alerts(self, conds, st):
+        """edgeqam boards: not answering, or their buffers that ran dry (nulls inserted) or overflowed"""
+        prev = self.__dict__.setdefault("_board_counts", {})
+        for c in st.get("carriers", []):
+            m = c.get("modulator")
+            if m is None or c["carrier"] >= len(self.plan.carriers):
+                continue
+            car = self.plan.carriers[c["carrier"]]
+            if not car.enabled or not c.get("on", 1):
+                continue
+            board = car.radio.name if car.radio is not None else "board"
+            if m.get("state") == "lost":
+                conds[f"board.{car.index}"] = ("critical", f"{car.name}: the edgeqam board {board} does not answer "
+                                               f"(GET /status): its buffer level is unknown, sent at the last rate")
+            for k, what in (("null_inserted", "null packets inserted by the board (its buffer ran dry)"),
+                            ("dropped", "packets dropped by the board (its buffer was full)")):
+                v, key = m.get(k, -1), (car.index, k)
+                if v is None or v < 0:
+                    continue
+                if key in prev and v > prev[key] and m.get("state") == "track":
+                    conds[f"board.{k}.{car.index}"] = ("warning", f"{car.name}: {v - prev[key]} {what}")
+                prev[key] = v
 
     CLOCK_LEAD_MIN_MS = -1000       # a multiplex this far behind its radio's clock (normally ~+300 ms) ...
     CLOCK_LEAD_HOLD_S = 5           # ... for that long: critical alert
@@ -1083,7 +1107,7 @@ class Supervisor:
                 out.append({"serial": sn, "label": r.driver, "open": True})
         for d in out:
             r = holder(d["serial"])
-            d["radio"] = devmod.owner(driver, d["serial"], bound) or (r.name if r is not None and r.index != radio
+            d["radio"] = devmod.owner(driver, d["serial"], bound, d) or (r.name if r is not None and r.index != radio
                                                                         else None)
         return {"driver": driver, "devices": out, "error": err,
                 "free": [d["serial"] for d in out if d["radio"] is None]}
@@ -1093,7 +1117,7 @@ class Supervisor:
         if not self.plan.config_path:
             return {"path": None, "error": "no configuration file (channels set on the command line)"}
         d = self.draft()
-        out = {"path": self.plan.config_path, "error": None, "drivers": sorted(cfgmod.DRIVER_RATES),
+        out = {"path": self.plan.config_path, "error": None, "drivers": cfgmod.DRIVERS,
                "std_keys": cfgmod.STD_KEYS, "radio_defaults": cfgmod.RADIO_DEFAULTS}
         try:
             text = d.text()
@@ -1849,10 +1873,20 @@ class Supervisor:
                "system": self.sysload.status(),
                "default_backup": "" if plan.cfg["defaults"].get("backup") is False else str(plan.cfg["defaults"].get("backup") or "")}
         rst = {r["index"]: r for r in (st or {}).get("radios", [])}
+        cst0 = {c["carrier"]: c for c in (st or {}).get("carriers", [])}
         for r in plan.radios:
             if r.carriers:
+                live = rst.get(r.index)
+                if r.board:           # not a radio of the engine: its multiplexes' view of the board
+                    mods = {c.board_mux: (cst0.get(c.index) or {}).get("modulator") for c in r.carriers}
+                    states = {m["state"] for m in mods.values() if m}
+                    live = st and {"index": r.index, "driver": "edgeqam", "carriers": len(r.carriers),
+                                   "state": "lost" if "lost" in states else "on" if states else "off",
+                                   "modulator": {str(k): m for k, m in sorted(mods.items())}}
                 out["radios"].append({"index": r.index, "name": r.name, "driver": r.driver, "serial": r.serial, "center": r.center,
-                                      "rate": r.rate, "gain": r.gain, "amp": r.amp, "live": rst.get(r.index)})
+                                      "rate": r.rate, "gain": r.gain, "amp": r.amp, "live": live,
+                                      **({"address": r.address, "multiplexes": r.multiplexes, "tune": r.tune}
+                                         if r.board else {})})
         cst = {c["carrier"]: c for c in (st or {}).get("carriers", [])}
         ist = {i["index"]: i for i in (st or {}).get("inputs", [])}
         for p in out["inputs"]:

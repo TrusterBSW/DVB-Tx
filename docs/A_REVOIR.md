@@ -39,10 +39,19 @@ dire qu'elles comptent).
 
 ## État au 2026-11-06
 
-Les deux points sont corrigés, mais pas encore commités. Ils sont déployés sur l'i3.
+Les deux points sont corrigés et livrés dans la 0.2.0, déployée sur l'i3.
 
 - **Radio sans porteuse.**
   - `engine.ini` numérote les radios 0..n-1 (`config.engine_radios`), et le superviseur retraduit les numéros dans les statistiques.
   - Un « Appliquer » que le moteur refuse remet l'ancienne configuration à l'antenne, renvoie l'erreur du moteur, et laisse les modifications en attente.
   - Tests : `tests/live_radio_empty_test.py` et `tests/planner_test.py`.
 - **Porteuses arrêtées comptées dans la bande.** C'est voulu : Démarrer remet la porteuse sans redémarrer les autres. Le message d'erreur nomme maintenant les porteuses arrêtées et dit comment libérer la bande.
+
+## État au 2026-11-08 (nuit)
+
+- **Pistes 1 et 2 de `docs/optimisation/`** : faites et commitées en local (`07c523a`), **pas poussées**.
+  - Banc de filtres à 52 Msym/s sur le PC de dev : 79 → 62 → 57 % de CPU.
+  - MER inchangée (85,7 dB). L'erreur passe hors bande, à −65 dBc.
+- **Mesure sur l'i3 faite** (18 h) : banc de filtres 109 → 65 % d'un cœur (−41 %), moteur 168 → 125 %. Reportée dans `docs/optimisation/README.md`.
+- **Sortie edgeQAM** (carte FPGA DVB-T de la session dvbtx-fpga) : écrite, testée contre une carte simulée et reçue en RF réelle (HackRF + gr-dtv, 0 erreur). Pas encore commitée.
+- **À décider par l'utilisateur** : pousser `07c523a` (après la mesure i3, de préférence). Les pistes 3 et 4 ne sont pas commencées.

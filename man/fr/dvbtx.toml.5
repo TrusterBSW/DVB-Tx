@@ -1,6 +1,6 @@
 .\" -*- coding: UTF-8 -*-
 .nr HY 0
-.TH DVBTX.TOML 5 2026-11-06 "dvbtx 0.2.0" "manuel dvbtx"
+.TH DVBTX.TOML 5 2026-11-08 "dvbtx 0.2.0" "manuel dvbtx"
 .SH NOM
 dvbtx.toml \- fichier de configuration de l'émetteur DVB dvbtx
 .SH SYNOPSIS
@@ -761,7 +761,10 @@ Nom auquel se réfèrent les porteuses.
 .B soapy
 (tout émetteur SoapySDR),
 .B null
-(pas de radio\~: échantillons consommés à la cadence nominale, pour les tests).
+(pas de radio\~: échantillons consommés à la cadence nominale, pour les tests),
+.B edgeqam
+(une carte edgeQAM sur le réseau\~: voir
+.BR "Cartes edgeQAM" ).
 .TP
 \fBserial\fR (chaîne\~; défaut "")
 La carte à laquelle la radio est liée\~: le numéro de série affiché par
@@ -865,6 +868,78 @@ Source de l'horloge de référence d'une radio
 .B uhd
 .RB ( external ,
 .BR gpsdo ...).
+.SS Cartes edgeQAM (driver = \(dqedgeqam\(dq)
+Une carte edgeQAM module le DVB\-T dans son FPGA (carte Fishball 7010, AD9363)\~: jusqu'à 4 multiplex
+sur des canaux de 8 MHz voisins, chacun alimenté par son flux de transport en UDP.
+dvbtx ne fait alors que multiplexer\~: ses porteuses ne sont pas synthétisées, chaque multiplex est
+envoyé en flux CBR (7 paquets par datagramme, paquets nuls compris, PSI/SI complètes) au port de ce
+multiplex sur la carte.
+.PP
+La carte module sur sa propre horloge et garde 8192 paquets en attente par multiplex\~: elle insère
+un paquet nul quand une file est vide et perd des paquets quand elle est pleine.
+dvbtx lit le remplissage de chaque file (GET /status, 4 fois par seconde, une seule lecture par
+carte) et règle son débit dessus\~: une rampe de +2\~% au démarrage jusqu'à ce que son
+.B buffer_ms
+soit en attente,
+puis une correction d'au plus \(+-50 ppm qui varie d'au plus 0,02 ppm/s (0,54 Hz/s de l'horloge
+PCR à 27 MHz), les PCR datés sur cette horloge.
+Si la carte ne répond plus, le débit reste où il était (alerte critique).
+.PP
+Ses porteuses sont en DVB\-T 2k, 64\-QAM, 7/8, IG 1/32, 8 MHz, les paramètres du FPGA (31,668 Mbit/s
+chacune)\~: inutile de les donner, et d'autres valeurs sont refusées.
+Le multiplex
+.I k
+de la carte est sur le canal
+.IR F " + (" k "\-1) \(mu 8 MHz,"
+.I F
+la plus basse des porteuses de la radio (ou son
+.BR center ).
+Clés d'une telle radio\~:
+.TP
+\fBaddress\fR (chaîne\~; défaut "auto")
+Nom d'hôte ou adresse IPv4 de la carte\~;
+.BR auto \~:
+trouvée par mDNS (service
+.BR _dvbmod._udp ,
+.BR avahi\-browse ,
+paquet avahi\-utils), ses ports UDP, son port d'API et son nombre de multiplex lus dans son annonce\~;
+la dernière carte trouvée est gardée quand le mDNS ne répond pas.
+.B "dvbtx devices"
+liste les cartes annoncées.
+.TP
+\fBserial\fR (chaîne\~; défaut "")
+Avec plusieurs cartes\~: celle à utiliser, par
+l'\fBid\fR de son annonce (son adresse MAC Ethernet, unique et stable\~:
+.BR 0060881fa308 ),
+son nom d'hôte ou son nom de service, tels que
+.B "dvbtx devices"
+les affiche.
+Le nom d'hôte seul n'est pas stable\~: deux cartes qui portent le même sont départagées par avahi dans
+l'ordre où elles démarrent (\fBplutoplus\fR, \fBplutoplus\-2\fR).
+Quand plusieurs cartes répondent et qu'aucune n'est nommée, dvbtx refuse et les liste, plutôt que d'en
+prendre une au hasard.
+.TP
+\fBtune\fR (booléen\~; défaut true)
+dvbtx règle la carte\~: la fréquence de son multiplex 1, et les multiplex sans porteuse désactivés
+(GET /set, non enregistré sur la carte), à nouveau à chaque redémarrage de la carte.
+false\~: sa fréquence et ses multiplex restent comme la carte les a (les fréquences de ses porteuses
+doivent alors y correspondre).
+Le niveau d'émission (atténuation) n'est jamais touché\~: c'est un réglage de la carte.
+.TP
+\fBcenter\fR (Hz\~; défaut 0)
+Fréquence de son multiplex 1\~; 0\~: la plus basse de ses porteuses.
+.TP
+\fBbuffer_ms\fR (entier\~; défaut 100 pour une carte)
+Flux gardé en attente dans les files de la carte (100 ms\~: 2105 paquets par multiplex), la marge pour la
+gigue du réseau\~: 200 ms ou plus en Wi\-Fi, jusqu'à 290 (3/4 de ses 8192 paquets).
+Au\-delà de trois fois cette valeur (au plus à mi\-chemin de 8192), le débit est baissé de 2\~% jusqu'à
+y revenir.
+.TP
+\fBmultiplexes\fR (entier\~; défaut 4)
+Multiplex de la carte.
+.TP
+\fBports\fR (liste\~; défaut ceux de la carte, 1001...), \fBapi\fR (entier\~; défaut celui de la carte, 8080)
+Port UDP de chaque multiplex et port de son API HTTP, s'ils ne sont pas ceux de la carte.
 .SH [[carrier]]
 Une table par multiplex.
 .SS Clés communes
@@ -1532,6 +1607,33 @@ output = "udp://239.1.1.1:1234"
   name = "Mire"
   source = "lavfi:smptehdbars=size=1920x1080:rate=25"
   encode = { video_bitrate = "5M" }
+.EE
+.RE
+.PP
+Deux multiplex sur une carte edgeQAM trouvée par mDNS (canaux 21 et 22\~: ses multiplex 1 et 2, les
+deux autres désactivés)\~:
+.PP
+.RS
+.EX
+[[radio]]
+name = "fishball"
+driver = "edgeqam"
+
+[[carrier]]
+name = "Mux 1"
+radio = "fishball"
+channel = 21
+  [[carrier.service]]
+  name = "Infos"
+  source = "https://example.org/live.m3u8"
+
+[[carrier]]
+name = "Mux 2"
+radio = "fishball"
+channel = 22
+  [[carrier.service]]
+  name = "Films"
+  source = "dir:/srv/films"
 .EE
 .RE
 .PP

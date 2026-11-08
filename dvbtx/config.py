@@ -54,7 +54,14 @@ DEFAULTS = {
 }
 
 RADIO_DEFAULTS = {"driver": "hackrf", "args": "", "serial": "", "gain": 30, "amp": False, "ppm": 0.0, "center": 0, "rate": 0,
-                  "bandwidth": 0, "backoff_db": 13.0, "buffer_ms": 50, "clock": "internal", "lo_offset": "auto"}
+                  "bandwidth": 0, "backoff_db": 13.0, "buffer_ms": 50, "clock": "internal", "lo_offset": "auto",
+                  "address": "auto", "tune": True, "multiplexes": 4, "ports": [], "api": 0}
+# an edgeQAM board (FPGA DVB-T modulator, driver "edgeqam"): its DVB-T parameters are fixed in the FPGA, its
+# multiplexes are adjacent 8 MHz channels, each fed with a CBR TS over UDP (rate steered on its clock by
+# the fill level of its buffers, GET /status)
+EDGEQAM_PARAMS = {"bandwidth": 8_000_000, "mode": "2k", "constellation": "64qam", "code_rate": "7/8", "guard": "1/32"}
+EDGEQAM_SPACING = 8_000_000
+EDGEQAM_PORT, EDGEQAM_API = 1001, 8080
 CARRIER_DEFAULTS = {"standard": "dvbt", "bandwidth": 8_000_000, "mode": "8k", "constellation": "64qam",
                     "code_rate": "7/8", "guard": "1/32", "cell_id": 0, "gain_db": 0.0, "monitor": [],
                     "si_reserve": 0.03}
@@ -74,6 +81,7 @@ CARRIER_COMMON_KEYS = ("name", "radio", "standard", "frequency", "channel", "tsi
 
 HACKRF_FILTERS = [1.75e6, 2.5e6, 3.5e6, 5e6, 5.5e6, 6e6, 7e6, 8e6, 9e6, 10e6, 12e6, 14e6, 15e6, 20e6, 24e6, 28e6]
 DRIVER_RATES = {"hackrf": (8e6, 20e6), "uhd": (0.2e6, 61.44e6), "soapy": (0.1e6, 1e9), "null": (1, 1e10)}
+DRIVERS = sorted([*DRIVER_RATES, "edgeqam"])     # edgeqam: not a radio of the engine, a TS output
 # above these the radio works but at its edge: hackrf USB 2 FIFO gaps (~15/min at 20 MS/s, none at 19.62),
 # uhd B2xx AD9361 analog filter limit (56 MHz)
 PRACTICAL_RATES = {"hackrf": 19.7e6, "uhd": 56e6}
@@ -257,6 +265,7 @@ class Carrier:
     enabled: bool = True          # false: stopped (from the web page), its sources paused, its radio off if it has no other
     synth: str = "auto"
     sat_frequency: float = 0.0    # DVB-S/S2: the frequency the TV is told (frequency is the L-band IF sent)
+    board_mux: int = 0            # on an edgeqam board: its multiplex (1..)
 
 
 @dataclass
@@ -278,6 +287,16 @@ class Radio:
     nfft: int = 0
     serial: str = ""                            # the device it is bound to ("": the first one its driver finds)
     notes: list = field(default_factory=list)   # remarks and warnings of the plan, printed by describe()
+    address: str = "auto"                       # edgeqam: the board's host ("auto": found by mDNS)
+    tune: bool = True                           # edgeqam: its frequency and unused multiplexes set by dvbtx
+    multiplexes: int = 4                        # edgeqam: multiplexes of the board
+    ports: list = field(default_factory=list)   # edgeqam: UDP port of each multiplex ([]: the board's, 1001...)
+    api: int = 0                                # edgeqam: port of its HTTP API (0: the board's, 8080)
+
+    @property
+    def board(self):
+        """a TS output to an external modulator (edgeqam), not a radio of the engine"""
+        return self.driver == "edgeqam"
 
 
 @dataclass
@@ -464,7 +483,30 @@ def build(cfg):
                             float(_num(rr["bandwidth"], "bandwidth")), float(rr["backoff_db"]),
                             int(rr["buffer_ms"]), str(rr["clock"])))
         radios[-1].lo_offset = rr["lo_offset"]
-        _bind_serial(radios[-1], rr["serial"])
+        if rr["driver"] == "edgeqam":
+            r_ = radios[-1]
+            r_.address = str(rr["address"] or "auto").strip()
+            r_.tune = bool(rr["tune"])
+            r_.multiplexes = int(rr["multiplexes"])
+            if "buffer_ms" not in r:
+                r_.buffer_ms = 100          # over a network: room for its jitter (Wi-Fi: 200 or more)
+            if not 1 <= r_.multiplexes <= 16:
+                raise ConfigError(f"radio {r_.name}: multiplexes must be 1 to 16")
+            if r_.address != "auto" and not re.fullmatch(r"[A-Za-z0-9._-]+", r_.address):
+                raise ConfigError(f"radio {r_.name}: address must be \"auto\" (mDNS) or a host name or IP address")
+            try:
+                r_.ports = [int(p) for p in (rr["ports"] if isinstance(rr["ports"], list) else [rr["ports"]])]
+                r_.api = int(rr["api"] or 0)
+            except (TypeError, ValueError):
+                raise ConfigError(f"radio {r_.name}: ports = [1001, 1002, ...] and api = 8080 (numbers)") from None
+            if r_.ports and len(r_.ports) < r_.multiplexes:
+                raise ConfigError(f"radio {r_.name}: {r_.multiplexes} multiplexes but {len(r_.ports)} ports")
+            sn = str(rr["serial"] or "").strip()
+            if sn and not devices.BOARD_ID_RE.fullmatch(sn):
+                raise ConfigError(f"radio {r_.name}: serial {sn!r}: letters, digits, ., - and _ only")
+            r_.serial = sn                  # its mDNS id (MAC), host or service name, to pick one board
+        else:
+            _bind_serial(radios[-1], rr["serial"])
     for k, r in enumerate(radios):
         other = next((o for o in radios[:k] if r.serial and o.driver == r.driver != "null"
                       and devices.same(r.driver, o.serial, r.serial)), None)
@@ -487,6 +529,18 @@ def build(cfg):
             for k, v in (("constellation", "256qam"), ("code_rate", "5/6"), ("guard", "1/128")):   # over the air
                 if k not in c:
                     cc[k] = v
+        rsel_ = cc.get("radio", 0)
+        rad_ = next((r for r in radios if r.name == rsel_ or (isinstance(rsel_, int) and r.index == rsel_)), None)
+        if rad_ is not None and rad_.board:
+            # the board's FPGA modulates DVB-T with fixed parameters: they are the carrier's
+            if std != "dvbt":
+                raise ConfigError(f"carrier {ci} ({cc.get('name', '')}): radio {rad_.name} (edgeqam) modulates DVB-T "
+                                  f"only, not {std}")
+            for k, v in EDGEQAM_PARAMS.items():
+                if k in c and str(c[k]).lower() != str(v):
+                    raise ConfigError(f"carrier {ci} ({cc.get('name', '')}): radio {rad_.name} (edgeqam) modulates "
+                                      f"DVB-T 2k 64qam 7/8 GI 1/32 8 MHz: {k} = {c[k]!r} is not possible")
+                cc[k] = v
         if std == "dvbc" and "constellation" not in c:
             # 256-QAM needs ~34 dB of signal quality: a HackRF reaches 32-34 dB (errors measured),
             # 128-QAM is error-free on it; other radios (B210: 41 dB) do 256-QAM
@@ -630,7 +684,7 @@ def build(cfg):
 
     for r in radios:
         if r.carriers:
-            _plan_radio(r)
+            _plan_board(r) if r.board else _plan_radio(r)
 
     # capacity sanity of fixed encoder bitrates
     for car in carriers:
@@ -758,6 +812,70 @@ def _input_kind(src, opts):
 
 class _RateError(ConfigError):
     """the carriers do not fit the radio's sample rate"""
+
+
+def _plan_board(r):
+    """edgeqam: its multiplex k (1..) on channel FREQ + (k - 1) x 8 MHz, FREQ = its lowest carrier (or center)"""
+    r.notes = []
+    cars = r.carriers
+    f1 = r.center if r.center > 0 else min(c.frequency for c in cars)
+    used = {}
+    for c in cars:
+        d = (c.frequency - f1) / EDGEQAM_SPACING
+        k = round(d)
+        if abs(d - k) > 1e-6 or not 0 <= k < r.multiplexes:
+            raise ConfigError(f"radio {r.name} (edgeqam): {c.name} at {c.frequency / 1e6:.3f} MHz is not one of its "
+                              f"{r.multiplexes} adjacent 8 MHz channels from {f1 / 1e6:.3f} MHz")
+        if k in used:
+            raise ConfigError(f"radio {r.name} (edgeqam): {used[k]} and {c.name} on the same channel")
+        used[k] = c.name
+        c.board_mux = k + 1
+        c.offset = c.frequency - f1
+    r.center, r.rate, r.bandwidth, r.nfft = f1, 0.0, 0.0, 0
+    top = EDGEQAM_CAPACITY * 3 // 4 * 1504 / cars[0].ts_rate * 1000
+    if not 1 <= r.buffer_ms <= top:
+        raise ConfigError(f"radio {r.name} (edgeqam): buffer_ms {r.buffer_ms} out of 1..{top:.0f} (3/4 of the "
+                          f"board's {EDGEQAM_CAPACITY} packets)")
+    r.notes.append(f"{r.buffer_ms} ms kept in the board's buffers ({board_target(cars[0])} packets; buffer_ms, "
+                   "more over Wi-Fi)")
+    free = [k + 1 for k in range(r.multiplexes) if k not in used]
+    if free:
+        r.notes.append(f"multiplex{'es' if len(free) > 1 else ''} {', '.join(map(str, free))} of the board "
+                       f"{'disabled (no carrier there)' if r.tune else 'left as the board has it (tune = false)'}")
+
+
+EDGEQAM_CAPACITY = 8192      # packets buffered per multiplex on the board
+
+
+def board_target(car):
+    """packets kept waiting in the board's buffer: its radio's buffer_ms of the multiplex"""
+    return max(10, round(car.radio.buffer_ms / 1000 * car.ts_rate / 1504))
+
+
+def _board_resolve(r):
+    """(host, [ports], api port): the edgeqam board of radio r, its address or found by mDNS (_dvbmod._udp),
+    the last one found kept for when mDNS does not answer"""
+    if r.address != "auto":
+        return (r.address, r.ports[:r.multiplexes] or [EDGEQAM_PORT + k for k in range(r.multiplexes)],
+                r.api or EDGEQAM_API)
+    found, err = devices.find("edgeqam")
+    cand = [d for d in found if not r.serial or devices.board_matches(d, r.serial)]
+    if len(cand) > 1:                   # never one at random: which one answers first changes with each boot
+        seen = ", ".join(f"{d['serial']} ({d['label']}, {d['address']})" for d in cand)
+        raise ConfigError(f"radio {r.name}: {len(cand)} edgeqam boards found by mDNS: {seen}; "
+                          f"give serial = \"<its id>\" (or its address)")
+    if cand:
+        d = cand[0]
+        _BOARDS[r.serial] = (d["address"], r.ports[:r.multiplexes] or d["ports"], r.api or d["api"])
+        return _BOARDS[r.serial]
+    if r.serial in _BOARDS:
+        return _BOARDS[r.serial]
+    what = f"the edgeqam board {r.serial}" if r.serial else "no edgeqam board"
+    raise ConfigError(f"radio {r.name}: {what} found by mDNS (_dvbmod._udp"
+                      f"{': ' + err if err else ''}); give its address = \"IP\"")
+
+
+_BOARDS = {}
 
 
 def _plan_radio(r):
@@ -914,7 +1032,7 @@ def engine_radios(plan):
     """the radios given to the engine, in its order: [radio k] of engine.ini is engine_radios(plan)[k].
     A radio without multiplex is left out and the engine needs 0..n-1 without gaps, so its numbers may differ
     from the configuration's (Radio.index): the supervisor translates them back in the engine's statistics."""
-    return [r for r in plan.radios if r.carriers]
+    return [r for r in plan.radios if r.carriers and not r.board]
 
 
 def write_engine_ini(plan, path, si_dir):
@@ -944,15 +1062,34 @@ def write_engine_ini(plan, path, si_dir):
         L += [f"[radio {k}]", f"driver = {r.driver}", f"args = {r.args}", f"freq = {r.center:.3f}",
               f"rate = {r.rate:.6f}", f"bandwidth = {r.bandwidth:.0f}", f"gain = {r.gain}", f"amp = {int(r.amp)}",
               f"ppm = {r.ppm}", f"buffer_ms = {r.buffer_ms}", f"backoff_db = {r.backoff_db}", f"clock = {r.clock}", ""]
+    boards = {}
+    for r in plan.radios:
+        if r.carriers and r.board:
+            host, ports, api = _board_resolve(r)
+            used = {c.board_mux for c in r.carriers}
+            mask = sum(1 << (k - 1) for k in range(1, len(ports) + 1) if k not in used)
+            boards[r.index] = (host, ports, api, f"/set?freq={r.center:.0f}&disable={mask}" if r.tune else "")
     mon_base = int(ing["monitor_base_port"])
     pf_ms, sch_ms = int(epg["pf_cycle_ms"]), int(epg["schedule_cycle_ms"])
     net = c["network"]
     for car in plan.carriers:
         p = car.params
-        L += [f"[carrier {car.index}]", f"standard = {car.standard}", f"tsid = {car.tsid}"]
+        board = car.radio is not None and car.radio.board
+        L += [f"[carrier {car.index}]", f"standard = {'ts' if board else car.standard}", f"tsid = {car.tsid}"]
         if not car.enabled:
             L.append("on = 0")
-        if car.standard == "dvbt2":
+        if board:
+            # an edgeqam multiplex: the CBR TS sent to its UDP port, the rate steered on its buffer
+            host, ports, api, tune = boards[car.radio.index]
+            if car.board_mux > len(ports):
+                raise ConfigError(f"radio {car.radio.name}: the board has {len(ports)} multiplexes, {car.name} "
+                                  f"would be its multiplex {car.board_mux}")
+            L += [f"ts_rate = {car.ts_rate:.1f}", f"output = udp://{host}:{ports[car.board_mux - 1]}",
+                  f"fill = http://{host}:{api}/status", f"fill_mux = {car.board_mux}",
+                  f"fill_target = {board_target(car)}"]
+            if tune:
+                L.append(f"fill_tune = {tune}")
+        elif car.standard == "dvbt2":
             L += [f"radio = {eidx[car.radio.index]}", f"offset = {car.offset:.3f}", f"frequency = {car.frequency:.0f}",
                   f"gain_db = {car.gain_db}"]
             for k, v in car.params.items():
@@ -976,7 +1113,7 @@ def write_engine_ini(plan, path, si_dir):
                   f"cell_id = {car.cell_id}", f"gain_db = {car.gain_db}"]
         else:
             L += [f"ts_rate = {car.ts_rate:.1f}", f"output = {car.output}"]
-        if car.radio and car.standard != "dvbt":
+        if car.radio and not car.radio.board and car.standard != "dvbt":
             L.append(f"synth = {car.synth}")
         mons = [f"udp://127.0.0.1:{mon_base + car.index}"] + car.monitor
         L.append(f"monitor = {','.join(mons)}")
@@ -1008,6 +1145,12 @@ def describe(plan):
     for r in plan.radios:
         if not r.carriers:
             continue
+        if r.board:
+            out.append(f"radio {r.name} (edgeqam board, {r.address if r.address != 'auto' else 'found by mDNS'}"
+                       f"{', ' + r.serial if r.serial else ''}): multiplex 1 at {r.center / 1e6:.3f} MHz, "
+                       f"{r.multiplexes} x 8 MHz{'' if r.tune else ', frequency left as the board has it'}")
+            out.extend(f"   {n}" for n in r.notes)
+            continue
         out.append(f"radio {r.name} ({r.driver}{' ' + r.args if r.args else ''}): LO {r.center / 1e6:.4f} MHz, "
                    f"{r.rate / 1e6:.6f} MS/s{f' (FFT {r.nfft})' if r.nfft else ''}"
                    f"{f', filter {r.bandwidth / 1e6:g} MHz' if r.bandwidth else ''}, gain {r.gain:g} dB{' +amp' if r.amp else ''}")
@@ -1015,6 +1158,8 @@ def describe(plan):
     for c in plan.carriers:
         p = c.params
         where = f"{c.frequency / 1e6:.3f} MHz (offset {c.offset / 1e6:+.3f})" if c.radio else f"-> {c.output}"
+        if c.radio is not None and c.radio.board:
+            where = f"{c.frequency / 1e6:.3f} MHz, multiplex {c.board_mux} of {c.radio.name}"
         if c.sat_frequency:
             where = (f"{c.sat_frequency / 1e6:.3f} MHz on the TV, IF {c.frequency / 1e6:.3f} MHz "
                      f"(LNB {(c.sat_frequency - c.frequency) / 1e6:g} MHz, offset {c.offset / 1e6:+.3f})")

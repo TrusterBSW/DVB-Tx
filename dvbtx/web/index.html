@@ -164,6 +164,12 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
     <label style="display:flex;gap:6px;align-items:center;color:inherit"><input id="rd_autoserial" type="checkbox"> enregistrer automatiquement le numéro de série d'une carte libre de ce pilote</label>
     <select id="rd_serial_pick" style="display:none"></select>
     <div class="muted" id="rd_serial_msg"></div>
+    <div id="rd_board" style="display:none">
+      <label for="rd_address">Adresse de la carte</label><input id="rd_address" type="text" maxlength="80" placeholder="auto : trouvée par mDNS (_dvbmod._udp)">
+      <label style="display:flex;gap:6px;align-items:center;color:inherit"><input id="rd_tune" type="checkbox"> régler sa fréquence et couper ses multiplex inutilisés (sinon : laissés comme la carte les a)</label>
+      <div class="hint">Carte edgeQAM : modulateur DVB-T dans le FPGA (2k, 64-QAM, 7/8, 1/32, 8 MHz), jusqu'à 4 multiplex sur des canaux voisins. dvbtx lui envoie chaque multiplex en UDP, au débit de son horloge. Son niveau d'émission (atténuation) reste réglé sur la carte.</div>
+    </div>
+    <div id="rd_sdr">
     <label for="rd_args">Arguments</label><input id="rd_args" type="text" placeholder="rt=60, num_send_frames=256">
     <div class="row" style="gap:6px 14px">
       <span><label for="rd_gain">Gain (dB)</label><input id="rd_gain" type="number" step="0.5" style="width:7em"></span>
@@ -173,6 +179,7 @@ nav#tabs a .pill { margin-left: 5px; font-size: 11px; padding: 0 6px; }
       <span><label for="rd_lo">Décalage du LO</label><input id="rd_lo" type="text" style="width:7em" placeholder="auto"></span>
     </div>
     <label style="display:flex;gap:6px;align-items:center;color:inherit"><input id="rd_amp" type="checkbox"> amplificateur RF (HackRF)</label>
+    </div>
     <div class="hint">Vide = automatique. Enregistré dans le fichier tout de suite, appliqué avec le bouton du bandeau (l'émission redémarre).</div>
     <div class="err" id="rd_err"></div>
     <div class="actions"><button type="button" class="danger" id="rd_del" onclick="radioDelete()" style="margin-right:auto">Supprimer</button>
@@ -328,6 +335,19 @@ function render(s) {
 
   $("#radios").innerHTML = s.radios.map((r) => {
     const l = r.live || {};
+    if (r.driver === "edgeqam") {          // a board fed over the network: the buffer of each multiplex
+      const st = { track: ["ok", "suivi"], fill: ["warning", "remplissage"], drain: ["warning", "vidage"], lost: ["critical", "ne répond pas"] };
+      const rows = Object.entries(l.modulator || {}).map(([k, m]) => {
+        if (!m) return `<span>Multiplex ${k}</span><span>–</span>`;
+        const [cls, txt] = st[m.state] || ["", m.state || "–"];
+        return `<span>Multiplex ${k}</span><span><span class="pill ${cls}">${txt}</span> ${m.queued} paquets en attente · ${m.trim_ppm >= 0 ? "+" : ""}${m.trim_ppm.toFixed(2)} ppm${m.null_inserted > 0 || m.dropped > 0 ? ` · <span class="muted">carte : ${m.null_inserted} nuls insérés, ${m.dropped} perdus depuis son démarrage</span>` : ""}</span>`;
+      }).join("");
+      return `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="pill">edgeqam</span></div>
+        <div class="row" style="margin-top:4px">${l.state === "lost" ? '<span class="pill critical">la carte ne répond pas</span>'
+          : l.state === "on" ? '<span class="pill ok">en lien</span>' : '<span class="pill">–</span>'}</div>
+        <div class="kv" style="margin-top:8px"><span>Adresse</span><span>${esc(r.address === "auto" ? "mDNS" : r.address)}${r.serial ? " · " + esc(r.serial) : ""}</span>
+        <span>Multiplex 1</span><span>${(r.center / 1e6).toFixed(3)} MHz${r.tune ? "" : " (réglage de la carte)"}</span>${rows}</div></div>`;
+    }
     return `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="pill">${esc(r.driver)}</span>
       </div><div class="row" style="margin-top:4px">
       ${l.state === "idle" ? '<span class="pill">éteinte · ses multiplex sont arrêtés</span>'
@@ -1041,6 +1061,9 @@ function radioOpen(i) {
   $("#rd_center").value = r.center ? r.center / 1e6 : "";
   $("#rd_lo").value = r.lo_offset ?? "";
   $("#rd_amp").checked = !!r.amp;
+  $("#rd_address").value = r.address && r.address !== "auto" ? r.address : "";
+  $("#rd_tune").checked = r.tune !== false;
+  radioKind();
   $("#rd_del").style.display = i == null ? "none" : "";
   $("#rd_err").textContent = "";
   radiodlg.showModal();
@@ -1073,6 +1096,14 @@ async function radioSerialFind() {
 }
 $("#rd_autoserial").addEventListener("change", radioSerialFind);
 $("#rd_driver").addEventListener("change", radioSerialFind);
+// an edgeqam board: its address instead of the radio settings
+function radioKind() {
+  const board = $("#rd_driver").value === "edgeqam";
+  $("#rd_board").style.display = board ? "" : "none";
+  $("#rd_sdr").style.display = board ? "none" : "";
+  $("#rd_serial").placeholder = board ? "aucun : la première carte trouvée (son nom d'hôte mDNS)" : "aucun : la première carte de ce pilote";
+}
+$("#rd_driver").addEventListener("change", radioKind);
 $("#rd_serial_pick").addEventListener("change", () => { if ($("#rd_serial_pick").value) $("#rd_serial").value = $("#rd_serial_pick").value; });
 $("#radioform").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -1085,6 +1116,11 @@ $("#radioform").addEventListener("submit", async (ev) => {
     gain: num($("#rd_gain").value), backoff_db: num($("#rd_backoff").value), rate: num($("#rd_rate").value, 1e6),
     center: num($("#rd_center").value, 1e6), lo_offset: lo === "" ? null : (isNaN(Number(lo)) ? lo : Number(lo)), amp: $("#rd_amp").checked || null };
   for (const k of ["rate", "center"]) if (body[k] != null) body[k] = Math.round(body[k]);
+  if (body.driver === "edgeqam") {
+    const a = $("#rd_address").value.trim();
+    Object.assign(body, { address: a || "auto", tune: $("#rd_tune").checked, args: null, gain: null, backoff_db: null,
+      rate: null, lo_offset: null, amp: null });
+  }
   let r;
   if (radioIdx == null) {
     for (const k in body) if (body[k] == null) delete body[k];

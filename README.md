@@ -56,6 +56,7 @@ on the coax finds them with their names, numbers and programme guide, as on regu
 - [Service and power profiles](#service-and-power-profiles)
 - [On Proxmox VE: host, container or VM](#on-proxmox-ve-host-container-or-vm)
 - [Standards and radios](#standards-and-radios)
+- [An edgeQAM board](#an-edgeqam-board-fpga-modulator-on-the-network)
 - [Measurements](#measurements)
 - [Documentation](#documentation)
 - [Building from source](#building-from-source)
@@ -317,6 +318,47 @@ The container setup is derived from what the engine uses, not yet measured again
 | HackRF One | ✅ up to 20 MS/s: 2 adjacent 8 MHz multiplexes |
 | USRP B200/B210 (UHD) | ✅ 56 MHz: 6 adjacent 8 MHz multiplexes, or one DVB-S2X carrier up to 52 Msym/s |
 | SoapySDR transmitters | built, not tried |
+| edgeQAM board (FPGA DVB-T, over the network) | ✅ on cable (closed coax): 4 multiplexes received at once, no transport error, MER 22-23 dB (HackRF receiver limit) |
+
+## An edgeQAM board (FPGA modulator on the network)
+
+An edgeQAM board (Fishball 7010) modulates DVB-T in its FPGA: up to 4 multiplexes on adjacent 8 MHz
+channels. Its microSD image, sources and tools are in
+[DVB-Tx_edge-QAM](https://github.com/TrusterBSW/DVB-Tx_edge-QAM).
+dvbtx then only multiplexes, and sends each multiplex to the board over UDP, at the exact
+rate the board consumes it:
+
+```toml
+[[radio]]
+name = "fishball"
+driver = "edgeqam"        # address = "auto": found by mDNS (avahi-browse _dvbmod._udp)
+
+[[carrier]]
+name = "Mux 1"
+radio = "fishball"
+channel = 21              # the board's multiplex 1; channel 22 would be its multiplex 2...
+  [[carrier.service]]
+  name = "News"
+  source = "https://example.org/live.m3u8"
+```
+
+- **Parameters**: DVB-T 2k, 64-QAM, 7/8, GI 1/32, 8 MHz, fixed in the FPGA (31.668 Mbit/s per
+  multiplex). There is nothing to give, and other values are refused.
+- **Clock**: the board runs on its own crystal. dvbtx reads the fill level of its buffers 4 times a
+  second and steers its rate on it, slowly enough to keep the PCRs clean. Against a simulated
+  board 5 ppm fast: no null inserted, nothing dropped, PCRs within 1.5 µs.
+- **Settings**: dvbtx sets the board's frequency and disables its unused multiplexes, again after
+  each restart of the board. The emission level stays the board's own setting.
+- **Validated on cable** (closed coax to a HackRF One and gr-dtv): no transport error, PCRs within
+  1 ms, rate locked within 2 ppm; then 4 multiplexes at once, no transport error on any, MER 22-23 dB
+  (the limit of the HackRF as a receiver).
+- **Load on the board**: mDNS is a static announcement, and reading the buffers is one small HTTP
+  request per board, 4 times a second.
+- **Status**: the web page shows, per multiplex, its buffer, the rate trim, and the nulls the board
+  inserted or the packets it dropped. An alert is raised if the board stops answering.
+
+With several boards, name one by the id it announces (its MAC, listed by `dvbtx devices`):
+`serial = "0060881fa308"`. Without mDNS, give `address = "10.5.1.96"`. Details are in `man 5 dvbtx.toml` (*edgeQAM boards*).
 
 ## Measurements
 

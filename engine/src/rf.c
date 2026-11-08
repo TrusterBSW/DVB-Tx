@@ -31,6 +31,7 @@
 #include "scgen.h"
 #include "sdr.h"
 #include "ts.h"
+#include "tsfill.h"
 #include "util.h"
 
 #ifndef PLUGIN_DIR
@@ -89,6 +90,18 @@ typedef struct carrier {
     struct sockaddr_in out_sa;
     int out_is_udp;
     int64_t t0;
+    /* its slot clock: slot n is at base_t + (n - base_slot) x pkt_eff (pkt_ns, trimmed on the modulator's clock) */
+    int64_t base_t;
+    uint64_t base_slot;
+    double pkt_eff;
+    /* an external modulator's buffer (edgeQAM): its fill level steers the rate */
+    tsfill *fill;
+    int fill_mux, fill_target, fill_state;
+    int fill_high;                /* above it, drained at -2 %: 3 x target, at most half way to its capacity */
+    double fill_q, trim, trim_track;   /* filtered fill level (packets), rate trim (relative, + = faster),
+                                          the trim of the tracking (kept while filling) */
+    uint64_t fill_seq;
+    tsfill_sample fill_last;
 
     pthread_t th;
     int started;
@@ -218,7 +231,7 @@ static int64_t radio_clock(void *ctx, uint64_t slot)
 static int64_t ts_clock(void *ctx, uint64_t slot)
 {
     carrier *c = ctx;
-    return c->t0 + (int64_t)((double)slot * c->pkt_ns);
+    return c->base_t + (int64_t)((double)(int64_t)(slot - c->base_slot) * c->pkt_eff);
 }
 
 static void radio_track(radio *r)
@@ -386,14 +399,90 @@ static void *dvbt_thread(void *arg)
     return NULL;
 }
 
+enum { FILL_NONE, FILL_LOST, FILL_FILL, FILL_TRACK, FILL_DRAIN };
+static const char *const fill_state_name[] = { "", "lost", "fill", "track", "drain" };
+
+#define FILL_RAMP 0.02            /* rate trim while filling or draining the modulator's buffer */
+#define FILL_TRIM_MAX 50e-6       /* while tracking it: +-50 ppm */
+#define FILL_TAU_S 300.0          /* time constant of the tracking */
+#define FILL_EMA_S 20.0           /* filter of the fill level (it moves by DMA blocks: 86 packets on the board) */
+#define FILL_SLEW 0.02e-6         /* trim change per second: 0.54 Hz/s of the 27 MHz PCR clock */
+#define FILL_LOST_NS 5000000000LL   /* no answer for that long and 3 polls in a row: lost (a slow answer, 1-2 s,
+                                       is not) */
+
+/* the rate trim from the modulator's latest fill level; the slot clock goes on from slot without a jump.
+ * Tracking moves the rate slowly (FILL_SLEW, ~0.5 Hz/s of PCR drift) for the receivers' clock recovery:
+ * the modulator's buffer (8192 packets on the board, ~0.4 s) absorbs the clock difference meanwhile. */
+static void fill_update(carrier *c, uint64_t slot)
+{
+    tsfill_sample s;
+    tsfill_read(c->fill, c->fill_mux, &s);
+    if (s.seq == c->fill_seq)
+        return;
+    c->fill_seq = s.seq;
+    double dt = c->fill_last.at_ns && s.ok ? (s.at_ns - c->fill_last.at_ns) / 1e9 : 0;
+    if (s.ok)
+        c->fill_last = s;
+    double trim = c->trim, target = c->fill_target;
+    int st = c->fill_state;
+    if (c->muted)
+        return;                   /* nothing sent: its buffer empties, filled again once it is back */
+    if (!s.ok) {
+        if (st != FILL_LOST && s.at_ns - s.last_ok_ns > FILL_LOST_NS && s.fails >= 3) {
+            LOGW("carrier %d: no fill level from the modulator: rate of the last tracking", c->idx);
+            st = FILL_LOST;
+            trim = c->trim_track;
+        }
+    } else {
+        double q = (double)s.queued;
+        if (st == FILL_LOST || st == FILL_NONE)
+            st = q < target ? FILL_FILL : q > c->fill_high ? FILL_DRAIN : FILL_TRACK;
+        else if (st == FILL_TRACK && q < target / 4)
+            st = FILL_FILL;       /* the modulator restarted, or lost packets */
+        else if (st == FILL_TRACK && q > c->fill_high)
+            st = FILL_DRAIN;
+        else if ((st == FILL_FILL && q >= target) || (st == FILL_DRAIN && q <= target))
+            st = FILL_TRACK;
+        if (st == FILL_TRACK && c->fill_state != FILL_TRACK)
+            c->fill_q = q;
+        if (st == FILL_TRACK) {
+            if (dt > 0 && dt < 5)
+                c->fill_q += dt / FILL_EMA_S * (q - c->fill_q);
+            double err = c->fill_q - target, pkts_s = 1e9 / c->pkt_ns;
+            double want = -err / (pkts_s * FILL_TAU_S), step = FILL_SLEW * (dt > 0 && dt < 5 ? dt : 0);
+            want = want > FILL_TRIM_MAX ? FILL_TRIM_MAX : want < -FILL_TRIM_MAX ? -FILL_TRIM_MAX : want;
+            c->trim_track += want - c->trim_track > step ? step : want - c->trim_track < -step ? -step
+                                                                                                : want - c->trim_track;
+            trim = c->trim_track;
+        } else if (st == FILL_FILL)
+            trim = c->trim_track + FILL_RAMP;
+        else if (st == FILL_DRAIN)
+            trim = c->trim_track - FILL_RAMP;
+        if (st != c->fill_state)
+            LOGI("carrier %d: modulator buffer %ld packets: %s", c->idx, s.queued, fill_state_name[st]);
+    }
+    c->fill_state = st;
+    if (trim != c->trim) {
+        c->base_t = ts_clock(c, slot);
+        c->base_slot = slot;
+        c->trim = trim;
+        c->pkt_eff = c->pkt_ns / (1 + trim);
+    }
+}
+
 static void *ts_thread(void *arg)
 {
     carrier *c = arg;
     uint8_t buf[7 * TS_PKT];
     uint64_t slot = 0;
     c->t0 = mono_ns() + 50000000;
+    c->base_t = c->t0;
+    c->base_slot = 0;
+    c->pkt_eff = c->pkt_ns;
     while (g_running) {
-        int64_t due = c->t0 + (int64_t)((double)slot * c->pkt_ns) - 20000000;
+        if (c->fill)
+            fill_update(c, slot);
+        int64_t due = ts_clock(c, slot) - 20000000;
         int64_t now = mono_ns();
         if (due > now) {
             struct timespec ts = { 0, (long)((due - now) > 2000000 ? 2000000 : (due - now)) };
@@ -878,6 +967,25 @@ int rf_setup(const conf *cf, input **inputs, int ninputs, char *err, int errlen)
             }
             if (open_output(c, conf_req(s, "output"), err, errlen))
                 return -1;
+            const char *fill = conf_str(s, "fill", "");
+            if (*fill) {          /* http://BOARD:PORT/status: an external modulator's buffer steers the rate */
+                c->fill = tsfill_get(fill, (int)conf_int(s, "fill_poll_ms", 250), conf_str(s, "fill_tune", ""));
+                if (!c->fill) {
+                    snprintf(err, errlen, "carrier %d: bad fill URL '%s' (http://host:port/path)", c->idx, fill);
+                    return -1;
+                }
+                c->fill_mux = (int)conf_int(s, "fill_mux", 1);
+                c->fill_target = (int)conf_int(s, "fill_target", 1000);
+                int cap = (int)conf_int(s, "fill_capacity", 8192);     /* the board's buffer, packets */
+                if (c->fill_mux < 1 || c->fill_mux > TSFILL_MUX || c->fill_target < 10 || c->fill_target > cap * 3 / 4) {
+                    snprintf(err, errlen, "carrier %d: fill_mux 1..%d, fill_target 10..%d (3/4 of fill_capacity)",
+                             c->idx, TSFILL_MUX, cap * 3 / 4);
+                    return -1;
+                }
+                c->fill_high = 3 * c->fill_target;
+                if (c->fill_high > (c->fill_target + cap) / 2)
+                    c->fill_high = (c->fill_target + cap) / 2;
+            }
             clk = ts_clock;
         } else {
             snprintf(err, errlen, "carrier %d: standard '%s' is not handled by this engine", c->idx, c->standard);
@@ -1363,8 +1471,17 @@ int rf_stats_json(char *buf, int len, double dt)
         int m = mux_stats_json(c->mux, buf + n, len - n - 64, dt);
         if (m > 0 && buf[n + m - 1] == '}') {
             n += m - 1;
-            n += snprintf(buf + n, len - n, ",\"standard\":\"%s\",\"radio\":%d,\"offset\":%.0f,\"cpu\":%.1f,\"on\":%d}",
+            n += snprintf(buf + n, len - n, ",\"standard\":\"%s\",\"radio\":%d,\"offset\":%.0f,\"cpu\":%.1f,\"on\":%d",
                           c->standard, c->radio ? c->radio->idx : -1, c->offset_hz, load, !c->muted);
+            if (c->fill) {        /* written by its thread: a torn read only blurs one second of statistics */
+                tsfill_sample f = c->fill_last;
+                n += snprintf(buf + n, len - n, ",\"modulator\":{\"state\":\"%s\",\"queued\":%ld,\"target\":%d,"
+                              "\"trim_ppm\":%.2f,\"null_inserted\":%ld,\"dropped\":%ld,\"answered_ms_ago\":%lld}",
+                              fill_state_name[c->fill_state], f.queued, c->fill_target, c->trim * 1e6,
+                              f.null_inserted, f.dropped,
+                              f.last_ok_ns ? (long long)((mono_ns() - f.last_ok_ns) / 1000000) : -1LL);
+            }
+            n += snprintf(buf + n, len - n, "}");
         }
     }
     n += snprintf(buf + n, len - n, "]");

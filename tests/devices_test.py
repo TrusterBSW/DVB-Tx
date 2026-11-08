@@ -84,6 +84,28 @@ check([(d["serial"], d["label"]) for d in u] == [("3449ABC", "B210 MyB210"), ("3
 s = devices.parse("soapy", SOAPY)
 check([d["serial"] for d in s] == ["1D3AC1E4A2B4C5"], f"SoapySDRUtil: receive-only and serial-less skipped: {s}")
 
+AVAHI = r"""+;wlp53s0;IPv4;edgeQAM\032plutoplus;_dvbmod._udp;local
+=;wlp53s0;IPv6;edgeQAM\032plutoplus;_dvbmod._udp;local;plutoplus.local;fe80::1;1001;"std=dvbt"
+=;wlp53s0;IPv4;edgeQAM\032plutoplus;_dvbmod._udp;local;plutoplus.local;10.5.1.96;1001;"std=dvbt" "mode=2k" "qam=64" "cr=7/8" "gi=1/32" "bw=8" "rate=31668449" "nmux=2" "ports=1001,1002,1003,1004" "freq1=474000000" "disable=0" "api=8080"
+=;eth0;IPv4;edgeQAM\032plutoplus;_dvbmod._udp;local;plutoplus.local;10.5.1.96;1001;"std=dvbt" "nmux=4" "ports=1001,1002,1003,1004"
+=;eth0;IPv4;other\032kind;_dvbmod._udp;local;b.local;10.5.1.97;1001;"std=dvbs2"
+"""
+e = devices.parse("edgeqam", AVAHI)
+check([(d["serial"], d["label"], d["address"], d["ports"], d["api"]) for d in e]
+      == [("plutoplus", "edgeQAM plutoplus", "10.5.1.96", [1001, 1002], 8080)],
+      f"avahi-browse: the edgeQAM board once, IPv4, its nmux ports, other standards skipped: {e}")
+
+AVAHI2 = r"""=;eth0;IPv4;edgeQAM\032plutoplus;_dvbmod._udp;local;plutoplus.local;10.5.1.96;1001;"std=dvbt" "nmux=4" "ports=1001,1002,1003,1004" "id=0060881fa308"
+=;eth0;IPv4;salon;_dvbmod._udp;local;plutoplus-2.local;10.5.1.98;1001;"std=dvbt" "nmux=4" "ports=1001,1002,1003,1004" "id=0060881fb410"
+"""
+e2 = devices.parse("edgeqam", AVAHI2)
+check([(d["serial"], d["host"], d["label"]) for d in e2] == [("0060881fa308", "plutoplus", "edgeQAM plutoplus"),
+                                                             ("0060881fb410", "plutoplus-2", "salon")],
+      f"avahi-browse, two boards: their TXT id as serial, host and service name kept: {e2}")
+check([devices.board_matches(e2[1], k) for k in ("0060881FB410", "plutoplus-2", "salon", "plutoplus", "")]
+      == [True, True, True, False, False], "a board answers to its id, host or service name")
+check(devices.owner("edgeqam", e2[1]["serial"], {"salon": "tv"}, e2[1]) == "tv", "owner: a board bound by its name")
+
 check(devices.serial_of("num_send_frames=256, serial=3449ABC") == "3449ABC", "serial_of")
 check(devices.serial_of("rt=60") is None, "serial_of: none")
 check(devices.with_serial("rt=60,serial=OLD", "NEW") == "rt=60,serial=NEW", "with_serial replaces")

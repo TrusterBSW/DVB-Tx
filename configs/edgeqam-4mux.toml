@@ -1,0 +1,51 @@
+# Four DVB-T multiplexes modulated by an edgeQAM board (FPGA DVB-T on a Fishball 7010), fed over the
+# network: 2k 64-QAM 7/8 1/32 8 MHz fixed in the FPGA, 31.67 Mbit/s each, channels 21 to 24.
+# dvbtx only multiplexes: no radio here, almost no CPU besides the sources.
+#   dvbtx check -c configs/edgeqam-4mux.toml && dvbtx run -c configs/edgeqam-4mux.toml
+# The board's emission level (attenuation) is its own setting: closed coax and attenuators.
+[network]
+name = "Ma TV"
+provider = "Ma TV"
+
+[[radio]]
+name = "fishball"
+driver = "edgeqam"
+address = "auto"             # found by mDNS (avahi-browse _dvbmod._udp); or its IP, "10.5.1.96"
+# serial = "0060881fa308"   # with several boards: the id it announces (dvbtx devices)
+# tune = false               # leave the board's frequency and multiplexes as they are
+
+[[carrier]]
+name = "Mux 1"
+radio = "fishball"
+channel = 21                 # 474 MHz: the board's multiplex 1
+  [[carrier.service]]
+  name = "Mire"
+  source = "lavfi:testsrc2=size=1280x720:rate=25"
+  encode = { video_bitrate = "3M" }
+
+[[carrier]]
+name = "Mux 2"
+radio = "fishball"
+channel = 22                 # its multiplex 2
+  [[carrier.service]]
+  name = "Barres"
+  source = "lavfi:smptehdbars=size=1280x720:rate=25"
+  encode = { video_bitrate = "3M" }
+
+[[carrier]]
+name = "Mux 3"
+radio = "fishball"
+channel = 23
+  [[carrier.service]]
+  name = "Mire 3"
+  source = "lavfi:testsrc=size=1280x720:rate=25"
+  encode = { video_bitrate = "3M" }
+
+[[carrier]]
+name = "Mux 4"
+radio = "fishball"
+channel = 24
+  [[carrier.service]]
+  name = "Mire 4"
+  source = "lavfi:rgbtestsrc=size=1280x720:rate=25"
+  encode = { video_bitrate = "3M" }

@@ -1,4 +1,4 @@
-.TH DVBTX-WEB 7 2026-11-06 "dvbtx 0.2.0" "dvbtx manual"
+.TH DVBTX-WEB 7 2026-11-08 "dvbtx 0.2.0" "dvbtx manual"
 .SH NAME
 dvbtx-web \- the dvbtx monitoring and control web page and its HTTP API
 .SH DESCRIPTION
@@ -202,6 +202,15 @@ of the other radios); a radio lost for 120 s and not found again also restarts t
 engine.
 Only the multiplexes of that radio are off the air, their sources paused; the
 other radios go on.
+.PP
+An edgeQAM board (driver
+.BR edgeqam ,
+.BR dvbtx.toml (5))
+has its own card: \(lqen lien\(rq while it answers, \(lqla carte ne répond pas\(rq in red when it
+does not, its address and the frequency of its multiplex 1, and one row per multiplex: the state of its
+buffer (\(lqsuivi\(rq: tracked, \(lqremplissage\(rq: being filled, \(lqvidage\(rq: being drained),
+the packets waiting in it, the rate trim in ppm and, when there are some, the nulls the board
+inserted and the packets it dropped since it started.
 .SS Dashboard: machine
 Half\-circle gauges: \(lqCPU\(rq for the whole machine (all processes, with the
 number of cores), and one \(lqGPU\(rq gauge per graphics adapter with its two
@@ -579,6 +588,12 @@ the one no other radio is bound to fills the serial, a list offers them when the
 and \(lqamplificateur RF (HackRF)\(rq
 .RB ( amp );
 an empty field is automatic.
+For an
+.B edgeqam
+board the radio fields give way to \(lqAdresse de la carte\(rq
+.RB ( address ,
+empty: found by mDNS) and \(lqrégler sa fréquence et couper ses multiplex inutilisés\(rq
+.RB ( tune ).
 \(lqSupprimer\(rq removes the radio, refused while a multiplex uses it.
 Renaming a radio renames it in the multiplexes that name it.
 .TP

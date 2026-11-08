@@ -132,4 +132,55 @@ e = fails(['standard = "dvbs"\nfrequency = 1_200_000_000\nsymbol_rate = 41_000_0
            'code_rate = "3/4"'], driver="uhd")
 assert e and "needs 61.500 MS/s" in e and "lower its symbol rate" in e, e
 
+# an edgeqam board: DVB-T 2k 64-QAM 7/8 1/32 8 MHz fixed, its multiplexes on adjacent 8 MHz channels
+EQ = 'address = "10.5.1.96"'
+p, r = plan(['channel = 21', 'channel = 24'], driver="edgeqam", radio=EQ)
+assert [c.board_mux for c in p.carriers] == [1, 4] and r.center == 474e6, [c.board_mux for c in p.carriers]
+assert all(c.params["mode"] == "2k" and abs(c.ts_rate - 31_668_449.2) < 1 for c in p.carriers), p.carriers[0].params
+assert cfgmod.engine_radios(p) == [], "an edgeqam board is not a radio of the engine"
+cfgmod.write_engine_ini(p, ini, "/tmp/dvbtx-test")
+lines = open(ini).read().splitlines()
+assert not any(x.startswith("[radio") for x in lines), lines
+for want in ("standard = ts", "output = udp://10.5.1.96:1001", "output = udp://10.5.1.96:1004",
+             "fill = http://10.5.1.96:8080/status", "fill_mux = 4", "fill_tune = /set?freq=474000000&disable=6"):
+    assert want in lines, (want, lines)
+assert "multiplexes 2, 3 of the board disabled" in notes(r), notes(r)
+p, r = plan(['channel = 22'], driver="edgeqam", radio=EQ + "\ncenter = 474_000_000\ntune = false")
+assert p.carriers[0].board_mux == 2, "center: the channel of its multiplex 1"
+cfgmod.write_engine_ini(p, ini, "/tmp/dvbtx-test")
+assert not any(x.startswith("fill_tune") for x in open(ini).read().splitlines()), "tune = false: not set"
+e = fails(['channel = 21', 'channel = 26'], driver="edgeqam", radio=EQ)
+assert e and "not one of its 4 adjacent 8 MHz channels" in e, e
+e = fails(['channel = 21\nmode = "8k"'], driver="edgeqam", radio=EQ)
+assert e and "mode = '8k' is not possible" in e, e
+e = fails(['standard = "dvbt2"\nchannel = 21'], driver="edgeqam", radio=EQ)
+assert e and "DVB-T only" in e, e
+e = fails(['channel = 21', 'frequency = 474_000_000'], driver="edgeqam", radio=EQ)
+assert e and "on the same channel" in e, e
+
+# address = "auto": two boards announced by mDNS, told apart by their TXT id (MAC), host or service name
+BOARDS = [{"serial": "0060881fa308", "host": "plutoplus", "label": "edgeQAM plutoplus", "address": "10.5.1.96",
+           "ports": [1001, 1002, 1003, 1004], "api": 8080},
+          {"serial": "0060881fb410", "host": "plutoplus-2", "label": "salon", "address": "10.5.1.98",
+           "ports": [1001, 1002, 1003, 1004], "api": 8080}]
+find0, cfgmod.devices.find = cfgmod.devices.find, lambda driver: (BOARDS, None)
+try:
+    for key, ip in (("0060881FB410", "10.5.1.98"), ("plutoplus", "10.5.1.96"), ("salon", "10.5.1.98")):
+        cfgmod._BOARDS.clear()
+        p, r = plan(['channel = 21'], driver="edgeqam", radio=f'serial = "{key}"')
+        cfgmod.write_engine_ini(p, ini, "/tmp/dvbtx-test")
+        assert f"output = udp://{ip}:1001" in open(ini).read().splitlines(), (key, ip)
+    cfgmod._BOARDS.clear()
+    p, r = plan(['channel = 21'], driver="edgeqam")
+    try:
+        cfgmod.write_engine_ini(p, ini, "/tmp/dvbtx-test")
+        e = None
+    except cfgmod.ConfigError as x:
+        e = str(x)
+    assert e and "2 edgeqam boards found" in e and "0060881fa308" in e and "0060881fb410" in e, \
+        f"several boards and no serial: refused, not one at random ({e})"
+finally:
+    cfgmod.devices.find = find0
+    cfgmod._BOARDS.clear()
+
 print(f"planner_test: OK ({time.time() - t0:.2f} s)")

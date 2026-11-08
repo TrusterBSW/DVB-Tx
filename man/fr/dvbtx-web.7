@@ -1,6 +1,6 @@
 .\" -*- coding: UTF-8 -*-
 .nr HY 0
-.TH DVBTX-WEB 7 2026-11-06 "dvbtx 0.2.0" "manuel dvbtx"
+.TH DVBTX-WEB 7 2026-11-08 "dvbtx 0.2.0" "manuel dvbtx"
 .SH NOM
 dvbtx-web \- la page web de supervision et de commande de dvbtx et son API HTTP
 .SH DESCRIPTION
@@ -204,6 +204,15 @@ des autres radios)\ ; une radio perdue depuis 120 s et non retrouvée redémarre
 moteur.
 Seuls les multiplex de cette radio sont hors antenne, leurs sources en pause\ ; les
 autres radios continuent.
+.PP
+Une carte edgeQAM (pilote
+.BR edgeqam ,
+.BR dvbtx.toml (5))
+a sa propre carte\ : «\ en lien\ » tant qu'elle répond, «\ la carte ne répond pas\ » en rouge sinon,
+son adresse et la fréquence de son multiplex 1, et une ligne par multiplex\ : l'état de sa file
+(«\ suivi\ », «\ remplissage\ », «\ vidage\ »), les paquets qui y attendent, la correction de débit
+en ppm et, s'il y en a, les paquets nuls insérés et les paquets perdus par la carte depuis son
+démarrage.
 .SS Tableau de bord\ : machine
 Jauges en demi-cercle\ : «\ CPU\ » pour toute la machine (tous les processus, avec le
 nombre de cœurs), et une jauge «\ GPU\ » par carte graphique avec ses deux moteurs
@@ -582,6 +591,12 @@ y en a plusieurs),
 et «\ amplificateur RF (HackRF)\ »
 .RB ( amp ")\ ;"
 un champ vide vaut automatique.
+Pour une carte
+.BR edgeqam ,
+les champs de radio laissent la place à «\ Adresse de la carte\ »
+.RB ( address ,
+vide\ : trouvée par mDNS) et «\ régler sa fréquence et couper ses multiplex inutilisés\ »
+.RB ( tune ).
 «\ Supprimer\ » supprime la radio, ce qui est refusé tant qu'un multiplex l'utilise.
 Renommer une radio la renomme dans les multiplex qui la citent.
 .TP

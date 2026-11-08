@@ -238,14 +238,17 @@ def cmd_devices(a):
         if err and a.save:
             sys.exit(f"dvbtx devices --save: {err}")
         for d in found:
-            who = devmod.owner(driver, d["serial"], bound.get(driver, {}))
+            who = devmod.owner(driver, d["serial"], bound.get(driver, {}), d)
             listed.append((driver, d, who))
             if not a.save:
-                print(f'driver = "{driver}"   serial = "{d["serial"]}"   # {d["label"]}'
+                extra = (f', {d["address"]}, {len(d["ports"])} multiplexes, multiplex 1 at {d["freq1"] / 1e6:g} MHz'
+                         if driver == "edgeqam" else "")
+                print(f'driver = "{driver}"   serial = "{d["serial"]}"   # {d["label"]}{extra}'
                       + (f", radio {who}" if who else ""))
     if not a.save:
         if not listed:
-            print("no radio found (hackrf_info, uhd_find_devices, SoapySDRUtil not installed or nothing plugged)")
+            print("no radio found (hackrf_info, uhd_find_devices, SoapySDRUtil not installed or nothing plugged; "
+                  "edgeQAM boards: avahi-browse, none announced)")
         return
     free = [d for _, d, who in listed if who is None]
     if a.serial:
@@ -621,8 +624,9 @@ def main(argv=None):
     _add_config_args(g)
     g = sub.add_parser("devices", help="list the radios that are plugged in; --save binds one to its device",
                        description="Ask hackrf_info, uhd_find_devices and SoapySDRUtil for the radios plugged "
-                       "in and print their driver and serial number, and the radio of the configuration bound "
-                       "to each. --save NAME writes in the file the serial of the device of that radio's driver "
+                       "in, and mDNS (avahi-browse _dvbmod._udp) for the edgeQAM boards on the network (their "
+                       "host name stands for a serial), and print their driver and serial number, and the "
+                       "radio of the configuration bound to each. --save NAME writes in the file the serial of the device of that radio's driver "
                        "that no other radio is bound to (--serial picks one when there are several).")
     g.add_argument("-c", "--config", help="TOML configuration file (default /etc/dvbtx/dvbtx.toml if present)")
     g.add_argument("--save", metavar="RADIO", help="radio of the configuration to bind to a free device")

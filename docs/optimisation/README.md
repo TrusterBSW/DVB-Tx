@@ -66,9 +66,16 @@ Charge du banc à 52 Msym/s (256APSK 135/180, 61,425 MS/s, radio null), sur le P
 | piste 1 | 62 % (−21 %) |
 | pistes 1 et 2 | 57 % (−28 %) |
 
-Pas encore mesuré sur l'i3, injoignable le 2026-11-08. Avant ces changements, il y avait mesuré −22 % pour la
-piste 1 seule et −18 % pour des blocs de 8k. À refaire là-bas, radio null, avec
-`work/fb/v_old`, `v_16` et `v_8`.
+Sur l'i3 (i3-8100T, L2 de 256 Ko), le 2026-11-08, radio null, trois passages de 25 s en alternance
+(`work/fb/run-i3.sh`, le service dvbtx actif mais sans porteuse) :
+
+| Version | Banc de filtres | Moteur entier (porteuse + radio + banc) |
+|---|---|---|
+| avant | 109 % d'un cœur (107 à 112) | 168 % |
+| piste 1 | 82 % (−25 %) | 143 % |
+| pistes 1 et 2 | 65 % (−41 %) | 125 % (−26 %) |
+
+Le gain est plus fort que sur le PC de développement : avec son petit L2, l'i3 profite le plus des blocs de 8k.
 
 Qualité :
 - **MER vu par un récepteur idéal** (`tests/rx_sc_mer.py`, deux porteuses DVB-C 256-QAM adjacentes,

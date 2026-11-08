@@ -1,6 +1,6 @@
 .\" -*- coding: UTF-8 -*-
 .nr HY 0
-.TH DVBTX-ENGINE 8 2026-11-06 "dvbtx 0.2.0" "manuel dvbtx"
+.TH DVBTX-ENGINE 8 2026-11-08 "dvbtx 0.2.0" "manuel dvbtx"
 .SH NOM
 dvbtx-engine \- multiplexeur, modulateur DVB et sortie radio de dvbtx
 .SH SYNOPSIS
@@ -444,6 +444,42 @@ système) :
 avec une adresse IPv4, ou un chemin de fichier, éventuellement préfixé par
 .BR file:// ,
 vidé à l'ouverture ; une FIFO est simplement écrite).
+Pour un modulateur externe qui met le flux en attente sur sa propre horloge (une carte edgeQAM,
+.BR dvbtx.toml (5)) :
+.BI fill= URL
+.RB ( http:// hôte : port /status ,
+une seule lecture par URL quel que soit le nombre de porteuses qui l'utilisent, fil
+.BR fill\-poll ),
+.BI fill_mux= K
+(son multiplex, 1..16 : le compte
+.B queued
+de l'objet
+.BI \(dqmux\(dq: K
+de sa réponse),
+.BI fill_target= N
+(paquets gardés dans sa file, 1000 par défaut),
+.BI fill_capacity= N
+(sa file, 8192 par défaut : vidée à \-2 % au\-dessus de 3 fois la cible, au plus à mi\-chemin),
+.BI fill_poll_ms= MS
+(250 par défaut),
+.BI fill_tune= CHEMIN
+(un GET envoyé à la carte à sa première réponse, puis à chaque fois qu'elle a redémarré, son
+.B uptime_s
+ayant baissé, ou cessé de répondre :
+.BR /set?freq=...&disable=... ) ;
+sa réponse doit être 200 avec la fréquence et le masque demandés, sinon il est renvoyé 1 s, puis 5 s,
+puis toutes les 10 s plus tard (toutes les 2 s tant que la connexion est refusée : le démon de la
+carte redémarre) ; les requêtes expirent au bout de 2 s.
+Le débit est alors réglé sur cette file : +2 % tant qu'elle est sous la cible (\-2 % au\-dessus du seuil de vidage), puis une correction d'au plus \(+-50 ppm qui varie d'au plus 0,02 ppm/s,
+l'horloge des paquets (PCR, entrées) continue ; si elle ne répond plus pendant 5 s et 3 lectures de suite, la dernière
+correction est gardée.
+Ses statistiques ont en plus un objet
+.B modulator
+:
+.BR state " (" fill ", " track ", " drain ", " lost "), " queued ", " target ", " trim_ppm ,
+.BR null_inserted " et " dropped
+(les compteurs de la carte) et
+.BR answered_ms_ago .
 .SS [service N]
 .TP
 .B carrier

@@ -1,4 +1,4 @@
-.TH DVBTX-ENGINE 8 2026-11-06 "dvbtx 0.2.0" "dvbtx manual"
+.TH DVBTX-ENGINE 8 2026-11-08 "dvbtx 0.2.0" "dvbtx manual"
 .SH NAME
 dvbtx-engine \- multiplexer, DVB modulator and radio output of dvbtx
 .SH SYNOPSIS
@@ -431,6 +431,41 @@ keys (no radio: the multiplex is written out, paced by the system clock):
 with an IPv4 address, or a file path, optionally prefixed with
 .BR file:// ,
 truncated when opened; a FIFO is simply written).
+For an external modulator that buffers the stream on its own clock (an edgeQAM board,
+.BR dvbtx.toml (5)):
+.BI fill= URL
+.RB ( http:// host : port /status ,
+one poll per URL however many carriers use it, thread
+.BR fill\-poll ),
+.BI fill_mux= K
+(its multiplex, 1..16: the
+.B queued
+count of the
+.BI \(dqmux\(dq: K
+object of its answer),
+.BI fill_target= N
+(packets kept in its buffer, default 1000),
+.BI fill_capacity= N
+(its buffer, default 8192: drained at \-2\~% above 3 times the target, at most half way to it),
+.BI fill_poll_ms= MS
+(default 250),
+.BI fill_tune= PATH
+(a GET sent to the board on its first answer and again whenever it restarted, its
+.B uptime_s
+having gone down, or stopped answering:
+.BR /set?freq=...&disable=... );
+its answer must be 200 with the frequency and mask asked, else it is sent again 1 s, then 5 s, then
+every 10 s later (every 2 s while the connection is refused: the board's daemon restarting);
+requests time out after 2 s.
+The rate is then steered on that buffer: +2\~% while it is below the target (\-2\~% above the drain level), then a trim of at most \(+-50 ppm moving by at most 0.02 ppm/s, the slot clock (PCRs,
+inputs) continuous; when it stops answering for 5 s and 3 polls in a row, the last trim is kept.
+Its statistics gain a
+.B modulator
+object:
+.BR state " (" fill ", " track ", " drain ", " lost "), " queued ", " target ", " trim_ppm ,
+.BR null_inserted " and " dropped
+(the board's counters) and
+.BR answered_ms_ago .
 .SS [service N]
 .TP
 .B carrier

@@ -6,7 +6,7 @@ Section: video
 Priority: optional
 Depends: python3 (>= 3.11), ffmpeg, tzdata, @DEPENDS@
 Recommends: @RECOMMENDS@
-Suggests: tsduck, hackrf, uhd-host, streamlink, yt-dlp, dvb-tools
+Suggests: tsduck, hackrf, uhd-host, streamlink, yt-dlp, dvb-tools, avahi-utils
 Installed-Size: @SIZE@
 Homepage: https://github.com/TrusterBSW/DVB-Tx
 Description: DVB head-end on software radios (HackRF, USRP, SoapySDR), closed coax
